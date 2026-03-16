@@ -3,7 +3,12 @@
 ## Wildcard match arm
 
 r[lint.wildcard-match-arm.detect]
-The lint must flag wildcard (`_`) patterns in match arms of `match` expressions.
+The lint must flag wildcard (`_`) patterns in match arms when the scrutinee type
+is an enum.
+
+r[lint.wildcard-match-arm.non-enum-types]
+The lint must not fire on non-enum types (integers, strings, booleans, etc.)
+since these inherently require wildcard arms.
 
 r[lint.wildcard-match-arm.non-exhaustive-external]
 The lint must allow wildcard arms when the matched type is a `#[non_exhaustive]`
