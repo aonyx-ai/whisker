@@ -20,73 +20,9 @@ pre-commit-inner:
 pre-commit:
     just pre-commit-inner
 
-# Build the documentation for the crates
-build-docs:
-    cargo doc --all-features --no-deps
-
-# Check that whisker builds with the latest dependencies
-check-latest-deps force="false":
-    #!/usr/bin/env bash
-
-    # Abort if git is not clean (but ignore Flox's manifest.lock)
-    if [[ {{force}} != "true" && -n $(git status --porcelain -- ':!.flox/env/manifest.lock') ]]; then
-        echo "Git working directory is not clean. Commit or stash changes before running this recipe. Aborting."
-        git status --porcelain
-        exit 1
-    fi
-
-    # Update dependencies to latest versions
-    cargo update
-
-    # Run tests to ensure the latest versions are compatible
-    RUSTFLAGS="-D deprecated" cargo test --all-features --all-targets --locked
-
 # Check that dependencies have compatible open-source licenses and trusted sources
 check-dependencies:
     cargo deny check bans licenses sources
-
-# Check that whisker builds with the minimal dependencies
-check-minimal-deps force="false":
-    #!/usr/bin/env bash
-
-    # Abort if git is not clean (but ignore Flox's manifest.lock)
-    if [[ {{force}} != "true" && -n $(git status --porcelain -- ':!.flox/env/manifest.lock') ]]; then
-        echo "Git working directory is not clean. Commit or stash changes before running this recipe. Aborting."
-        git status --porcelain
-        exit 1
-    fi
-
-    # Install the nightly toolchain if not already installed
-    rustup install nightly
-
-    # Update dependencies to minimal versions
-    rustup run nightly cargo update -Z direct-minimal-versions
-
-    # Run tests to ensure the minimal versions are compatible
-    RUSTFLAGS="-D deprecated" rustup run nightly cargo test --all-features --all-targets --locked
-
-# Check that whisker builds with the MSRV
-check-msrv:
-    #!/usr/bin/env bash
-
-    # Get the MSRV from the Cargo.toml
-    MSRV=$(cat Cargo.toml | grep 'rust-version =' | head -n 1 | cut -d '"' -f 2)
-
-    # Install the MSRV toolchain if not already installed
-    rustup install "${MSRV}"
-
-    # Run tests using the MSRV
-    RUSTFLAGS="-D deprecated" rustup run "${MSRV}" cargo check --all-features --all-targets
-
-# Check that all dependencies in Cargo.toml are used
-check-unused-deps:
-    #!/usr/bin/env bash
-
-    # Install the nightly toolchain if not already installed
-    rustup install nightly
-
-    # Check for unused dependencies
-    rustup run nightly cargo udeps
 
 # Format JSON files
 format-json fix="false": (prettier fix "{json,json5}")
@@ -129,10 +65,6 @@ lint-yaml:
 [private]
 prettier fix="false" extension="*":
     prettier {{ if fix == "true" { "--write" } else { "--list-different" } }} --ignore-unknown "**/*.{{ extension }}"
-
-# Publish the crates to crates.io
-publish:
-    cargo publish --all-features --verbose --workspace
 
 # Run the tests
 #

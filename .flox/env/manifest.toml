@@ -35,6 +35,7 @@ yamllint.outputs = "all"
 zizmor.pkg-path = "zizmor"
 pkg-config.pkg-path = "pkg-config"
 zlib.pkg-path = "zlib"
+openssl.pkg-path = "openssl"
 
 [vars]
 
