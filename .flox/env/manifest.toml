@@ -33,9 +33,11 @@ taplo.pkg-path = "taplo"
 yamllint.pkg-path = "yamllint"
 yamllint.outputs = "all"
 zizmor.pkg-path = "zizmor"
+openssl.pkg-path = "openssl"
+openssl.outputs = "all"
 pkg-config.pkg-path = "pkg-config"
 zlib.pkg-path = "zlib"
-openssl.pkg-path = "openssl"
+zlib.outputs = "all"
 
 [vars]
 

@@ -44,7 +44,8 @@
         "pkg-path": "markdownlint-cli"
       },
       "openssl": {
-        "pkg-path": "openssl"
+        "pkg-path": "openssl",
+        "outputs": "all"
       },
       "parallel": {
         "pkg-path": "parallel",
@@ -74,7 +75,8 @@
         "pkg-path": "zizmor"
       },
       "zlib": {
-        "pkg-path": "zlib"
+        "pkg-path": "zlib",
+        "outputs": "all"
       }
     },
     "hook": {
