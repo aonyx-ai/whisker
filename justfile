@@ -135,5 +135,10 @@ publish:
     cargo publish --all-features --verbose --workspace
 
 # Run the tests
+#
+# Lint crates are tested individually by manifest path because they use
+# crate-type = ["cdylib"] with dylint-link as the linker, which is
+# incompatible with cargo test --all-targets from the workspace root.
 test-rust:
-    cargo test --all-features --all-targets
+    cargo test --all-features
+    for lint in lints/*/Cargo.toml; do cargo test --manifest-path "$lint"; done

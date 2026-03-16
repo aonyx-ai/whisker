@@ -47,8 +47,6 @@ fn initialize(name: &str) -> &'static Path {
 
             dylint_internal::cargo::build(&format!("library `{name}`"))
                 .build()
-                .env("RUSTFLAGS", "-C linker=dylint-link")
-                .args(["--lib"])
                 .success()
                 .expect("failed to build lint library");
 
