@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/*"]
+
+# Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
+# https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/aonyx-ai/whisker.git"
+
+rust-version = "1.85.0"
+
+[workspace.dependencies]
