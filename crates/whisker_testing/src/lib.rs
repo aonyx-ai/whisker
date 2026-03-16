@@ -24,12 +24,7 @@ pub fn ui_test(name: &str, src_base: &str) {
     let driver = initialize(name);
     let src_base = std::path::Path::new(src_base);
 
-    run_compiletest(
-        driver,
-        src_base,
-        compiletest_rs::common::Mode::Ui,
-        "",
-    );
+    run_compiletest(driver, src_base, compiletest_rs::common::Mode::Ui, "");
     run_compiletest(
         driver,
         src_base,
@@ -38,9 +33,10 @@ pub fn ui_test(name: &str, src_base: &str) {
     );
 }
 
+use std::path::{Path, PathBuf};
+
 use dylint_internal::CommandExt;
 use once_cell::sync::OnceCell;
-use std::path::{Path, PathBuf};
 
 static DRIVER: OnceCell<PathBuf> = OnceCell::new();
 
@@ -51,11 +47,13 @@ fn initialize(name: &str) -> &'static Path {
 
             dylint_internal::cargo::build(&format!("library `{name}`"))
                 .build()
+                .env("RUSTFLAGS", "-C linker=dylint-link")
+                .args(["--lib"])
                 .success()
                 .expect("failed to build lint library");
 
-            let metadata = dylint_internal::cargo::current_metadata()
-                .expect("failed to get cargo metadata");
+            let metadata =
+                dylint_internal::cargo::current_metadata().expect("failed to get cargo metadata");
             let dylint_library_path = metadata.target_directory.join("debug");
 
             unsafe {

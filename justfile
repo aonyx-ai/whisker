@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Run a subset of checks as pre-commit hooks
-pre-commit:
+pre-commit-inner:
     #!/usr/bin/env -S parallel --shebang --ungroup --jobs {{ num_cpus() }}
     just prettier true
     just format-toml true
@@ -16,6 +16,9 @@ pre-commit:
     just lint-rust
     just lint-yaml
     just test-rust
+
+pre-commit:
+    just pre-commit-inner
 
 # Build the documentation for the crates
 build-docs:
@@ -93,8 +96,7 @@ format-markdown fix="false": (prettier fix "md")
 
 # Format Rust files
 format-rust fix="false":
-    rustup install -c rustfmt nightly
-    rustup run nightly cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }}
+    cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }}
 
 # Format TOML files
 format-toml fix="false":
@@ -134,4 +136,4 @@ publish:
 
 # Run the tests
 test-rust:
-    cargo nextest run --all-features --all-targets
+    cargo test --all-features --all-targets

@@ -98,6 +98,8 @@ Add project-specific entries as needed.
 The `good-first-issue` label, `C-` group, and `R-` group are identical. Only
 the `A-` (area) group changes per project:
 
+<!-- markdownlint-disable MD013 -->
+
 ```toml
 [[group]]
 prefix = "A-"
@@ -107,6 +109,8 @@ labels = [
   { name = "github-actions", description = "An issue related to GitHub Actions" },
 ]
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 Add more area labels as crates are added.
 
