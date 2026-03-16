@@ -1,0 +1,12 @@
+specs (
+    {
+        name whisker
+        include (specs/**/*.md)
+        impls (
+            {
+                name rust
+                include (lints/**/*.rs)
+            }
+        )
+    }
+)
