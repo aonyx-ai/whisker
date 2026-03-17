@@ -1,0 +1,19 @@
+[package]
+name = "bool_param"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils.workspace = true
+dylint_linting.workspace = true
+
+[dev-dependencies]
+whisker_testing.workspace = true
+
+[package.metadata.rust-analyzer]
+rustc_private = true
