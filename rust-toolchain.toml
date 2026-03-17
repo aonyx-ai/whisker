@@ -1,3 +1,5 @@
+# This nightly date must match the clippy_utils revision that dylint_linting
+# 5.0.0 was built against. Update both together when upgrading dylint.
 [toolchain]
-channel = "1.94.0"
-components = ["clippy", "rustfmt"]
+channel = "nightly-2025-09-18"
+components = ["clippy", "llvm-tools-preview", "rustc-dev", "rustfmt"]
