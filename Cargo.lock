@@ -170,6 +170,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_order"
+version = "0.1.0"
+dependencies = [
+ "clippy_utils",
+ "dylint_linting",
+ "whisker_testing",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
