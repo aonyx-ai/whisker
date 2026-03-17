@@ -1,0 +1,51 @@
+warning: parameter has type `bool`
+  --> $DIR/main.rs:4:39
+   |
+LL | fn create_repo(name: &str, is_public: bool) {
+   |                                       ^^^^
+   |
+   = help: use an enum with meaningful variants instead of `bool`
+   = note: `#[warn(bool_param)]` on by default
+
+warning: parameter has type `bool`
+  --> $DIR/main.rs:11:22
+   |
+LL | fn multiple_bools(a: bool, b: bool) {
+   |                      ^^^^
+   |
+   = help: use an enum with meaningful variants instead of `bool`
+
+warning: parameter has type `bool`
+  --> $DIR/main.rs:11:31
+   |
+LL | fn multiple_bools(a: bool, b: bool) {
+   |                               ^^^^
+   |
+   = help: use an enum with meaningful variants instead of `bool`
+
+warning: struct field has type `bool`
+  --> $DIR/main.rs:21:14
+   |
+LL |     verbose: bool,  //~ ERROR struct field has type `bool`
+   |              ^^^^
+   |
+   = help: use an enum with meaningful variants instead of `bool`
+
+warning: struct field has type `bool`
+  --> $DIR/main.rs:23:12
+   |
+LL |     debug: bool,    //~ ERROR struct field has type `bool`
+   |            ^^^^
+   |
+   = help: use an enum with meaningful variants instead of `bool`
+
+warning: parameter has type `bool`
+  --> $DIR/main.rs:43:28
+   |
+LL | fn single_bool_param(flag: bool) {
+   |                            ^^^^
+   |
+   = help: use an enum with meaningful variants instead of `bool`
+
+warning: 6 warnings emitted
+
