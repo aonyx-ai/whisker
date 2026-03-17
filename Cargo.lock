@@ -820,6 +820,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "prefer_let_else"
+version = "0.1.0"
+dependencies = [
+ "clippy_utils",
+ "dylint_linting",
+ "whisker_testing",
+]
+
+[[package]]
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
