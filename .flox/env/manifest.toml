@@ -49,6 +49,13 @@ on-activate = '''
 if [ -n "$GITHUB_ACTIONS" ]; then
   unset LD_AUDIT
 fi
+
+# Install the nightly toolchain and components specified in rust-toolchain.toml.
+# Rustup handles this idempotently — it's a no-op if already installed.
+rustup show > /dev/null 2>&1
+
+# Install dylint tools needed for building and testing lint libraries.
+cargo install --quiet cargo-dylint dylint-link 2> /dev/null
 '''
 
 [profile]
