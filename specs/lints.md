@@ -25,22 +25,28 @@ The diagnostic must suggest matching each variant explicitly instead of using
 r[lint.wildcard-match-arm.level]
 The lint must default to `Warn`.
 
-## Prefer let-else
+## Anyhow missing context
 
-r[lint.prefer-let-else.detect]
-The lint must flag `if let` expressions where the `else` branch diverges
-(returns, breaks, continues, or calls a diverging function such as `panic!`).
+r[lint.anyhow-missing-context.detect]
+The lint must flag uses of the `?` operator on `Result` types where the
+expression is not a `.context()` or `.with_context()` call.
 
-r[lint.prefer-let-else.if-let-only]
-The lint must not fire on regular `if-else` expressions (without a `let`
-pattern), or on `if let` expressions that have no `else` branch.
+r[lint.anyhow-missing-context.context-allowed]
+The lint must not flag when `.context()` is called before `?`.
 
-r[lint.prefer-let-else.diverging-else]
-The lint must not fire when the `else` branch does not diverge (i.e., when the
-`else` branch has a non-`!` return type).
+r[lint.anyhow-missing-context.with-context-allowed]
+The lint must not flag when `.with_context()` is called before `?`.
 
-r[lint.prefer-let-else.message]
-The diagnostic must suggest rewriting the `if let` as `let-else` syntax.
+r[lint.anyhow-missing-context.anyhow-only]
+The lint must only flag `?` when the enclosing function returns
+`Result<T, anyhow::Error>`. Functions returning other error types are
+not flagged.
 
-r[lint.prefer-let-else.level]
+r[lint.anyhow-missing-context.option-ignored]
+The lint must not flag `?` on `Option` types.
+
+r[lint.anyhow-missing-context.message]
+The diagnostic must suggest adding `.context("description")` before `?`.
+
+r[lint.anyhow-missing-context.level]
 The lint must default to `Warn`.

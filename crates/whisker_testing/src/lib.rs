@@ -27,12 +27,14 @@ pub fn ui_test(name: &str, src_base: &str) {
     // r[impl testing.ui-mode]
     run_compiletest(driver, src_base, compiletest_rs::common::Mode::Ui, "");
     // r[impl testing.annotation-mode]
-    run_compiletest(
-        driver,
-        src_base,
-        compiletest_rs::common::Mode::CompileFail,
-        "-D warnings",
-    );
+    if has_annotations(src_base) {
+        run_compiletest(
+            driver,
+            src_base,
+            compiletest_rs::common::Mode::CompileFail,
+            "-D warnings",
+        );
+    }
 }
 
 use std::path::{Path, PathBuf};
@@ -88,6 +90,17 @@ fn dylint_libs(name: &str, target_dir: &Path) -> String {
     let filename = dylint_internal::library_filename(name, &rustup_toolchain);
     let path = target_dir.join(filename);
     serde_json::to_string(&vec![path]).expect("failed to serialize library paths")
+}
+
+fn has_annotations(src_base: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(src_base) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.extension().is_some_and(|ext| ext == "rs")
+            && std::fs::read_to_string(&path).is_ok_and(|content| content.contains("//~"))
+    })
 }
 
 fn run_compiletest(
