@@ -104,7 +104,21 @@ fn run_compiletest(
 
     let compile_test_exit_code = match mode {
         compiletest_rs::common::Mode::CompileFail => Some(101),
-        _ => None,
+        compiletest_rs::common::Mode::ParseFail => Some(101),
+        compiletest_rs::common::Mode::Ui
+        | compiletest_rs::common::Mode::RunFail
+        | compiletest_rs::common::Mode::RunPass
+        | compiletest_rs::common::Mode::RunPassValgrind
+        | compiletest_rs::common::Mode::Pretty
+        | compiletest_rs::common::Mode::DebugInfoGdb
+        | compiletest_rs::common::Mode::DebugInfoLldb
+        | compiletest_rs::common::Mode::Codegen
+        | compiletest_rs::common::Mode::Rustdoc
+        | compiletest_rs::common::Mode::CodegenUnits
+        | compiletest_rs::common::Mode::Incremental
+        | compiletest_rs::common::Mode::RunMake
+        | compiletest_rs::common::Mode::MirOpt
+        | compiletest_rs::common::Mode::Assembly => None,
     };
 
     let config = compiletest_rs::Config {
