@@ -1,5 +1,5 @@
 [package]
-name = "prefer_let_else"
+name = "no_matches_macro"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
