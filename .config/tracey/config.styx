@@ -1,11 +1,21 @@
 specs (
     {
-        name whisker
-        include (specs/**/*.md)
+        name lints
+        include (specs/lints.md)
         impls (
             {
                 name rust
                 include (lints/**/*.rs)
+            }
+        )
+    }
+    {
+        name whisker_testing
+        include (specs/whisker_testing.md)
+        impls (
+            {
+                name rust
+                include (crates/whisker_testing/**/*.rs)
             }
         )
     }

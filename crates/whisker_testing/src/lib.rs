@@ -24,7 +24,9 @@ pub fn ui_test(name: &str, src_base: &str) {
     let driver = initialize(name);
     let src_base = std::path::Path::new(src_base);
 
+    // r[impl testing.ui-mode]
     run_compiletest(driver, src_base, compiletest_rs::common::Mode::Ui, "");
+    // r[impl testing.annotation-mode]
     run_compiletest(
         driver,
         src_base,
@@ -40,6 +42,7 @@ use once_cell::sync::OnceCell;
 
 static DRIVER: OnceCell<PathBuf> = OnceCell::new();
 
+// r[impl testing.driver-setup]
 fn initialize(name: &str) -> &'static Path {
     DRIVER
         .get_or_init(|| {
