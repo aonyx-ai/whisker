@@ -1,0 +1,19 @@
+warning: wildcard match arm hides unhandled variants
+  --> $DIR/main.rs:29:9
+   |
+LL |         _ => {}, //~ ERROR wildcard match arm hides unhandled variants
+   |         ^
+   |
+   = help: match each variant explicitly instead of using `_`
+   = note: `#[warn(wildcard_match_arm)]` on by default
+
+warning: wildcard match arm hides unhandled variants
+  --> $DIR/main.rs:37:9
+   |
+LL |         _ => {}, //~ ERROR wildcard match arm hides unhandled variants
+   |         ^
+   |
+   = help: match each variant explicitly instead of using `_`
+
+warning: 2 warnings emitted
+

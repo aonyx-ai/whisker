@@ -1,0 +1,8 @@
+[package]
+name = "sample_project"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.metadata.dylint]
+libraries = [{ path = "../..", pattern = "lints/*" }]
