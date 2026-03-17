@@ -1,0 +1,99 @@
+warning: derive macros are not in canonical order
+  --> $DIR/main.rs:17:1
+   |
+LL | #[derive(Debug, Clone)] //~ ERROR derive macros are not in canonical order
+   | ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: expected order: Clone, Debug
+   = note: `#[warn(derive_order)]` on by default
+
+warning: derive macros are not in canonical order
+  --> $DIR/main.rs:20:1
+   |
+LL | #[derive(Default, Copy, Clone)] //~ ERROR derive macros are not in canonical order
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: expected order: Copy, Clone, Default
+
+warning: derive macros are not in canonical order
+  --> $DIR/main.rs:23:1
+   |
+LL | #[derive(Hash, Debug, Eq, PartialEq)] //~ ERROR derive macros are not in canonical order
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: expected order: Eq, PartialEq, Hash, Debug
+
+warning: derive macros are not in canonical order
+  --> $DIR/main.rs:30:1
+   |
+LL | #[derive(MyMacro, Clone, Debug)] //~ ERROR derive macros are not in canonical order
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: expected order: Clone, Debug, MyMacro
+
+warning: derive macros are not in canonical order
+  --> $DIR/main.rs:39:1
+   |
+LL | #[derive(Clone, Debug, Beta, Alpha)] //~ ERROR derive macros are not in canonical order
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: expected order: Clone, Debug, Alpha, Beta
+
+warning: derive macros are not in canonical order
+  --> $DIR/main.rs:45:1
+   |
+LL | #[derive(Debug, Clone, Beta, Alpha)] //~ ERROR derive macros are not in canonical order
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: expected order: Clone, Debug, Alpha, Beta
+
+error: cannot find derive macro `MyMacro` in this scope
+  --> $DIR/main.rs:27:24
+   |
+LL | #[derive(Clone, Debug, MyMacro)] //~ ERROR cannot find derive macro `MyMacro`
+   |                        ^^^^^^^
+
+error: cannot find derive macro `MyMacro` in this scope
+  --> $DIR/main.rs:30:10
+   |
+LL | #[derive(MyMacro, Clone, Debug)] //~ ERROR derive macros are not in canonical order
+   |          ^^^^^^^
+
+error: cannot find derive macro `Alpha` in this scope
+  --> $DIR/main.rs:35:24
+   |
+LL | #[derive(Clone, Debug, Alpha, Beta)] //~ ERROR cannot find derive macro `Alpha`
+   |                        ^^^^^
+
+error: cannot find derive macro `Beta` in this scope
+  --> $DIR/main.rs:35:31
+   |
+LL | #[derive(Clone, Debug, Alpha, Beta)] //~ ERROR cannot find derive macro `Alpha`
+   |                               ^^^^
+
+error: cannot find derive macro `Beta` in this scope
+  --> $DIR/main.rs:39:24
+   |
+LL | #[derive(Clone, Debug, Beta, Alpha)] //~ ERROR derive macros are not in canonical order
+   |                        ^^^^
+
+error: cannot find derive macro `Alpha` in this scope
+  --> $DIR/main.rs:39:30
+   |
+LL | #[derive(Clone, Debug, Beta, Alpha)] //~ ERROR derive macros are not in canonical order
+   |                              ^^^^^
+
+error: cannot find derive macro `Beta` in this scope
+  --> $DIR/main.rs:45:24
+   |
+LL | #[derive(Debug, Clone, Beta, Alpha)] //~ ERROR derive macros are not in canonical order
+   |                        ^^^^
+
+error: cannot find derive macro `Alpha` in this scope
+  --> $DIR/main.rs:45:30
+   |
+LL | #[derive(Debug, Clone, Beta, Alpha)] //~ ERROR derive macros are not in canonical order
+   |                              ^^^^^
+
+error: aborting due to 8 previous errors; 6 warnings emitted
+
