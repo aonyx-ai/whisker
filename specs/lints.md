@@ -25,6 +25,21 @@ The diagnostic must suggest matching each variant explicitly instead of using
 r[lint.wildcard-match-arm.level]
 The lint must default to `Warn`.
 
+## No matches macro
+
+r[lint.no-matches-macro.detect]
+The lint must flag uses of the `matches!` macro regardless of the expression
+context (let bindings, return positions, function arguments, conditions, etc.).
+The lint must not flag regular `match` expressions or other macros such as
+`assert!` or `println!`.
+
+r[lint.no-matches-macro.message]
+The diagnostic must suggest using a full `match` expression instead of the
+`matches!` macro.
+
+r[lint.no-matches-macro.level]
+The lint must default to `Warn`.
+
 ## Bool param
 
 r[lint.bool-param.detect-fn]

@@ -1,0 +1,19 @@
+warning: use of `matches!` macro
+  --> $DIR/main.rs:11:14
+   |
+LL |     let _x = matches!(status, Status::Active); //~ ERROR use of `matches!` macro
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use a full `match` expression instead
+   = note: `#[warn(no_matches_macro)]` on by default
+
+warning: use of `matches!` macro
+  --> $DIR/main.rs:16:5
+   |
+LL |     matches!(status, Status::Active | Status::Pending) //~ ERROR use of `matches!` macro
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use a full `match` expression instead
+
+warning: 2 warnings emitted
+
