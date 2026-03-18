@@ -17,6 +17,7 @@ gcc.systems = ["aarch64-linux", "x86_64-linux"]
 gcc.outputs = "all"
 
 # Local development tools
+cargo-binstall.pkg-path = "cargo-binstall"
 cargo-deny.pkg-path = "cargo-deny"
 cargo-nextest.pkg-path = "cargo-nextest"
 git.pkg-path = "git"
@@ -56,6 +57,9 @@ rustup show > /dev/null 2>&1
 
 # Install dylint tools needed for building and testing lint libraries.
 cargo install --quiet cargo-dylint dylint-link 2> /dev/null
+
+# Install Tracey for spec coverage tracking.
+cargo binstall --no-confirm --quiet tracey 2> /dev/null
 '''
 
 [profile]
