@@ -97,7 +97,8 @@ fn extract_derive_names(attrs: &[Attribute]) -> Option<(Vec<String>, Span)> {
                     current_path.push_str("::");
                 }
                 current_path.push_str(sym.as_str());
-            } else if let TokenKind::Comma = token.kind
+            }
+            if let TokenKind::Comma = token.kind
                 && !current_path.is_empty()
             {
                 names.push(std::mem::take(&mut current_path));

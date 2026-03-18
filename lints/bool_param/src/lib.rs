@@ -51,11 +51,10 @@ dylint_linting::declare_late_lint! {
 }
 
 fn is_bool_ty(ty: &Ty<'_>) -> bool {
-    if let TyKind::Path(QPath::Resolved(None, path)) = ty.kind {
-        path.res == rustc_hir::def::Res::PrimTy(PrimTy::Bool)
-    } else {
-        false
-    }
+    let TyKind::Path(QPath::Resolved(None, path)) = ty.kind else {
+        return false;
+    };
+    path.res == rustc_hir::def::Res::PrimTy(PrimTy::Bool)
 }
 
 impl<'tcx> LateLintPass<'tcx> for BoolParam {
