@@ -1,0 +1,19 @@
+warning: use of `?` on Result without error context
+  --> $DIR/anyhow_test.rs:23:5
+   |
+LL |     fallible()?; //~ ERROR use of `?` on Result without error context
+   |     ^^^^^^^^^^^
+   |
+   = help: add `.context("description")` before `?` to provide error context
+   = note: `#[warn(anyhow_missing_context)]` on by default
+
+warning: use of `?` on Result without error context
+  --> $DIR/anyhow_test.rs:29:14
+   |
+LL |     let _s = fallible_string()?; //~ ERROR use of `?` on Result without error context
+   |              ^^^^^^^^^^^^^^^^^^
+   |
+   = help: add `.context("description")` before `?` to provide error context
+
+warning: 2 warnings emitted
+
