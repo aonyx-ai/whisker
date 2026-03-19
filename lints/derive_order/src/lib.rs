@@ -7,7 +7,7 @@ extern crate rustc_span;
 use clippy_utils::diagnostics::span_lint_and_then;
 use rustc_ast::token::TokenKind;
 use rustc_ast::tokenstream::TokenTree;
-use rustc_ast::{AttrArgs, AttrKind, Attribute, Item};
+use rustc_ast::{AttrArgs, AttrItemKind, AttrKind, Attribute, Item};
 use rustc_lint::{EarlyContext, EarlyLintPass};
 use rustc_span::Span;
 
@@ -81,7 +81,7 @@ fn extract_derive_names(attrs: &[Attribute]) -> Option<(Vec<String>, Span)> {
         if !has_derive {
             continue;
         }
-        let AttrArgs::Delimited(delim_args) = &normal_attr.item.args else {
+        let AttrItemKind::Unparsed(AttrArgs::Delimited(delim_args)) = &normal_attr.item.args else {
             continue;
         };
 

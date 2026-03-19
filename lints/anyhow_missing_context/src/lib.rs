@@ -117,7 +117,12 @@ fn returns_anyhow_error(cx: &LateContext<'_>) -> bool {
     let owner_id = cx
         .tcx
         .hir_enclosing_body_owner(cx.last_node_with_lint_attrs);
-    let fn_sig = cx.tcx.fn_sig(owner_id).skip_binder().skip_binder();
+    let owner_ty = cx.tcx.type_of(owner_id).skip_binder();
+    let fn_sig = match owner_ty.kind() {
+        ty::FnDef(..) => cx.tcx.fn_sig(owner_id).skip_binder().skip_binder(),
+        ty::Closure(_, args) => args.as_closure().sig().skip_binder(),
+        _ => return false,
+    };
     let ret_ty = fn_sig.output();
 
     let ty::Adt(adt_def, substs) = ret_ty.kind() else {

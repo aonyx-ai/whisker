@@ -1,0 +1,45 @@
+---
+name: Sync rust-toolchain
+
+"on":
+  pull_request:
+    paths:
+      - Cargo.toml
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync nightly with clippy_utils
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'renovate[bot]'
+
+    permissions:
+      contents: write # Required to push the updated rust-toolchain.toml
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # 6.0.2
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+
+      - name: Sync rust-toolchain.toml
+        run: .github/scripts/sync-toolchain.sh
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet rust-toolchain.toml; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add rust-toolchain.toml
+          git commit -m "Sync nightly toolchain with clippy_utils"
+          git push
