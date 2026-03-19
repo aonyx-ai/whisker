@@ -1,5 +1,5 @@
-# This nightly date must match the clippy_utils revision that dylint_linting
-# 5.0.0 was built against. Update both together when upgrading dylint.
+# The nightly channel must match the clippy_utils version: 0.1.XY requires
+# a nightly where `rustc -V` reports 1.XY. clippy_utils is from crates.io.
 [toolchain]
-channel = "nightly-2025-09-18"
+channel = "nightly-2026-03-05"
 components = ["clippy", "llvm-tools-preview", "rustc-dev", "rustfmt"]

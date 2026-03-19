@@ -17,7 +17,7 @@ repository = "https://github.com/aonyx-ai/whisker.git"
 libraries = [{ path = ".", pattern = "lints/*" }]
 
 [workspace.dependencies]
-clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "20ce69b9a63bcd2756cd906fe0964d1e901e042a" }
+clippy_utils = "0.1.96"
 dylint_linting = "5.0.0"
 dylint_testing = "5.0.0"
 whisker_testing = { path = "crates/whisker_testing", version = "=0.1.0" }
