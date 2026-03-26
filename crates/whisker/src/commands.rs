@@ -1,0 +1,3 @@
+mod check;
+
+clawless::commands!();
