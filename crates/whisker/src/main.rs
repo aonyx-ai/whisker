@@ -1,6 +1,7 @@
 #![feature(rustc_private)]
 
 mod driver;
+pub(crate) mod toolchain;
 
 // r[impl driver.mode-detection]
 fn main() {
