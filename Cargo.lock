@@ -1380,10 +1380,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "whisker"
-version = "0.1.0"
-
-[[package]]
 name = "whisker_testing"
 version = "0.1.0"
 dependencies = [

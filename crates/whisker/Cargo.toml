@@ -1,6 +1,30 @@
+[workspace]
+
 [package]
 name = "whisker"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/aonyx-ai/whisker.git"
 publish = false
+
+[[bin]]
+name = "whisker"
+path = "src/main.rs"
+
+[dependencies]
+# Lint crates linked directly into the driver binary
+anyhow_missing_context = { path = "../../lints/anyhow_missing_context" }
+bool_param = { path = "../../lints/bool_param" }
+derive_order = { path = "../../lints/derive_order" }
+if_let_with_else = { path = "../../lints/if_let_with_else" }
+no_matches_macro = { path = "../../lints/no_matches_macro" }
+wildcard_match_arm = { path = "../../lints/wildcard_match_arm" }
+
+# The `constituent` feature suppresses `#[no_mangle]` on the lint crates'
+# `register_lints` functions, avoiding symbol conflicts when linking multiple
+# lint libraries into a single binary.
+dylint_linting = { version = "5.0.0", features = ["constituent"] }
+
+[package.metadata.rust-analyzer]
+rustc_private = true

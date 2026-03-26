@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/*", "lints/*"]
-exclude = ["examples/*"]
+exclude = ["examples/*", "crates/whisker"]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
 # https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
