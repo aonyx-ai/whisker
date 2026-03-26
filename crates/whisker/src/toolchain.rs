@@ -64,6 +64,7 @@ fn is_installed(toolchain: &str, rustup_output: &str) -> bool {
 mod tests {
     use super::*;
 
+    // r[verify cli.toolchain.skip-installed]
     #[test]
     fn is_installed_with_exact_match() {
         let output =
@@ -80,6 +81,7 @@ mod tests {
         assert!(is_installed("nightly-2026-03-05", output));
     }
 
+    // r[verify cli.toolchain.auto-install]
     #[test]
     fn is_installed_with_no_match() {
         let output =

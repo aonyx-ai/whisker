@@ -9,6 +9,8 @@ fn sample_project_manifest() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/sample_project/Cargo.toml")
 }
 
+// r[verify cli.check]
+// r[verify cli.check.manifest-path]
 #[test]
 fn check_runs_lints_on_sample_project() {
     let output = Command::new(whisker_bin())
@@ -24,6 +26,7 @@ fn check_runs_lints_on_sample_project() {
     );
 }
 
+// r[verify cli.check.extra-args]
 #[test]
 fn check_forwards_extra_args() {
     let output = Command::new(whisker_bin())

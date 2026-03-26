@@ -34,6 +34,7 @@ fn run_driver(fixture_name: &str) -> std::process::Output {
         .expect("failed to run whisker driver")
 }
 
+// r[verify driver.register-lints]
 #[test]
 fn driver_fires_whisker_lints() {
     let output = run_driver("wildcard_match.rs");
@@ -45,6 +46,7 @@ fn driver_fires_whisker_lints() {
     );
 }
 
+// r[verify driver.preserve-existing-lints]
 #[test]
 fn driver_preserves_builtin_lints() {
     let output = run_driver("wildcard_match_with_dead_code.rs");
@@ -60,6 +62,7 @@ fn driver_preserves_builtin_lints() {
     );
 }
 
+// r[verify driver.mode-detection]
 #[test]
 fn mode_detection_without_env_var() {
     let output = Command::new(whisker_bin())
