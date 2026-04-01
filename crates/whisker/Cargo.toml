@@ -13,6 +13,8 @@ name = "whisker"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = "1"
+
 # Lint crates linked directly into the driver binary
 anyhow_missing_context = { path = "../../lints/anyhow_missing_context" }
 bool_param = { path = "../../lints/bool_param" }

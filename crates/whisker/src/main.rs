@@ -2,6 +2,7 @@
 
 mod driver;
 mod mode;
+pub(crate) mod toolchain;
 
 use mode::Mode;
 

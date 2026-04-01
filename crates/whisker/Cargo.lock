@@ -535,6 +535,7 @@ dependencies = [
 name = "whisker"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "anyhow_missing_context",
  "assert_cmd",
  "bool_param",
