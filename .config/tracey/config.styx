@@ -10,6 +10,16 @@ specs (
         )
     }
     {
+        name whisker
+        include (specs/whisker.md)
+        impls (
+            {
+                name rust
+                include (crates/whisker/**/*.rs)
+            }
+        )
+    }
+    {
         name whisker_testing
         include (specs/whisker_testing.md)
         impls (
