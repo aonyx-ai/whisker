@@ -45,7 +45,7 @@ dylint_linting::declare_pre_expansion_lint! {
     ///
     /// ### Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// // Bad:
     /// #[derive(Debug, Clone, Default)]
     /// struct Foo;

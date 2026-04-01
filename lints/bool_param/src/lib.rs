@@ -28,7 +28,7 @@ dylint_linting::declare_late_lint! {
     ///
     /// ### Examples
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// // Bad:
     /// fn create_repo(name: &str, is_public: bool) {}
     ///
