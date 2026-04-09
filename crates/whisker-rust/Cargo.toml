@@ -7,9 +7,15 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-whisker-types.workspace = true
+ra_ap_hir.workspace = true
+ra_ap_ide_db.workspace = true
+ra_ap_load-cargo.workspace = true
+ra_ap_project_model.workspace = true
+ra_ap_syntax.workspace = true
+ra_ap_vfs.workspace = true
 tree-sitter.workspace = true
 tree-sitter-rust.workspace = true
+whisker-types.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
