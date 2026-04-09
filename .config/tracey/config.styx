@@ -1,11 +1,91 @@
 specs (
     {
-        name lints
-        include (specs/lints.md)
+        name core
+        include (specs/core.md)
         impls (
             {
                 name rust
-                include (lints/**/*.rs)
+                include (crates/whisker-core/**/*.rs)
+            }
+        )
+    }
+    {
+        name macros
+        include (specs/macros.md)
+        impls (
+            {
+                name rust
+                include (crates/whisker-macros/**/*.rs)
+            }
+        )
+    }
+    {
+        name language_sdk
+        include (specs/language_sdk.md)
+        impls (
+            {
+                name rust
+                include (crates/whisker-rust/**/*.rs)
+            }
+        )
+    }
+    {
+        name lint_wildcard_match_arm
+        include (specs/lint_wildcard_match_arm.md)
+        impls (
+            {
+                name rust
+                include (lints/wildcard_match_arm/**/*.rs)
+            }
+        )
+    }
+    {
+        name lint_anyhow_missing_context
+        include (specs/lint_anyhow_missing_context.md)
+        impls (
+            {
+                name rust
+                include (lints/anyhow_missing_context/**/*.rs)
+            }
+        )
+    }
+    {
+        name lint_no_matches_macro
+        include (specs/lint_no_matches_macro.md)
+        impls (
+            {
+                name rust
+                include (lints/no_matches_macro/**/*.rs)
+            }
+        )
+    }
+    {
+        name lint_bool_param
+        include (specs/lint_bool_param.md)
+        impls (
+            {
+                name rust
+                include (lints/bool_param/**/*.rs)
+            }
+        )
+    }
+    {
+        name lint_derive_order
+        include (specs/lint_derive_order.md)
+        impls (
+            {
+                name rust
+                include (lints/derive_order/**/*.rs)
+            }
+        )
+    }
+    {
+        name lint_if_let_with_else
+        include (specs/lint_if_let_with_else.md)
+        impls (
+            {
+                name rust
+                include (lints/if_let_with_else/**/*.rs)
             }
         )
     }
@@ -15,17 +95,20 @@ specs (
         impls (
             {
                 name rust
-                include (crates/whisker/**/*.rs)
+                include (
+                    crates/whisker/**/*.rs
+                    crates/whisker-reporting/**/*.rs
+                )
             }
         )
     }
     {
-        name whisker_testing
-        include (specs/whisker_testing.md)
+        name whisker-testing
+        include (specs/whisker-testing.md)
         impls (
             {
                 name rust
-                include (crates/whisker_testing/**/*.rs)
+                include (crates/whisker-testing/**/*.rs)
             }
         )
     }
