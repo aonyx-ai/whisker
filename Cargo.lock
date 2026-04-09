@@ -1564,6 +1564,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "whisker-codegen"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "whisker-core"
 version = "0.1.0"
 dependencies = [
