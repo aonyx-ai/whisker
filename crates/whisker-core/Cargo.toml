@@ -1,0 +1,18 @@
+[package]
+name = "whisker-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+tree-sitter.workspace = true
+whisker-types.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+tree-sitter-rust.workspace = true
+
+[lints]
+workspace = true
