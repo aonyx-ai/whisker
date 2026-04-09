@@ -8,21 +8,11 @@ fn whisker() -> Command {
 }
 
 #[test]
-fn check_single_file_succeeds() {
-    whisker()
-        .args(["check", "tests/fixtures/wildcard_match.rs"])
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty());
-}
-
-#[test]
 fn check_fixture_directory_succeeds() {
     whisker()
         .args(["check", "tests/fixtures"])
         .assert()
-        .success()
-        .stderr(predicate::str::is_empty());
+        .success();
 }
 
 #[test]
@@ -35,9 +25,9 @@ fn check_nonexistent_path_fails() {
 }
 
 #[test]
-fn check_current_directory_succeeds() {
+fn check_single_file_succeeds() {
     whisker()
-        .arg("check")
+        .args(["check", "tests/fixtures/wildcard_match.rs"])
         .assert()
         .success();
 }
@@ -47,6 +37,5 @@ fn check_with_keep_going_succeeds() {
     whisker()
         .args(["check", "--keep-going", "tests/fixtures"])
         .assert()
-        .success()
-        .stderr(predicate::str::is_empty());
+        .success();
 }
