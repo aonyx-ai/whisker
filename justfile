@@ -58,7 +58,6 @@ lint-markdown:
 # Lint Rust files
 lint-rust:
     cargo clippy --all-targets --all-features -- -D warnings
-    DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all
 
 # Lint TOML files
 lint-toml:
