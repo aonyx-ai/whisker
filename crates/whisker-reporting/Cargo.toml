@@ -1,0 +1,17 @@
+[package]
+name = "whisker-reporting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+codespan-reporting.workspace = true
+whisker-types.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
