@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use anyhow::Context as _;
-use ra_ap_hir::{Adt, HasAttrs, HirDisplay, Semantics};
+use ra_ap_hir::{Adt, HasAttrs, HirDisplay, Semantics, attach_db};
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_load_cargo::{LoadCargoConfig, ProcMacroServerChoice};
 use ra_ap_project_model::CargoConfig;
@@ -44,7 +44,10 @@ impl RustDecorationProvider {
     /// Cargo.toml, dependency resolution failure, etc.).
     // r[impl sdk.provider.scope]
     pub fn load(workspace_root: &Path) -> anyhow::Result<Self> {
-        let cargo_config = CargoConfig::default();
+        let cargo_config = CargoConfig {
+            sysroot: Some(ra_ap_project_model::RustLibSource::Discover),
+            ..CargoConfig::default()
+        };
         let load_config = LoadCargoConfig {
             load_out_dirs_from_check: true,
             with_proc_macro_server: ProcMacroServerChoice::None,
@@ -103,56 +106,80 @@ impl DecorationProvider for RustDecorationProvider {
             .lock()
             .map_err(|e| anyhow::anyhow!("database lock poisoned: {e}"))?;
 
-        let sema = Semantics::new(&*db);
-        let source_file = sema.parse_guess_edition(file_id);
-        let syntax = source_file.syntax().clone();
-
-        let ctx = DecorateCtx {
-            sema: &sema,
-            syntax: &syntax,
-        };
-
         let mut targets = Vec::new();
         collect_targets(&tree.root_node(), &mut targets);
 
-        for target in &targets {
-            match target {
-                Target::Function {
-                    node_id,
-                    start_byte,
-                } => {
-                    decorate_function(tree, &ctx, *node_id, *start_byte);
+        let results: Vec<Decoration> = attach_db(&*db, || {
+            let sema = Semantics::new(&*db);
+            let source_file = sema.parse_guess_edition(file_id);
+            let syntax = source_file.syntax().clone();
+
+            let ctx = DecorateCtx {
+                sema: &sema,
+                syntax: &syntax,
+            };
+
+            let mut decorations = Vec::new();
+            for target in &targets {
+                match target {
+                    Target::Function {
+                        node_id,
+                        start_byte,
+                    } => {
+                        if let Some(sig) = resolve_function(&ctx, *start_byte) {
+                            decorations.push(Decoration::FnSig(*node_id, sig));
+                        }
+                    }
+                    Target::MatchScrutinee {
+                        scrutinee_start_byte,
+                        scrutinee_node_id,
+                    } => {
+                        if let Some((ty, flags)) =
+                            resolve_match_scrutinee(&ctx, *scrutinee_start_byte)
+                        {
+                            decorations.push(Decoration::Type(*scrutinee_node_id, ty));
+                            if let Some(f) = flags {
+                                decorations.push(Decoration::Adt(*scrutinee_node_id, f));
+                            }
+                        }
+                    }
+                    Target::IfElse {
+                        else_start_byte,
+                        else_node_id,
+                    } => {
+                        if let Some(ty) = resolve_expr_type(&ctx, *else_start_byte) {
+                            decorations.push(Decoration::Type(*else_node_id, ty));
+                        }
+                    }
+                    Target::TryExpr {
+                        operand_start_byte,
+                        operand_node_id,
+                    } => {
+                        if let Some(ty) = resolve_expr_type(&ctx, *operand_start_byte) {
+                            decorations.push(Decoration::Type(*operand_node_id, ty));
+                        }
+                    }
                 }
-                Target::MatchScrutinee {
-                    start_byte,
-                    scrutinee_start_byte,
-                    scrutinee_node_id,
-                } => {
-                    decorate_match_scrutinee(
-                        tree,
-                        &ctx,
-                        *start_byte,
-                        *scrutinee_start_byte,
-                        *scrutinee_node_id,
-                    );
-                }
-                Target::IfElse {
-                    else_start_byte,
-                    else_node_id,
-                } => {
-                    decorate_if_else(tree, &ctx, *else_start_byte, *else_node_id);
-                }
-                Target::TryExpr {
-                    operand_start_byte,
-                    operand_node_id,
-                } => {
-                    decorate_try_expr(tree, &ctx, *operand_start_byte, *operand_node_id);
-                }
+            }
+            decorations
+        });
+
+        for decoration in results {
+            match decoration {
+                Decoration::Type(id, ty) => tree.decorations_mut().insert(id, ty),
+                Decoration::Adt(id, flags) => tree.decorations_mut().insert(id, flags),
+                Decoration::FnSig(id, sig) => tree.decorations_mut().insert(id, sig),
             }
         }
 
         Ok(())
     }
+}
+
+enum Decoration {
+    Type(usize, ResolvedType),
+    Adt(usize, AdtFlags),
+    FnSig(usize, FnSignature),
 }
 
 enum Target {
@@ -161,7 +188,6 @@ enum Target {
         start_byte: usize,
     },
     MatchScrutinee {
-        start_byte: usize,
         scrutinee_start_byte: usize,
         scrutinee_node_id: usize,
     },
@@ -186,7 +212,6 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
         "match_expression" => {
             if let Some(scrutinee) = node.child_by_field_name("value") {
                 targets.push(Target::MatchScrutinee {
-                    start_byte: node.raw().start_byte(),
                     scrutinee_start_byte: scrutinee.raw().start_byte(),
                     scrutinee_node_id: scrutinee.id(),
                 });
@@ -194,8 +219,9 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
         }
         "if_expression" => {
             if let Some(alt) = node.child_by_field_name("alternative") {
+                let block = alt.named_child(0).unwrap_or(alt.clone());
                 targets.push(Target::IfElse {
-                    else_start_byte: alt.raw().start_byte(),
+                    else_start_byte: block.raw().start_byte(),
                     else_node_id: alt.id(),
                 });
             }
@@ -249,17 +275,9 @@ fn find_expr_at(ctx: &DecorateCtx<'_>, offset: ra_ap_syntax::TextSize) -> Option
         .and_then(|t| t.parent_ancestors().find_map(ast::Expr::cast))
 }
 
-fn decorate_function(
-    tree: &mut DecoratedTree,
-    ctx: &DecorateCtx<'_>,
-    node_id: usize,
-    start_byte: usize,
-) {
+fn resolve_function(ctx: &DecorateCtx<'_>, start_byte: usize) -> Option<FnSignature> {
     let offset = ra_ap_syntax::TextSize::from(start_byte as u32);
-
-    let Some(func) = find_enclosing_fn(ctx, offset) else {
-        return;
-    };
+    let func = find_enclosing_fn(ctx, offset)?;
 
     let ret_type = func.ret_type(ctx.sema.db);
     let display = ctx.display_type(&ret_type, &func);
@@ -276,26 +294,16 @@ fn decorate_function(
         None
     };
 
-    let sig = FnSignature::new(Some(resolved), error_type_name);
-    tree.decorations_mut().insert(node_id, sig);
+    Some(FnSignature::new(Some(resolved), error_type_name))
 }
 
-fn decorate_match_scrutinee(
-    tree: &mut DecoratedTree,
+fn resolve_match_scrutinee(
     ctx: &DecorateCtx<'_>,
-    _match_start_byte: usize,
     scrutinee_start_byte: usize,
-    scrutinee_id: usize,
-) {
+) -> Option<(ResolvedType, Option<AdtFlags>)> {
     let offset = ra_ap_syntax::TextSize::from(scrutinee_start_byte as u32);
-
-    let Some(expr_node) = find_expr_at(ctx, offset) else {
-        return;
-    };
-
-    let Some(ty_info) = ctx.sema.type_of_expr(&expr_node) else {
-        return;
-    };
+    let expr_node = find_expr_at(ctx, offset)?;
+    let ty_info = ctx.sema.type_of_expr(&expr_node)?;
 
     let ty = ty_info.original;
     let is_enum = ty.as_adt().is_some_and(|adt| matches!(adt, Adt::Enum(_)));
@@ -307,60 +315,26 @@ fn decorate_match_scrutinee(
     };
 
     let resolved = ResolvedType::new(display).with_enum(is_enum);
-    tree.decorations_mut().insert(scrutinee_id, resolved);
 
-    if let Some(Adt::Enum(e)) = ty.as_adt() {
+    let flags = if let Some(Adt::Enum(e)) = ty.as_adt() {
         let krate = e.module(ctx.sema.db).krate(ctx.sema.db);
         let local_krate = func.map(|f| f.module(ctx.sema.db).krate(ctx.sema.db));
         let is_external = local_krate.is_some_and(|lk| lk != krate);
-
         let has_non_exhaustive = e.attrs(ctx.sema.db).is_non_exhaustive();
+        Some(AdtFlags::new(has_non_exhaustive && is_external))
+    } else {
+        None
+    };
 
-        let flags = AdtFlags::new(has_non_exhaustive && is_external);
-        tree.decorations_mut().insert(scrutinee_id, flags);
-    }
+    Some((resolved, flags))
 }
 
-fn decorate_if_else(
-    tree: &mut DecoratedTree,
-    ctx: &DecorateCtx<'_>,
-    else_start_byte: usize,
-    else_node_id: usize,
-) {
-    let offset = ra_ap_syntax::TextSize::from(else_start_byte as u32);
-
-    let Some(expr) = find_expr_at(ctx, offset) else {
-        return;
-    };
-
-    let Some(ty_info) = ctx.sema.type_of_expr(&expr) else {
-        return;
-    };
+fn resolve_expr_type(ctx: &DecorateCtx<'_>, start_byte: usize) -> Option<ResolvedType> {
+    let offset = ra_ap_syntax::TextSize::from(start_byte as u32);
+    let expr = find_expr_at(ctx, offset)?;
+    let ty_info = ctx.sema.type_of_expr(&expr)?;
 
     let ty = ty_info.original;
-    let resolved = ResolvedType::new(String::new()).with_never(ty.is_never());
-
-    tree.decorations_mut().insert(else_node_id, resolved);
-}
-
-fn decorate_try_expr(
-    tree: &mut DecoratedTree,
-    ctx: &DecorateCtx<'_>,
-    operand_start_byte: usize,
-    operand_node_id: usize,
-) {
-    let offset = ra_ap_syntax::TextSize::from(operand_start_byte as u32);
-
-    let Some(expr) = find_expr_at(ctx, offset) else {
-        return;
-    };
-
-    let Some(ty_info) = ctx.sema.type_of_expr(&expr) else {
-        return;
-    };
-
-    let ty = ty_info.original;
-
     let func = find_enclosing_fn(ctx, offset);
     let display = match &func {
         Some(f) => ctx.display_type(&ty, f),
@@ -369,12 +343,14 @@ fn decorate_try_expr(
 
     let is_result = display.starts_with("Result<") || display.contains("::Result<");
     let is_option = display.starts_with("Option<") || display.contains("::Option<");
+    let is_never = ty.is_never();
 
-    let resolved = ResolvedType::new(display)
-        .with_result(is_result)
-        .with_option(is_option);
-
-    tree.decorations_mut().insert(operand_node_id, resolved);
+    Some(
+        ResolvedType::new(display)
+            .with_result(is_result)
+            .with_option(is_option)
+            .with_never(is_never),
+    )
 }
 
 fn extract_result_error_type(display: &str) -> Option<String> {
