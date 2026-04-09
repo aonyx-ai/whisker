@@ -1,94 +1,229 @@
-#![feature(rustc_private)]
-#![warn(unused_extern_crates)]
+use whisker_rust::RustLintPass;
+use whisker_rust::decorations::{AdtFlags, ResolvedType};
+use whisker_types::{DecoratedNode, Diagnostic, RuleId, Severity};
 
-extern crate rustc_hir;
-extern crate rustc_middle;
+/// Flags wildcard (`_`) patterns in match arms when the scrutinee is an enum
+///
+/// Wildcard arms hide missing cases when new variants are added to an
+/// enum. Explicit matching forces you to handle each variant
+/// deliberately. The lint allows wildcards on non-enum types and on
+/// external `#[non_exhaustive]` enums where a wildcard is required.
+pub struct WildcardMatchArm;
 
-use clippy_utils::diagnostics::span_lint_and_help;
-use rustc_hir::{Arm, Expr, ExprKind, MatchSource, PatKind};
-use rustc_lint::{LateContext, LateLintPass};
-use rustc_middle::ty;
-
-// r[impl lint.wildcard-match-arm.level]
-dylint_linting::declare_late_lint! {
-    /// ### What it does
-    ///
-    /// Flags wildcard (`_`) patterns in match arms when the scrutinee is an
-    /// enum type.
-    ///
-    /// ### Why is this bad?
-    ///
-    /// Wildcard arms hide missing cases when new variants are added to an
-    /// enum. Explicit matching forces you to handle each variant
-    /// deliberately.
-    ///
-    /// ### Known problems
-    ///
-    /// None.
-    ///
-    /// ### Examples
-    ///
-    /// ```rust
-    /// # enum Status { Active, Inactive, Pending }
-    /// # let status = Status::Active;
-    /// // Bad:
-    /// match status {
-    ///     Status::Active => {},
-    ///     _ => {},
-    /// }
-    ///
-    /// // Good:
-    /// match status {
-    ///     Status::Active => {},
-    ///     Status::Inactive => {},
-    ///     Status::Pending => {},
-    /// }
-    /// ```
-    pub WILDCARD_MATCH_ARM,
-    Warn,
-    "wildcard match arms hide unhandled variants"
-}
-
-impl<'tcx> LateLintPass<'tcx> for WildcardMatchArm {
-    fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) {
-        // r[impl lint.wildcard-match-arm.detect]
-        let ExprKind::Match(scrutinee, arms, MatchSource::Normal) = expr.kind else {
-            return;
+impl RustLintPass for WildcardMatchArm {
+    // r[impl lint.wildcard-match-arm.detect]
+    fn check_match_expression(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+        let Some(scrutinee) = node.child_by_field_name("value") else {
+            return Vec::new();
         };
-
-        let scrutinee_ty = cx.typeck_results().expr_ty(scrutinee);
 
         // r[impl lint.wildcard-match-arm.non-enum-types]
-        let ty::Adt(adt_def, _) = scrutinee_ty.kind() else {
-            return;
+        let Some(resolved) = scrutinee.decoration::<ResolvedType>() else {
+            return Vec::new();
         };
-        if !adt_def.is_enum() {
-            return;
+        if !resolved.is_enum() {
+            return Vec::new();
         }
 
         // r[impl lint.wildcard-match-arm.non-exhaustive-external]
         // r[impl lint.wildcard-match-arm.non-exhaustive-local]
-        if adt_def.variant_list_has_applicable_non_exhaustive() {
-            return;
+        if let Some(flags) = scrutinee.decoration::<AdtFlags>()
+            && flags.non_exhaustive_external()
+        {
+            return Vec::new();
         }
 
-        for Arm { pat, .. } in arms {
-            if let PatKind::Wild = pat.kind {
+        let Some(body) = node.child_by_field_name("body") else {
+            return Vec::new();
+        };
+
+        let mut diagnostics = Vec::new();
+
+        for arm in body.named_children() {
+            if arm.kind() != "match_arm" {
+                continue;
+            }
+            let Some(pattern) = arm.child_by_field_name("pattern") else {
+                continue;
+            };
+            if is_wildcard_pattern(&pattern) {
                 // r[impl lint.wildcard-match-arm.message]
-                span_lint_and_help(
-                    cx,
-                    WILDCARD_MATCH_ARM,
-                    pat.span,
-                    "wildcard match arm hides unhandled variants",
-                    None,
-                    "match each variant explicitly instead of using `_`",
-                );
+                diagnostics.push(Diagnostic::new(
+                    RuleId("lint.wildcard-match-arm"),
+                    Severity::Warn,
+                    "wildcard match arm hides unhandled variants".into(),
+                    pattern.span(),
+                ));
             }
         }
+
+        diagnostics
     }
 }
 
-#[test]
-fn ui() {
-    whisker_testing::ui_test(env!("CARGO_PKG_NAME"), "ui");
+/// Returns whether a match pattern node represents a wildcard `_`
+///
+/// Inspects all children (including anonymous nodes) of the
+/// `match_pattern` node for a `_` token, which tree-sitter-rust
+/// emits as an anonymous node.
+fn is_wildcard_pattern(match_pattern: &DecoratedNode<'_>) -> bool {
+    for i in 0..match_pattern.child_count() as u32 {
+        let Some(child) = match_pattern.child(i) else {
+            continue;
+        };
+        if !child.is_named() && child.text() == "_" {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use whisker_rust::RustLintPassAdapter;
+    use whisker_testing::{assert_diagnostic, assert_no_diagnostics, decorate, execute, parse};
+    use whisker_types::{DecorationMap, Language, LintPass, Severity};
+
+    use super::*;
+
+    fn passes() -> Vec<Box<dyn LintPass>> {
+        vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))]
+    }
+
+    fn find_scrutinee_id(tree: &whisker_types::DecoratedTree) -> usize {
+        fn walk(node: &DecoratedNode<'_>) -> Option<usize> {
+            if node.kind() == "match_expression" {
+                return node.child_by_field_name("value").map(|n| n.id());
+            }
+            for child in node.named_children() {
+                if let Some(id) = walk(&child) {
+                    return Some(id);
+                }
+            }
+            None
+        }
+        walk(&tree.root_node()).expect("source should contain a match expression")
+    }
+
+    #[test]
+    fn detect_with_enum_scrutinee_flags_wildcard() {
+        let source = "fn f() { match x { A => {} _ => {} } }";
+        let mut tree = parse(source, Language::Rust);
+        let scrutinee_id = find_scrutinee_id(&tree);
+        let mut map = DecorationMap::new();
+        map.insert(
+            scrutinee_id,
+            ResolvedType::new("MyEnum".into()).with_enum(true),
+        );
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_diagnostic(&diagnostics[0])
+            .has_rule_id("lint.wildcard-match-arm")
+            .has_severity(Severity::Warn)
+            .message_contains("wildcard");
+    }
+
+    #[test]
+    fn detect_without_decoration_does_nothing() {
+        let source = "fn f() { match x { A => {} _ => {} } }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn non_enum_type_is_not_flagged() {
+        let source = "fn f() { match x { 0 => {} _ => {} } }";
+        let mut tree = parse(source, Language::Rust);
+        let scrutinee_id = find_scrutinee_id(&tree);
+        let mut map = DecorationMap::new();
+        map.insert(
+            scrutinee_id,
+            ResolvedType::new("i32".into()).with_enum(false),
+        );
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn non_exhaustive_external_enum_is_not_flagged() {
+        let source = "fn f() { match x { A => {} _ => {} } }";
+        let mut tree = parse(source, Language::Rust);
+        let scrutinee_id = find_scrutinee_id(&tree);
+        let mut map = DecorationMap::new();
+        map.insert(
+            scrutinee_id,
+            ResolvedType::new("ExternalEnum".into()).with_enum(true),
+        );
+        map.insert(scrutinee_id, AdtFlags::new(true));
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn non_exhaustive_local_enum_is_flagged() {
+        let source = "fn f() { match x { A => {} _ => {} } }";
+        let mut tree = parse(source, Language::Rust);
+        let scrutinee_id = find_scrutinee_id(&tree);
+        let mut map = DecorationMap::new();
+        map.insert(
+            scrutinee_id,
+            ResolvedType::new("LocalEnum".into()).with_enum(true),
+        );
+        map.insert(scrutinee_id, AdtFlags::new(false));
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_diagnostic(&diagnostics[0])
+            .has_rule_id("lint.wildcard-match-arm")
+            .has_severity(Severity::Warn);
+    }
+
+    #[test]
+    fn no_wildcard_arm_is_not_flagged() {
+        let source = "fn f() { match x { A => {} B => {} } }";
+        let mut tree = parse(source, Language::Rust);
+        let scrutinee_id = find_scrutinee_id(&tree);
+        let mut map = DecorationMap::new();
+        map.insert(
+            scrutinee_id,
+            ResolvedType::new("MyEnum".into()).with_enum(true),
+        );
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<WildcardMatchArm>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<WildcardMatchArm>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<WildcardMatchArm>();
+    }
 }

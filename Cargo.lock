@@ -24,6 +24,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "anyhow_missing_context"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -70,6 +79,15 @@ name = "bitflags"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
+
+[[package]]
+name = "bool_param"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
+]
 
 [[package]]
 name = "borsh"
@@ -267,6 +285,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "derive_order"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
 ]
 
 [[package]]
@@ -471,6 +498,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 
 [[package]]
+name = "if_let_with_else"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -650,6 +686,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "536bfad37a309d62069485248eeaba1e8d9853aaf951caaeaed0585a95346f08"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "no_matches_macro"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
 ]
 
 [[package]]
@@ -2369,6 +2414,15 @@ dependencies = [
  "proptest",
  "tree-sitter",
  "tree-sitter-rust",
+]
+
+[[package]]
+name = "wildcard_match_arm"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
 ]
 
 [[package]]

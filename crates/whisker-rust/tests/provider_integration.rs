@@ -29,12 +29,11 @@ fn parse_and_decorate_fixture(provider: &RustDecorationProvider) -> DecoratedTre
 
 fn find_function_by_name<'a>(root: &DecoratedNode<'a>, name: &str) -> Option<DecoratedNode<'a>> {
     for child in root.named_children() {
-        if child.kind() == "function_item" {
-            if let Some(name_node) = child.child_by_field_name("name") {
-                if name_node.text() == name {
-                    return Some(child);
-                }
-            }
+        if child.kind() == "function_item"
+            && let Some(name_node) = child.child_by_field_name("name")
+            && name_node.text() == name
+        {
+            return Some(child);
         }
         if let Some(found) = find_function_by_name(&child, name) {
             return Some(found);
