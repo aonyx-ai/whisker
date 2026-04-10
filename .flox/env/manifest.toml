@@ -55,9 +55,6 @@ fi
 # Rustup handles this idempotently — it's a no-op if already installed.
 rustup show > /dev/null 2>&1
 
-# Install dylint tools needed for building and testing lint libraries.
-cargo install --quiet cargo-dylint dylint-link 2> /dev/null
-
 # Install Tracey for spec coverage tracking.
 cargo binstall --no-confirm --quiet tracey 2> /dev/null
 '''

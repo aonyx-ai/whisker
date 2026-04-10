@@ -30,10 +30,6 @@ check-tracey:
 check-dependencies:
     cargo deny check bans licenses sources
 
-# Check that the pinned nightly matches the clippy_utils version
-check-toolchain:
-    .github/scripts/sync-toolchain.sh --check
-
 # Format JSON files
 format-json fix="false": (prettier fix "{json,json5}")
 
