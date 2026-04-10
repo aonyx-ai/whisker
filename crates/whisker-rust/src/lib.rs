@@ -1,7 +1,9 @@
 mod adapter;
+mod decorations;
 mod provider;
 
 pub use adapter::RustLintPassAdapter;
+pub use decorations::{AdtFlags, FnSignature, ResolvedType};
 pub use provider::RustDecorationProvider;
 
 include!(concat!(env!("OUT_DIR"), "/rust_lint_pass.rs"));
