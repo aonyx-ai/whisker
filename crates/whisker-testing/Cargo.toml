@@ -1,0 +1,19 @@
+[package]
+name = "whisker-testing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+tree-sitter.workspace = true
+tree-sitter-rust.workspace = true
+whisker-core.workspace = true
+whisker-types.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+whisker-rust.workspace = true
+
+[lints]
+workspace = true
