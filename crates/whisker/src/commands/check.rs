@@ -45,7 +45,8 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     let mut pipeline =
         Pipeline::new(&whisker_rust::language()).context("failed to initialize pipeline")?;
 
-    let provider = RustDecorationProvider;
+    let provider = RustDecorationProvider::load(&path)
+        .context("failed to load the target project for analysis")?;
     let providers: Vec<&dyn DecorationProvider> = vec![&provider];
 
     let mut all_diagnostics = Vec::new();

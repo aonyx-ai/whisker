@@ -1,9 +1,8 @@
 mod adapter;
-mod decorations;
+pub mod decorations;
 mod provider;
 
 pub use adapter::RustLintPassAdapter;
-pub use decorations::{AdtFlags, FnSignature, ResolvedType};
 pub use provider::RustDecorationProvider;
 
 include!(concat!(env!("OUT_DIR"), "/rust_lint_pass.rs"));
@@ -66,14 +65,14 @@ mod tests {
 
     #[test]
     fn provider_decorate_succeeds_on_empty_tree() {
-        let provider = RustDecorationProvider;
+        let provider = RustDecorationProvider::empty();
         let mut tree = parse_rust("");
         provider.decorate(&mut tree).expect("should succeed");
     }
 
     #[test]
     fn provider_decorate_does_not_add_decorations() {
-        let provider = RustDecorationProvider;
+        let provider = RustDecorationProvider::empty();
         let mut tree = parse_rust("fn main() {}");
         provider.decorate(&mut tree).expect("should succeed");
 
