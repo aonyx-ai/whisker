@@ -1,115 +1,181 @@
-#![feature(rustc_private)]
-#![warn(unused_extern_crates)]
+use whisker_rust::{RustLintPass, RustLintPassAdapter};
+use whisker_types::{DecoratedNode, Diagnostic, LintPass, RuleId, Severity};
 
-extern crate rustc_hir;
-extern crate rustc_span;
+const RULE_ID: RuleId = RuleId("lint.bool-param");
 
-use clippy_utils::diagnostics::span_lint_and_help;
-use rustc_hir::{FnDecl, Item, ItemKind, PrimTy, QPath, Ty, TyKind, intravisit::FnKind};
-use rustc_lint::{LateContext, LateLintPass};
-use rustc_span::Span;
+/// Flags `bool` parameters in function signatures and `bool` fields in
+/// struct definitions
+///
+/// Boolean parameters and fields obscure intent at call sites and in data
+/// models. An enum with meaningful variant names makes the code
+/// self-documenting and prevents accidental transposition of arguments.
+pub struct BoolParam;
 
-// r[impl lint.bool-param.level]
-dylint_linting::declare_late_lint! {
-    /// ### What it does
+impl BoolParam {
+    /// Creates a boxed [`LintPass`] suitable for the whisker pipeline
     ///
-    /// Flags `bool` parameters in function signatures and `bool` fields in
-    /// struct definitions.
+    /// # Examples
     ///
-    /// ### Why is this bad?
-    ///
-    /// Boolean parameters and fields obscure intent at call sites and in data
-    /// models. An enum with meaningful variant names makes the code
-    /// self-documenting and prevents accidental transposition of arguments.
-    ///
-    /// ### Known problems
-    ///
-    /// None.
-    ///
-    /// ### Examples
-    ///
-    /// ```rust,ignore
-    /// // Bad:
-    /// fn create_repo(name: &str, is_public: bool) {}
-    ///
-    /// struct Config {
-    ///     verbose: bool,
-    /// }
-    ///
-    /// // Good:
-    /// enum Visibility { Public, Private }
-    /// fn create_repo(name: &str, visibility: Visibility) {}
-    ///
-    /// enum Verbosity { Quiet, Verbose }
-    /// struct Config {
-    ///     verbosity: Verbosity,
-    /// }
+    /// ```ignore
+    /// let pass = BoolParam::into_lint_pass();
     /// ```
-    pub BOOL_PARAM,
-    Warn,
-    "bool parameters and fields obscure intent; use an enum with meaningful variants"
+    pub fn into_lint_pass() -> Box<dyn LintPass> {
+        Box::new(RustLintPassAdapter::new(Self))
+    }
 }
 
-fn is_bool_ty(ty: &Ty<'_>) -> bool {
-    let TyKind::Path(QPath::Resolved(None, path)) = ty.kind else {
-        return false;
-    };
-    path.res == rustc_hir::def::Res::PrimTy(PrimTy::Bool)
+/// Returns whether the given node is a `primitive_type` with text `"bool"`
+fn is_bool_type(node: &DecoratedNode<'_>) -> bool {
+    node.kind() == "primitive_type" && node.text() == "bool"
 }
 
-impl<'tcx> LateLintPass<'tcx> for BoolParam {
+impl RustLintPass for BoolParam {
     // r[impl lint.bool-param.detect-fn]
-    fn check_fn(
-        &mut self,
-        cx: &LateContext<'tcx>,
-        kind: FnKind<'tcx>,
-        decl: &'tcx FnDecl<'tcx>,
-        _body: &'tcx rustc_hir::Body<'tcx>,
-        _span: Span,
-        _def_id: rustc_hir::def_id::LocalDefId,
-    ) {
-        let (FnKind::ItemFn(..) | FnKind::Method(..)) = kind else {
-            return;
+    fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+        let Some(parameters) = node.child_by_field_name("parameters") else {
+            return Vec::new();
         };
 
-        for input in decl.inputs {
-            if is_bool_ty(input) {
+        let mut diagnostics = Vec::new();
+        for param in parameters.named_children() {
+            if param.kind() != "parameter" {
+                continue;
+            }
+            let Some(ty) = param.child_by_field_name("type") else {
+                continue;
+            };
+            if is_bool_type(&ty) {
                 // r[impl lint.bool-param.message]
-                span_lint_and_help(
-                    cx,
-                    BOOL_PARAM,
-                    input.span,
-                    "parameter has type `bool`",
-                    None,
-                    "use an enum with meaningful variants instead of `bool`",
-                );
+                diagnostics.push(Diagnostic::new(
+                    RULE_ID,
+                    Severity::Warn,
+                    "parameter has type `bool`; use an enum with meaningful variants".into(),
+                    ty.span(),
+                ));
             }
         }
+        diagnostics
     }
 
     // r[impl lint.bool-param.detect-struct]
-    fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx Item<'tcx>) {
-        let ItemKind::Struct(_, _, variant_data) = &item.kind else {
-            return;
+    fn check_struct_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+        let Some(body) = node.child_by_field_name("body") else {
+            return Vec::new();
         };
 
-        for field in variant_data.fields() {
-            if is_bool_ty(field.ty) {
+        let mut diagnostics = Vec::new();
+        for child in body.named_children() {
+            let ty = match child.kind() {
+                "field_declaration" => child.child_by_field_name("type"),
+                _ => None,
+            };
+            let Some(ty) = ty else {
+                continue;
+            };
+            if is_bool_type(&ty) {
                 // r[impl lint.bool-param.message]
-                span_lint_and_help(
-                    cx,
-                    BOOL_PARAM,
-                    field.ty.span,
-                    "struct field has type `bool`",
-                    None,
-                    "use an enum with meaningful variants instead of `bool`",
-                );
+                diagnostics.push(Diagnostic::new(
+                    RULE_ID,
+                    Severity::Warn,
+                    "struct field has type `bool`; use an enum with meaningful variants".into(),
+                    ty.span(),
+                ));
             }
         }
+        diagnostics
     }
 }
 
-#[test]
-fn ui() {
-    whisker_testing::ui_test(env!("CARGO_PKG_NAME"), "ui");
+#[cfg(test)]
+mod tests {
+    use whisker_testing::{assert_diagnostic, assert_no_diagnostics, execute, parse};
+    use whisker_types::{Language, LintPass, Severity};
+
+    use super::*;
+
+    fn adapt() -> Box<dyn LintPass> {
+        BoolParam::into_lint_pass()
+    }
+
+    fn run(source: &str) -> Vec<Diagnostic> {
+        let tree = parse(source, Language::Rust);
+        let mut passes = vec![adapt()];
+        execute(&tree, &mut passes)
+    }
+
+    #[test]
+    fn bool_local_variable_not_flagged() {
+        let diagnostics = run("fn foo() { let x: bool = true; }");
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn bool_param_in_function_flagged() {
+        let diagnostics = run("fn foo(x: bool) {}");
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_diagnostic(&diagnostics[0])
+            .has_rule_id("lint.bool-param")
+            .has_severity(Severity::Warn)
+            .message_contains("parameter has type `bool`");
+    }
+
+    #[test]
+    fn bool_return_type_not_flagged() {
+        let diagnostics = run("fn foo() -> bool { true }");
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn bool_struct_field_flagged() {
+        let diagnostics = run("struct Config { verbose: bool }");
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_diagnostic(&diagnostics[0])
+            .has_rule_id("lint.bool-param")
+            .has_severity(Severity::Warn)
+            .message_contains("struct field has type `bool`");
+    }
+
+    #[test]
+    fn multiple_bool_params_each_flagged() {
+        let diagnostics = run("fn foo(a: bool, b: bool) {}");
+
+        assert_eq!(diagnostics.len(), 2);
+        assert_diagnostic(&diagnostics[0])
+            .has_rule_id("lint.bool-param")
+            .has_severity(Severity::Warn)
+            .message_contains("parameter has type `bool`");
+        assert_diagnostic(&diagnostics[1])
+            .has_rule_id("lint.bool-param")
+            .has_severity(Severity::Warn)
+            .message_contains("parameter has type `bool`");
+    }
+
+    #[test]
+    fn non_bool_param_not_flagged() {
+        let diagnostics = run("fn foo(x: i32, y: String) {}");
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<BoolParam>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<BoolParam>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<BoolParam>();
+    }
 }
