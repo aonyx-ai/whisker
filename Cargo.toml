@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "lints/bool_param", "lints/derive_order"]
+members = ["crates/*", "lints/bool_param", "lints/derive_order", "lints/if_let_with_else"]
 exclude = ["examples/*", "crates/whisker", "lints/*"]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
