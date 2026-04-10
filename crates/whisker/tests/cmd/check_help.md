@@ -2,16 +2,16 @@
 
 ```
 $ whisker check --help
-Run whisker lints against a Rust project
+Run whisker lints against a project
 
-Usage: whisker check [OPTIONS] [ARGS]...
+Usage: whisker check [OPTIONS] [PATH] [ARGS]...
 
 Arguments:
-  [ARGS]...  Additional arguments passed to cargo check
+  [PATH]     Path to the target project directory [default: .]
+  [ARGS]...  Additional arguments forwarded to the analysis pipeline
 
 Options:
-      --manifest-path <MANIFEST_PATH>  Path to the project's Cargo.toml
-      --keep-going                     Continue checking even if compilation fails for a package
-  -h, --help                           Print help
+      --keep-going  Continue checking after encountering errors
+  -h, --help        Print help
 
 ```

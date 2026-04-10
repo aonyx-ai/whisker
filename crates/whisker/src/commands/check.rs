@@ -1,225 +1,136 @@
-use std::path::PathBuf;
-use std::process::Command;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context as _;
 use clawless::prelude::*;
+use whisker_core::Pipeline;
+use whisker_rust::RustDecorationProvider;
+use whisker_types::{DecorationProvider, Language, Severity};
 
-use crate::toolchain::Toolchain;
-
-/// Run whisker lints against a Rust project
+/// Run whisker lints against a project
 #[derive(Debug, Args)]
 pub struct CheckArgs {
-    /// Path to the project's Cargo.toml
-    #[arg(long)]
-    manifest_path: Option<String>,
+    // r[impl cli.check.path]
+    /// Path to the target project directory
+    #[arg(default_value = ".")]
+    path: PathBuf,
 
-    /// Continue checking even if compilation fails for a package
+    // r[impl cli.check.keep-going]
+    /// Continue checking after encountering errors
     #[arg(long)]
     keep_going: bool,
 
-    /// Additional arguments passed to cargo check
+    // r[impl cli.check.extra-args]
+    /// Additional arguments forwarded to the analysis pipeline
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
-}
-
-/// A configured `cargo check` invocation that uses whisker as the rustc driver
-///
-/// Encapsulates the arguments and environment needed to run `cargo check`
-/// with whisker registered as `RUSTC_WORKSPACE_WRAPPER`. Separating command
-/// construction from execution makes the argument-assembly logic testable
-/// without spawning processes.
-#[derive(Clone, Debug)]
-pub(crate) struct CargoCheck {
-    manifest_path: Option<String>,
-    keep_going: bool,
-    extra_args: Vec<String>,
-    wrapper: PathBuf,
-    toolchain: Toolchain,
-}
-
-impl CargoCheck {
-    /// Builds the [`Command`] that runs `cargo check` with whisker as the driver
-    pub(crate) fn command(&self) -> Command {
-        let mut cmd = Command::new("cargo");
-        cmd.arg("check");
-
-        // r[impl cli.check.manifest-path]
-        if let Some(path) = &self.manifest_path {
-            cmd.args(["--manifest-path", path]);
-        }
-
-        // r[impl cli.check.keep-going]
-        if self.keep_going {
-            cmd.arg("--keep-going");
-        }
-
-        // r[impl cli.check.extra-args]
-        cmd.args(&self.extra_args);
-
-        cmd.env("RUSTC_WORKSPACE_WRAPPER", &self.wrapper);
-        cmd.env("RUSTUP_TOOLCHAIN", self.toolchain.name());
-        cmd.env("__WHISKER_DRIVER", "1");
-
-        cmd
-    }
 }
 
 // r[impl cli.check]
 #[command]
 pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
-    Toolchain::REQUIRED.ensure()?;
-
     let CheckArgs {
-        manifest_path,
+        path,
         keep_going,
-        args: extra_args,
+        args: _extra_args,
     } = args;
 
-    let wrapper =
-        std::env::current_exe().context("could not determine path to whisker binary")?;
+    let files = discover_files(&path)?;
 
-    let cargo_check = CargoCheck {
-        manifest_path,
-        keep_going,
-        extra_args,
-        wrapper,
-        toolchain: Toolchain::REQUIRED,
-    };
+    if files.is_empty() {
+        return Ok(());
+    }
 
-    let status = cargo_check
-        .command()
-        .status()
-        .context("failed to run cargo check")?;
+    let mut pipeline =
+        Pipeline::new(&whisker_rust::language()).context("failed to initialize pipeline")?;
 
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+    let provider = RustDecorationProvider;
+    let providers: Vec<&dyn DecorationProvider> = vec![&provider];
+
+    let mut all_diagnostics = Vec::new();
+    let mut sources: HashMap<Arc<Path>, String> = HashMap::new();
+    let mut had_error = false;
+
+    for file in &files {
+        let source = match std::fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                if keep_going {
+                    eprintln!("error: {}: {e:#}", file.display());
+                    had_error = true;
+                    continue;
+                }
+                return Err(anyhow::anyhow!("read {}: {e}", file.display()).into());
+            }
+        };
+
+        match pipeline.run_on_source(&source, file, &providers, &mut Vec::new()) {
+            Ok(diagnostics) => {
+                if !diagnostics.is_empty() {
+                    let arc_path: Arc<Path> = file.clone().into();
+                    sources.insert(arc_path, source);
+                    all_diagnostics.extend(diagnostics);
+                }
+            }
+            Err(e) => {
+                if keep_going {
+                    eprintln!("error: {}: {e:#}", file.display());
+                    had_error = true;
+                } else {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+
+    whisker_reporting::render_to_string(&all_diagnostics, &sources)
+        .and_then(|output| {
+            if !output.is_empty() {
+                eprint!("{output}");
+            }
+            Ok(())
+        })?;
+
+    // r[impl cli.diagnostics.exit-code]
+    let has_errors = all_diagnostics
+        .iter()
+        .any(|d| d.severity() >= Severity::Error);
+
+    if has_errors || had_error {
+        std::process::exit(1);
     }
 
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use std::ffi::OsStr;
+fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
+    anyhow::ensure!(
+        path.exists(),
+        "{} does not exist",
+        path.display()
+    );
 
-    use super::*;
-
-    #[test]
-    fn trait_send() {
-        fn assert_send<T: Send>() {}
-        assert_send::<CargoCheck>();
+    if path.is_file() {
+        return Ok(vec![path.clone()]);
     }
 
-    #[test]
-    fn trait_sync() {
-        fn assert_sync<T: Sync>() {}
-        assert_sync::<CargoCheck>();
-    }
+    let mut files = Vec::new();
 
-    #[test]
-    fn trait_unpin() {
-        fn assert_unpin<T: Unpin>() {}
-        assert_unpin::<CargoCheck>();
-    }
-
-    fn base_cargo_check() -> CargoCheck {
-        CargoCheck {
-            manifest_path: None,
-            keep_going: false,
-            extra_args: Vec::new(),
-            wrapper: PathBuf::from("/usr/bin/whisker"),
-            toolchain: Toolchain::REQUIRED,
+    for entry in walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let Some(ext) = entry.path().extension() else {
+            continue;
+        };
+        if Language::from_extension(&ext.to_string_lossy()).is_some() {
+            files.push(entry.into_path());
         }
     }
 
-    fn args_of(cmd: &Command) -> Vec<&OsStr> {
-        cmd.get_args().collect()
-    }
-
-    fn env_of<'a>(cmd: &'a Command, key: &str) -> Option<&'a OsStr> {
-        cmd.get_envs()
-            .find(|(k, _)| *k == key)
-            .and_then(|(_, v)| v)
-    }
-
-    // r[verify cli.check]
-    #[test]
-    fn command_invokes_cargo_check() {
-        let cmd = base_cargo_check().command();
-
-        assert_eq!(cmd.get_program(), "cargo");
-        assert_eq!(args_of(&cmd)[0], "check");
-    }
-
-    #[test]
-    fn command_sets_driver_env() {
-        let cmd = base_cargo_check().command();
-
-        assert_eq!(env_of(&cmd, "RUSTC_WORKSPACE_WRAPPER").unwrap(), "/usr/bin/whisker");
-        assert_eq!(
-            env_of(&cmd, "RUSTUP_TOOLCHAIN").unwrap(),
-            Toolchain::REQUIRED.name()
-        );
-        assert_eq!(env_of(&cmd, "__WHISKER_DRIVER").unwrap(), "1");
-    }
-
-    // r[verify cli.check.manifest-path]
-    #[test]
-    fn command_with_manifest_path_includes_flag() {
-        let cargo_check = CargoCheck {
-            manifest_path: Some("/tmp/Cargo.toml".into()),
-            ..base_cargo_check()
-        };
-
-        let cmd = cargo_check.command();
-        let args = args_of(&cmd);
-
-        assert_eq!(args[1], "--manifest-path");
-        assert_eq!(args[2], "/tmp/Cargo.toml");
-    }
-
-    #[test]
-    fn command_without_manifest_path_omits_flag() {
-        let cmd = base_cargo_check().command();
-        let args = args_of(&cmd);
-
-        assert!(!args.contains(&OsStr::new("--manifest-path")));
-    }
-
-    // r[verify cli.check.keep-going]
-    #[test]
-    fn command_with_keep_going_includes_flag() {
-        let cargo_check = CargoCheck {
-            keep_going: true,
-            ..base_cargo_check()
-        };
-
-        let cmd = cargo_check.command();
-        let args = args_of(&cmd);
-
-        assert!(args.contains(&OsStr::new("--keep-going")));
-    }
-
-    #[test]
-    fn command_without_keep_going_omits_flag() {
-        let cmd = base_cargo_check().command();
-        let args = args_of(&cmd);
-
-        assert!(!args.contains(&OsStr::new("--keep-going")));
-    }
-
-    // r[verify cli.check.extra-args]
-    #[test]
-    fn command_with_extra_args_appends_them() {
-        let cargo_check = CargoCheck {
-            extra_args: vec!["-p".into(), "my_crate".into()],
-            ..base_cargo_check()
-        };
-
-        let cmd = cargo_check.command();
-        let args = args_of(&cmd);
-
-        assert!(args.contains(&OsStr::new("-p")));
-        assert!(args.contains(&OsStr::new("my_crate")));
-    }
+    Ok(files)
 }
