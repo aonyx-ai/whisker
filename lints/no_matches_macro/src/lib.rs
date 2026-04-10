@@ -53,7 +53,17 @@ mod tests {
     }
 
     #[test]
-    fn matches_invocation_is_flagged() {
+    fn matches_in_function_argument_is_flagged() {
+        let source = "fn f() { foo(matches!(x, 1)); }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn matches_in_let_binding_is_flagged() {
         let source = "fn f() { let _ = matches!(x, Some(_)); }";
         let tree = parse(source, Language::Rust);
 
@@ -64,6 +74,26 @@ mod tests {
             .has_rule_id("lint.no-matches-macro")
             .has_severity(Severity::Warn)
             .message_contains("match");
+    }
+
+    #[test]
+    fn matches_in_return_position_is_flagged() {
+        let source = "fn f() -> bool { matches!(x, Some(_)) }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn matches_with_multiple_patterns_is_flagged() {
+        let source = "fn f() { let _ = matches!(x, Foo | Bar); }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
     }
 
     #[test]

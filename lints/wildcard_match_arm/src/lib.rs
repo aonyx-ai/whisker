@@ -193,6 +193,16 @@ mod tests {
     }
 
     #[test]
+    fn if_let_does_not_trigger_lint() {
+        let source = "fn f() { if let Some(x) = opt { x } else { 0 } }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
     fn no_wildcard_arm_is_not_flagged() {
         let source = "fn f() { match x { A => {} B => {} } }";
         let mut tree = parse(source, Language::Rust);
