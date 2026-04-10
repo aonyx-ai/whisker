@@ -1,172 +1,135 @@
-#![feature(rustc_private)]
-#![warn(unused_extern_crates)]
+use whisker_rust::RustLintPass;
+use whisker_types::{DecoratedNode, Diagnostic, RuleId, Severity};
 
-extern crate rustc_hir;
+/// Flags uses of the `matches!` macro
+///
+/// The `matches!` macro hides the full match expression, making it easy to
+/// miss unhandled variants when an enum gains new members. A full `match`
+/// expression forces you to consider each variant deliberately.
+pub struct NoMatchesMacro;
 
-use clippy_utils::diagnostics::span_lint_and_help;
-use rustc_hir::{Expr, ExprKind, LetStmt, MatchSource, StmtKind};
-use rustc_lint::{LateContext, LateLintPass};
-
-// r[impl lint.no-matches-macro.level]
-dylint_linting::declare_late_lint! {
-    /// ### What it does
-    ///
-    /// Flags uses of the `matches!` macro.
-    ///
-    /// ### Why is this bad?
-    ///
-    /// The `matches!` macro hides the full match expression, making it easy to
-    /// miss unhandled variants when an enum gains new members. A full `match`
-    /// expression forces you to consider each variant deliberately.
-    ///
-    /// ### Known problems
-    ///
-    /// None.
-    ///
-    /// ### Examples
-    ///
-    /// ```rust
-    /// # enum Status { Active, Inactive, Pending }
-    /// # let status = Status::Active;
-    /// // Bad:
-    /// let is_active = matches!(status, Status::Active);
-    ///
-    /// // Good:
-    /// let is_active = match status {
-    ///     Status::Active => true,
-    ///     Status::Inactive | Status::Pending => false,
-    /// };
-    /// ```
-    pub NO_MATCHES_MACRO,
-    Warn,
-    "uses of `matches!` macro hide unhandled variants"
-}
-
-// r[impl lint.no-matches-macro.detect]
-/// Returns `true` if the given expression is a desugared `matches!` macro
-/// invocation
-fn is_matches_macro(cx: &LateContext<'_>, expr: &Expr<'_>) -> bool {
-    let ExprKind::Match(_, _, MatchSource::Normal) = expr.kind else {
-        return false;
-    };
-    if !expr.span.from_expansion() {
-        return false;
-    }
-    let expn_data = expr.span.ctxt().outer_expn_data();
-    let Some(macro_def_id) = expn_data.macro_def_id else {
-        return false;
-    };
-    cx.tcx.item_name(macro_def_id).as_str() == "matches"
-}
-
-// r[impl lint.no-matches-macro.message]
-fn emit_matches_lint(cx: &LateContext<'_>, expr: &Expr<'_>) {
-    span_lint_and_help(
-        cx,
-        NO_MATCHES_MACRO,
-        expr.span.source_callsite(),
-        "use of `matches!` macro",
-        None,
-        "use a full `match` expression instead",
-    );
-}
-
-fn check_for_matches(cx: &LateContext<'_>, expr: &Expr<'_>) {
-    if is_matches_macro(cx, expr) {
-        emit_matches_lint(cx, expr);
-    }
-}
-
-impl<'tcx> LateLintPass<'tcx> for NoMatchesMacro {
-    fn check_local(&mut self, cx: &LateContext<'tcx>, local: &'tcx LetStmt<'_>) {
-        let Some(init) = local.init else { return };
-        check_for_matches(cx, init);
-    }
-
-    fn check_stmt(&mut self, cx: &LateContext<'tcx>, stmt: &'tcx rustc_hir::Stmt<'_>) {
-        match stmt.kind {
-            StmtKind::Expr(expr) | StmtKind::Semi(expr) => check_for_matches(cx, expr),
-            StmtKind::Let(_) | StmtKind::Item(_) => {}
+impl RustLintPass for NoMatchesMacro {
+    // r[impl lint.no-matches-macro.detect]
+    fn check_macro_invocation(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+        let Some(macro_node) = node.child_by_field_name("macro") else {
+            return Vec::new();
+        };
+        if macro_node.kind() != "identifier" {
+            return Vec::new();
         }
-    }
-
-    fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) {
-        match expr.kind {
-            ExprKind::Call(_, args) => {
-                for arg in args {
-                    check_for_matches(cx, arg);
-                }
-            }
-            ExprKind::MethodCall(_, _, args, _) => {
-                for arg in args {
-                    check_for_matches(cx, arg);
-                }
-            }
-            ExprKind::If(cond, _, _) => check_for_matches(cx, cond),
-            ExprKind::Binary(_, lhs, rhs) => {
-                check_for_matches(cx, lhs);
-                check_for_matches(cx, rhs);
-            }
-            ExprKind::Unary(_, inner)
-            | ExprKind::Field(inner, _)
-            | ExprKind::AddrOf(_, _, inner)
-            | ExprKind::Cast(inner, _)
-            | ExprKind::Type(inner, _)
-            | ExprKind::DropTemps(inner) => check_for_matches(cx, inner),
-            ExprKind::Ret(Some(inner)) | ExprKind::Yield(inner, _) => {
-                check_for_matches(cx, inner);
-            }
-            ExprKind::Array(exprs) | ExprKind::Tup(exprs) => {
-                for e in exprs {
-                    check_for_matches(cx, e);
-                }
-            }
-            ExprKind::Assign(_, rhs, _) | ExprKind::AssignOp(_, _, rhs) => {
-                check_for_matches(cx, rhs);
-            }
-            ExprKind::Block(block, _) => {
-                if let Some(tail) = block.expr {
-                    check_for_matches(cx, tail);
-                }
-            }
-            ExprKind::Match(_, arms, _) => {
-                for arm in arms {
-                    check_for_matches(cx, arm.body);
-                    if let Some(guard) = arm.guard {
-                        check_for_matches(cx, guard);
-                    }
-                }
-            }
-            ExprKind::Index(base, idx, _) => {
-                check_for_matches(cx, base);
-                check_for_matches(cx, idx);
-            }
-            ExprKind::Struct(_, fields, _) => {
-                for field in fields {
-                    check_for_matches(cx, field.expr);
-                }
-            }
-            ExprKind::Repeat(inner, _) => check_for_matches(cx, inner),
-            ExprKind::ConstBlock(_)
-            | ExprKind::Use(_, _)
-            | ExprKind::Lit(_)
-            | ExprKind::Let(_)
-            | ExprKind::Loop(_, _, _, _)
-            | ExprKind::Closure(_)
-            | ExprKind::Path(_)
-            | ExprKind::Break(_, _)
-            | ExprKind::Continue(_)
-            | ExprKind::Ret(None)
-            | ExprKind::Become(_)
-            | ExprKind::InlineAsm(_)
-            | ExprKind::OffsetOf(_, _)
-            | ExprKind::UnsafeBinderCast(_, _, _)
-            | ExprKind::Err(_) => {}
+        if macro_node.text() != "matches" {
+            return Vec::new();
         }
+
+        // r[impl lint.no-matches-macro.message]
+        vec![Diagnostic::new(
+            RuleId("lint.no-matches-macro"),
+            Severity::Warn,
+            "use a full `match` expression instead of `matches!`".into(),
+            node.span(),
+        )]
     }
 }
 
-#[test]
-fn ui() {
-    whisker_testing::ui_test(env!("CARGO_PKG_NAME"), "ui");
+#[cfg(test)]
+mod tests {
+    use whisker_rust::RustLintPassAdapter;
+    use whisker_testing::{assert_diagnostic, assert_no_diagnostics, execute, parse};
+    use whisker_types::{Language, LintPass, Severity};
+
+    use super::*;
+
+    fn passes() -> Vec<Box<dyn LintPass>> {
+        vec![Box::new(RustLintPassAdapter::new(NoMatchesMacro))]
+    }
+
+    #[test]
+    fn assert_is_not_flagged() {
+        let tree = parse("fn f() { assert!(true); }", Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn matches_in_function_argument_is_flagged() {
+        let source = "fn f() { foo(matches!(x, 1)); }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn matches_in_let_binding_is_flagged() {
+        let source = "fn f() { let _ = matches!(x, Some(_)); }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_diagnostic(&diagnostics[0])
+            .has_rule_id("lint.no-matches-macro")
+            .has_severity(Severity::Warn)
+            .message_contains("match");
+    }
+
+    #[test]
+    fn matches_in_return_position_is_flagged() {
+        let source = "fn f() -> bool { matches!(x, Some(_)) }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn matches_with_multiple_patterns_is_flagged() {
+        let source = "fn f() { let _ = matches!(x, Foo | Bar); }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    #[test]
+    fn println_is_not_flagged() {
+        let tree = parse("fn f() { println!(\"hello\"); }", Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn regular_match_expression_is_not_flagged() {
+        let source = "fn f() { match x { 0 => {} _ => {} } }";
+        let tree = parse(source, Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<NoMatchesMacro>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<NoMatchesMacro>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<NoMatchesMacro>();
+    }
 }
