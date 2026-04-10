@@ -81,6 +81,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_order"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
