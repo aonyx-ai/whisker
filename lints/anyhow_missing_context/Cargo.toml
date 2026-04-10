@@ -5,17 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
 [dependencies]
-clippy_utils.workspace = true
-dylint_linting.workspace = true
+whisker-rust = { path = "../../crates/whisker-rust" }
+whisker-types = { path = "../../crates/whisker-types" }
 
 [dev-dependencies]
-anyhow = "1"
-dylint_testing.workspace = true
-whisker_testing.workspace = true
+whisker-testing = { path = "../../crates/whisker-testing" }
 
-[package.metadata.rust-analyzer]
-rustc_private = true
+[lints]
+workspace = true
