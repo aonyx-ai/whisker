@@ -27,7 +27,7 @@ wildcard_match_arm = { path = "../../lints/wildcard_match_arm" }
 # The `constituent` feature suppresses `#[no_mangle]` on the lint crates'
 # `register_lints` functions, avoiding symbol conflicts when linking multiple
 # lint libraries into a single binary.
-dylint_linting = { version = "5.0.0", features = ["constituent"] }
+dylint_linting = { version = "6.0.0", features = ["constituent"] }
 
 [dev-dependencies]
 assert_cmd = "2"
