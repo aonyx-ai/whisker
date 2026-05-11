@@ -18,6 +18,6 @@ libraries = [{ path = ".", pattern = "lints/*" }]
 
 [workspace.dependencies]
 clippy_utils = "0.1.96"
-dylint_linting = "5.0.0"
+dylint_linting = "6.0.0"
 dylint_testing = "5.0.0"
 whisker_testing = { path = "crates/whisker_testing", version = "=0.1.0" }
