@@ -256,6 +256,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dylint"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b795f98802f87352aab60584eea87f942c53ab30edcafab4b31a6cbdd9e8a3ac"
+dependencies = [
+ "anstyle",
+ "anyhow",
+ "cargo_metadata",
+ "dylint_internal 6.0.0",
+ "log",
+ "once_cell",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "dylint_internal"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -283,11 +301,16 @@ version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a03ff51e671fceef87e50fef97ddc1569241af242d76e0b367dfcc812c860eb0"
 dependencies = [
+ "anstyle",
  "anyhow",
+ "bitflags",
  "cargo_metadata",
+ "git2",
+ "home",
  "log",
  "regex",
  "serde",
+ "tar",
  "thiserror 2.0.18",
  "toml 1.1.2+spec-1.1.0",
 ]
@@ -309,15 +332,15 @@ dependencies = [
 
 [[package]]
 name = "dylint_testing"
-version = "5.0.0"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdc27f344ddb5488eb16b6e0f8aec889a30fb7e4d135060d336cfa60d1fd671c"
+checksum = "2eaa3ca6e1f740cd587630c321f61927b4cafdc2abf7c2fbacc3fca8635fcc48"
 dependencies = [
  "anyhow",
  "cargo_metadata",
  "compiletest_rs",
- "dylint",
- "dylint_internal 5.0.0",
+ "dylint 6.0.0",
+ "dylint_internal 6.0.0",
  "env_logger",
  "once_cell",
  "regex",
@@ -1423,7 +1446,7 @@ name = "whisker_testing"
 version = "0.1.0"
 dependencies = [
  "compiletest_rs",
- "dylint",
+ "dylint 5.0.0",
  "dylint_internal 5.0.0",
  "env_logger",
  "once_cell",
