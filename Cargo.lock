@@ -1447,7 +1447,7 @@ version = "0.1.0"
 dependencies = [
  "compiletest_rs",
  "dylint 5.0.0",
- "dylint_internal 5.0.0",
+ "dylint_internal 6.0.0",
  "env_logger",
  "once_cell",
  "serde_json",
