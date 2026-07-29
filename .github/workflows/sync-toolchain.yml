@@ -19,7 +19,7 @@ jobs:
     if: github.event.pull_request.user.login == 'renovate[bot]'
 
     permissions:
-      contents: write # Required to push the updated rust-toolchain.toml
+      contents: write # Required to push the updated toolchain files
 
     steps:
       - name: Checkout code
@@ -33,13 +33,12 @@ jobs:
 
       - name: Commit and push
         run: |
-          if git diff --quiet rust-toolchain.toml; then
+          if git diff --quiet; then
             echo "No changes to commit"
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add rust-toolchain.toml
-          git commit -m "Sync nightly toolchain with clippy_utils"
+          git commit --all -m "Sync nightly toolchain with clippy_utils"
           git push
