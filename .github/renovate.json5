@@ -1,4 +1,35 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["github>aonyx-ai/renovate-config"],
+
+  packageRules: [
+    {
+      // The nightly channel is not ours to choose: it has to be the exact one
+      // clippy_utils was built against, which
+      // `.github/scripts/sync-toolchain.sh` derives from the clippy_utils
+      // version in `Cargo.toml`. Renovate's `rust-toolchain` manager only
+      // knows how to chase the newest nightly, which produces pull requests
+      // that cannot compile.
+      matchManagers: ["rust-toolchain"],
+      enabled: false,
+    },
+    {
+      // Widen clippy_utils updates from lockfile-only to a `Cargo.toml` edit.
+      // The `Sync rust-toolchain` workflow triggers on changes to
+      // `Cargo.toml`, so this is what lets the nightly move together with
+      // clippy_utils in a single pull request.
+      matchManagers: ["cargo"],
+      matchPackageNames: ["clippy_utils"],
+      rangeStrategy: "bump",
+
+      // rustc 1.99 renamed `LintStore::register_late_pass` to
+      // `register_late_lint_pass` and `register_pre_expansion_pass` to
+      // `register_pre_expansion_lint_pass` (rust-lang/rust@cd8d703f).
+      // `dylint_linting` still emits the old names as of 6.0.2, so every lint
+      // in `lints/` fails to compile on nightly-2026-07-09, the nightly that
+      // clippy_utils 0.1.99 requires. Raise this cap once Dylint supports
+      // rustc 1.99.
+      allowedVersions: "<0.1.99",
+    },
+  ],
 }
