@@ -1,5 +1,5 @@
 # The nightly channel must match the clippy_utils version: 0.1.XY requires
 # a nightly where `rustc -V` reports 1.XY. clippy_utils is from crates.io.
 [toolchain]
-channel = "nightly-2026-03-05"
+channel = "nightly-2026-07-29"
 components = ["clippy", "llvm-tools-preview", "rustc-dev", "rustfmt"]
