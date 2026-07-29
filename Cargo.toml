@@ -16,8 +16,14 @@ repository = "https://github.com/aonyx-ai/whisker.git"
 [workspace.metadata.dylint]
 libraries = [{ path = ".", pattern = "lints/*" }]
 
+[workspace.lints.clippy]
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+
 [workspace.dependencies]
 clippy_utils = "0.1.96"
 dylint_linting = "6.0.0"
 dylint_testing = "6.0.0"
 whisker_testing = { path = "crates/whisker_testing", version = "=0.1.0" }
+proptest = "1"
+whisker-types = { path = "crates/whisker-types", version = "=0.1.0" }
