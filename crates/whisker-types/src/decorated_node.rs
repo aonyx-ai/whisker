@@ -2,7 +2,7 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{DecorationMap, Span};
+use crate::{Decoration, DecorationMap, Span};
 
 /// A tree-sitter node enriched with semantic decorations
 ///
@@ -110,6 +110,20 @@ impl<'a> DecoratedNode<'a> {
     /// Retrieves all decorations of type `T` from this node
     pub fn decorations_of_type<T: Any + Send + Sync>(&self) -> Vec<&'a T> {
         self.decorations.get_all::<T>(self.node.id())
+    }
+
+    /// Reads the decoration `D` from this node
+    ///
+    /// The shape of the result comes from `D` itself, not from this call: a
+    /// decoration declared with cardinality `one` yields [`Option`] and one
+    /// declared `many` yields [`Vec`]. Prefer this over [`decoration`] and
+    /// [`decorations_of_type`], which accept any type and so cannot catch a
+    /// rule reading a repeated decoration as though it were singular.
+    ///
+    /// [`decoration`]: DecoratedNode::decoration
+    /// [`decorations_of_type`]: DecoratedNode::decorations_of_type
+    pub fn get<D: Decoration>(&self) -> D::Ref<'a> {
+        D::lookup(self)
     }
 
     /// Returns all named children of this node as a collected vec

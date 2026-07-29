@@ -1,5 +1,6 @@
 mod decorated_node;
 mod decorated_tree;
+mod decoration;
 mod decoration_map;
 mod decoration_provider;
 mod diagnostic;
@@ -13,6 +14,7 @@ mod suggestion;
 
 pub use decorated_node::DecoratedNode;
 pub use decorated_tree::DecoratedTree;
+pub use decoration::Decoration;
 pub use decoration_map::DecorationMap;
 pub use decoration_provider::DecorationProvider;
 pub use diagnostic::Diagnostic;

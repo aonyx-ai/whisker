@@ -28,6 +28,10 @@ whisker_testing = { path = "crates/whisker_testing", version = "=0.1.0" }
 anyhow = "1"
 proptest = "1"
 whisker-types = { path = "crates/whisker-types", version = "=0.1.0" }
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+whisker-macros = { path = "crates/whisker-macros", version = "=0.1.0" }
 tree-sitter = "0.26"
 tree-sitter-rust = "0.24"
 whisker-core = { path = "crates/whisker-core", version = "=0.1.0" }

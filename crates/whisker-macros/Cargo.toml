@@ -1,0 +1,22 @@
+[package]
+name = "whisker-macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true
+
+[dev-dependencies]
+tree-sitter.workspace = true
+tree-sitter-rust.workspace = true
+whisker-types.workspace = true
+
+[lints]
+workspace = true
