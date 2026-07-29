@@ -30,3 +30,4 @@ proptest = "1"
 whisker-types = { path = "crates/whisker-types", version = "=0.1.0" }
 tree-sitter = "0.26"
 tree-sitter-rust = "0.24"
+whisker-core = { path = "crates/whisker-core", version = "=0.1.0" }
