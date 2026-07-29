@@ -25,5 +25,8 @@ clippy_utils = "0.1.96"
 dylint_linting = "6.0.0"
 dylint_testing = "6.0.0"
 whisker_testing = { path = "crates/whisker_testing", version = "=0.1.0" }
+anyhow = "1"
 proptest = "1"
 whisker-types = { path = "crates/whisker-types", version = "=0.1.0" }
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
