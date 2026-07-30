@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 #
 # Syncs every rust-toolchain.toml to the nightly date required by the
-# clippy_utils version in Cargo.toml. The nightly date is extracted from the
+# clippy_utils version in Cargo.lock. The nightly date is extracted from the
 # clippy_utils crate README on crates.io.
+#
+# The version comes from the lockfile rather than Cargo.toml because the
+# manifest holds a range, and the range is not what gets compiled. A caret
+# range of "0.1.98" happily resolves to 0.1.99, which needs a different
+# nightly than the one the manifest implies, so reading the manifest can pin
+# a toolchain that cannot build the code that is actually selected.
 #
 # Usage: sync-toolchain.sh [--check]
 #
@@ -11,17 +17,35 @@
 
 set -euo pipefail
 
-toolchain_files=(rust-toolchain.toml crates/whisker/rust-toolchain.toml)
+# Every toolchain file in the tree, discovered rather than listed, so that
+# adding or removing a crate with its own pinned channel needs no edit here.
+# Read in a loop rather than with `mapfile`, which macOS's bash 3.2 lacks.
+toolchain_files=()
+while IFS= read -r file; do
+  toolchain_files+=("$file")
+done < <(git ls-files '*rust-toolchain.toml')
 
 check_only=false
 if [ "${1:-}" = "--check" ]; then
   check_only=true
 fi
 
-version=$(sed -n 's/^clippy_utils *= *"\([^"]*\)"/\1/p' Cargo.toml)
+version=$(
+  awk '/^name = "clippy_utils"$/ { getline; gsub(/^version = "|"$/, ""); print; exit }' \
+    Cargo.lock
+)
+
+# clippy_utils is what ties this repository to a particular nightly. Once the
+# tree-sitter platform replaces Dylint it stops being a dependency, and with
+# nothing left to pin the toolchain against there is nothing to check.
 if [ -z "$version" ]; then
-  echo "No clippy_utils version found in Cargo.toml" >&2
-  exit 1
+  echo "clippy_utils is not a dependency; nothing to sync"
+  exit 0
+fi
+
+if [ "${#toolchain_files[@]}" -eq 0 ]; then
+  echo "No rust-toolchain.toml found; nothing to sync"
+  exit 0
 fi
 
 nightly=$(
@@ -39,11 +63,6 @@ fi
 out_of_sync=false
 
 for file in "${toolchain_files[@]}"; do
-  if [ ! -f "$file" ]; then
-    echo "$file does not exist; update toolchain_files in $0" >&2
-    exit 1
-  fi
-
   current=$(sed -n 's/^channel *= *"\(nightly-[0-9-]*\)"/\1/p' "$file")
   if [ -z "$current" ]; then
     echo "No nightly channel found in $file" >&2
