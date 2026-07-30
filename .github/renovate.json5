@@ -14,13 +14,16 @@
       enabled: false,
     },
     {
-      // Widen clippy_utils updates from lockfile-only to a `Cargo.toml` edit.
-      // The `Sync rust-toolchain` workflow triggers on changes to
-      // `Cargo.toml`, so this is what lets the nightly move together with
-      // clippy_utils in a single pull request.
+      // Pin clippy_utils to an exact version. This serves two purposes.
+      // Editing `Cargo.toml` is what triggers the `Sync rust-toolchain`
+      // workflow, so the nightly moves with clippy_utils in one pull request.
+      // Pinning rather than widening the range then keeps the lockfile on the
+      // version we asked for: a caret range of "0.1.98" also admits 0.1.99,
+      // and resolving to it would need a nightly that the manifest, and so
+      // the synced toolchain, knows nothing about.
       matchManagers: ["cargo"],
       matchPackageNames: ["clippy_utils"],
-      rangeStrategy: "bump",
+      rangeStrategy: "pin",
 
       // rustc 1.99 renamed `LintStore::register_late_pass` to
       // `register_late_lint_pass` and `register_pre_expansion_pass` to
