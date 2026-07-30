@@ -1575,6 +1575,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "whisker-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "tree-sitter",
+ "tree-sitter-rust",
+ "whisker-types",
+]
+
+[[package]]
 name = "whisker-reporting"
 version = "0.1.0"
 dependencies = [
