@@ -1,11 +1,14 @@
 # Whisker
 
-Whisker is a collection of custom [Dylint][dylint] lints that enforce Aonyx's
-Rust coding conventions. These lints catch patterns that Clippy doesn't cover,
-like derive ordering, wildcard match arms, `matches!` macro usage, and other
-style rules defined in our `CLAUDE.md` files.
+Whisker is a language-agnostic linting platform built on [tree-sitter][ts].
+It ships with Rust lints that enforce Aonyx's coding conventions — patterns
+that Clippy doesn't cover, like derive ordering, wildcard match arms,
+`matches!` macro usage, and other style rules defined in our `CLAUDE.md`
+files.
 
-Each lint is a separate `cdylib` crate in the `lints/` directory.
+Each lint is a separate crate in the `lints/` directory, implementing the
+`RustLintPass` trait generated from tree-sitter's Rust grammar. Type-dependent
+lints use [rust-analyzer][ra] as a library for semantic analysis.
 
 ## Status
 
@@ -13,25 +16,8 @@ Whisker is in early development. Check back soon.
 
 ## Usage
 
-Install Dylint and the Whisker lints:
-
 ```bash
-cargo install cargo-dylint dylint-link
-```
-
-Add Whisker to your workspace `Cargo.toml`:
-
-```toml
-[workspace.metadata.dylint]
-libraries = [
-    { git = "https://github.com/aonyx-ai/whisker", pattern = "lints/*" },
-]
-```
-
-Run the lints:
-
-```bash
-cargo dylint --all
+whisker check .
 ```
 
 ## License
@@ -51,4 +37,5 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
-[dylint]: https://github.com/trailofbits/dylint
+[ra]: https://rust-analyzer.github.io/
+[ts]: https://tree-sitter.github.io/tree-sitter/
