@@ -5,8 +5,8 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
-use whisker_rust::RustDecorationProvider;
-use whisker_types::{DecorationProvider, Language, Severity};
+use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
+use whisker_types::{DecorationProvider, Language, LintPass, Severity};
 
 /// Run whisker lints against a project
 #[derive(Debug, Args)]
@@ -25,6 +25,26 @@ pub struct CheckArgs {
     /// Additional arguments forwarded to the analysis pipeline
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
+}
+
+/// Builds the lint passes the CLI runs
+///
+/// Every rule ships as its own crate and is linked in here. A rule that is
+/// not in this list does not run, however complete its own tests are.
+// r[impl cli.check.passes]
+fn create_lint_passes() -> Vec<Box<dyn LintPass>> {
+    vec![
+        Box::new(RustLintPassAdapter::new(
+            anyhow_missing_context::AnyhowMissingContext,
+        )),
+        Box::new(RustLintPassAdapter::new(bool_param::BoolParam)),
+        Box::new(RustLintPassAdapter::new(derive_order::DeriveOrder)),
+        Box::new(RustLintPassAdapter::new(if_let_with_else::IfLetWithElse)),
+        Box::new(RustLintPassAdapter::new(no_matches_macro::NoMatchesMacro)),
+        Box::new(RustLintPassAdapter::new(
+            wildcard_match_arm::WildcardMatchArm,
+        )),
+    ]
 }
 
 // r[impl cli.check]
@@ -66,7 +86,9 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
             }
         };
 
-        match pipeline.run_on_source(&source, file, &providers, &mut Vec::new()) {
+        let mut passes = create_lint_passes();
+
+        match pipeline.run_on_source(&source, file, &providers, &mut passes) {
             Ok(diagnostics) => {
                 if !diagnostics.is_empty() {
                     let arc_path: Arc<Path> = file.clone().into();
@@ -85,13 +107,12 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         }
     }
 
-    whisker_reporting::render_to_string(&all_diagnostics, &sources)
-        .and_then(|output| {
-            if !output.is_empty() {
-                eprint!("{output}");
-            }
-            Ok(())
-        })?;
+    whisker_reporting::render_to_string(&all_diagnostics, &sources).and_then(|output| {
+        if !output.is_empty() {
+            eprint!("{output}");
+        }
+        Ok(())
+    })?;
 
     // r[impl cli.diagnostics.exit-code]
     let has_errors = all_diagnostics
@@ -106,11 +127,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 }
 
 fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
-    anyhow::ensure!(
-        path.exists(),
-        "{} does not exist",
-        path.display()
-    );
+    anyhow::ensure!(path.exists(), "{} does not exist", path.display());
 
     if path.is_file() {
         return Ok(vec![path.clone()]);
