@@ -36,10 +36,7 @@ fn check_nonexistent_path_fails() {
 
 #[test]
 fn check_current_directory_succeeds() {
-    whisker()
-        .arg("check")
-        .assert()
-        .success();
+    whisker().arg("check").assert().success();
 }
 
 #[test]

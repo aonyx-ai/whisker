@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "whisker"
 version = "0.1.0"

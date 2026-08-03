@@ -82,7 +82,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
                     had_error = true;
                     continue;
                 }
-                return Err(anyhow::anyhow!("read {}: {e}", file.display()).into());
+                return Err(anyhow::anyhow!("read {}: {e}", file.display()));
             }
         };
 
@@ -101,18 +101,16 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
                     eprintln!("error: {}: {e:#}", file.display());
                     had_error = true;
                 } else {
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         }
     }
 
-    whisker_reporting::render_to_string(&all_diagnostics, &sources).and_then(|output| {
-        if !output.is_empty() {
-            eprint!("{output}");
-        }
-        Ok(())
-    })?;
+    let output = whisker_reporting::render_to_string(&all_diagnostics, &sources)?;
+    if !output.is_empty() {
+        eprint!("{output}");
+    }
 
     // r[impl cli.diagnostics.exit-code]
     let has_errors = all_diagnostics
