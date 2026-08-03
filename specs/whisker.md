@@ -15,6 +15,12 @@ r[cli.check.keep-going]
 The `whisker check` command must accept a `--keep-going` flag that is
 forwarded to `cargo check`.
 
+r[cli.check.deny-warnings]
+The `whisker check` command must accept a `--deny-warnings` flag that makes
+warning diagnostics fail the run. Warnings must then be reported as errors
+and must produce a non-zero exit code, while `help` and `info` diagnostics
+must never fail the run.
+
 r[cli.check.extra-args]
 The `whisker check` command must forward trailing arguments to
 `cargo check`.
