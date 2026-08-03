@@ -20,7 +20,6 @@ use whisker_types::{Diagnostic, Severity};
 ///
 /// Returns an error if a source file cannot be read or if writing to
 /// stderr fails.
-// r[impl reporting.output]
 pub fn render(diagnostics: &[Diagnostic]) -> anyhow::Result<()> {
     if diagnostics.is_empty() {
         return Ok(());
@@ -71,7 +70,6 @@ fn to_codespan(
         );
     }
 
-    // r[impl reporting.origins]
     for origin in diag.origins() {
         if let Some(&file_id) = file_ids.get(origin.span().file()) {
             labels.push(
@@ -84,7 +82,6 @@ fn to_codespan(
         }
     }
 
-    // r[impl reporting.related]
     for related in diag.related() {
         if let Some(&file_id) = file_ids.get(related.span().file()) {
             labels.push(
@@ -99,7 +96,6 @@ fn to_codespan(
 
     let mut notes = Vec::new();
 
-    // r[impl reporting.suggestions]
     for suggestion in diag.suggestions() {
         notes.push(format!(
             "{}: replace with `{}`",

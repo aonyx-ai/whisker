@@ -9,7 +9,6 @@ use whisker_types::{DecoratedNode, Diagnostic, RuleId, Severity};
 pub struct NoMatchesMacro;
 
 impl RustLintPass for NoMatchesMacro {
-    // r[impl lint.no-matches-macro.detect]
     fn check_macro_invocation(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(macro_node) = node.child_by_field_name("macro") else {
             return Vec::new();
@@ -21,7 +20,6 @@ impl RustLintPass for NoMatchesMacro {
             return Vec::new();
         }
 
-        // r[impl lint.no-matches-macro.message]
         vec![Diagnostic::new(
             RuleId("lint.no-matches-macro"),
             Severity::Warn,

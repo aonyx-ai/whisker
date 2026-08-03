@@ -30,7 +30,6 @@ fn is_bool_type(node: &DecoratedNode<'_>) -> bool {
 }
 
 impl RustLintPass for BoolParam {
-    // r[impl lint.bool-param.detect-fn]
     fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(parameters) = node.child_by_field_name("parameters") else {
             return Vec::new();
@@ -45,7 +44,6 @@ impl RustLintPass for BoolParam {
                 continue;
             };
             if is_bool_type(&ty) {
-                // r[impl lint.bool-param.message]
                 diagnostics.push(Diagnostic::new(
                     RULE_ID,
                     Severity::Warn,
@@ -57,7 +55,6 @@ impl RustLintPass for BoolParam {
         diagnostics
     }
 
-    // r[impl lint.bool-param.detect-struct]
     fn check_struct_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(body) = node.child_by_field_name("body") else {
             return Vec::new();
@@ -73,7 +70,6 @@ impl RustLintPass for BoolParam {
                 continue;
             };
             if is_bool_type(&ty) {
-                // r[impl lint.bool-param.message]
                 diagnostics.push(Diagnostic::new(
                     RULE_ID,
                     Severity::Warn,

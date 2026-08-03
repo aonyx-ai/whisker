@@ -46,7 +46,6 @@ struct SubtypeRef {
 /// assert!(code.contains("trait RustLintPass"));
 /// assert!(code.contains("fn check_source_file"));
 /// ```
-// r[impl macros.visitor.input]
 pub fn generate_visitor(
     node_types_json: &str,
     language: &str,
@@ -68,7 +67,6 @@ pub fn generate_visitor(
 
     output.push_str("use whisker_types::{DecoratedNode, Diagnostic};\n\n");
 
-    // r[impl macros.visitor.output]
     output.push_str(&format!(
         "/// Trait for {language} lint rules\n\
          ///\n\
@@ -78,10 +76,8 @@ pub fn generate_visitor(
          pub trait {trait_name} {{\n"
     ));
 
-    // r[impl macros.visitor.node-kind]
     for node in &concrete_nodes {
         let method = method_name(&node.kind);
-        // r[impl macros.visitor.default-impl]
         output.push_str(&format!(
             "    /// Checks a `{}` node\n\
              \x20   fn {method}(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {{\n\
@@ -91,7 +87,6 @@ pub fn generate_visitor(
         ));
     }
 
-    // r[impl macros.visitor.supertype]
     for supertype in &supertypes {
         let method = method_name(&supertype.kind);
         output.push_str(&format!(
@@ -105,7 +100,6 @@ pub fn generate_visitor(
 
     output.push_str("}\n\n");
 
-    // r[impl macros.visitor.dispatch]
     output.push_str(&format!(
         "/// Dispatches a node to the appropriate method on the lint pass\n\
          ///\n\

@@ -1,6 +1,6 @@
 # whisker --help
 
-```
+```console
 $ whisker --help
 
 Usage: whisker [COMMAND]

@@ -4,7 +4,6 @@ use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, LintPass};
 ///
 /// Performs a depth-first traversal of all named nodes, calling each lint
 /// pass for every node visited.
-// r[impl core.tree-walker]
 pub fn walk(tree: &DecoratedTree, passes: &mut [Box<dyn LintPass>]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
     visit_node(&tree.root_node(), passes, &mut diagnostics);

@@ -1,6 +1,6 @@
 # whisker check --help
 
-```
+```console
 $ whisker check --help
 Run whisker lints against a project
 

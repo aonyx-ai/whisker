@@ -26,7 +26,6 @@ use crate::decorations::{AdtFlags, FnSignature, ResolvedType};
 /// let provider = RustDecorationProvider::load(Path::new("."))?;
 /// provider.decorate(&mut tree)?;
 /// ```
-// r[impl sdk.provider.toolchain-connection]
 pub struct RustDecorationProvider {
     db: Mutex<RootDatabase>,
     vfs: Vfs,
@@ -42,7 +41,6 @@ impl RustDecorationProvider {
     ///
     /// Returns an error if the workspace cannot be loaded (missing
     /// Cargo.toml, dependency resolution failure, etc.).
-    // r[impl sdk.provider.scope]
     pub fn load(workspace_root: &Path) -> anyhow::Result<Self> {
         let cargo_config = CargoConfig {
             sysroot: Some(ra_ap_project_model::RustLibSource::Discover),
@@ -85,7 +83,6 @@ impl RustDecorationProvider {
     }
 }
 
-// r[impl sdk.provider.translation]
 impl DecorationProvider for RustDecorationProvider {
     /// Attaches type decorations to the tree's nodes
     ///

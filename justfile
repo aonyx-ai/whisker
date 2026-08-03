@@ -16,15 +16,9 @@ pre-commit-inner:
     just lint-rust
     just lint-yaml
     just test-rust
-    just check-tracey
-    just pre-commit-tracey
 
 pre-commit:
     just pre-commit-inner
-
-# Check Tracey spec coverage for validation errors
-check-tracey:
-    tracey query validate
 
 # Check that dependencies have compatible open-source licenses and trusted sources
 check-dependencies:
@@ -53,7 +47,7 @@ lint-github-actions:
 
 # Lint Markdown files
 lint-markdown:
-    markdownlint --ignore-path .gitignore **/*.md
+    markdownlint --ignore-path .gitignore "**/*.md"
 
 # Lint Rust files
 lint-rust:
@@ -71,10 +65,6 @@ lint-yaml:
 [private]
 prettier fix="false" extension="*":
     prettier {{ if fix == "true" { "--write" } else { "--list-different" } }} --ignore-unknown "**/*.{{ extension }}"
-
-# Check staged spec files for requirement changes without version bumps
-pre-commit-tracey:
-    tracey pre-commit
 
 # Run the tests
 test-rust:

@@ -1,6 +1,5 @@
 mod commands;
 
-// r[impl cli.version]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cancellation = clawless::cancellation::Cancellation::new();
     let context = clawless::context::Context::try_new(cancellation.clone())?;
