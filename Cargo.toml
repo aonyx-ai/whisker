@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/*"]
-exclude = ["examples/*", "crates/whisker", "lints/*"]
+members = ["crates/*", "lints/*"]
+exclude = ["examples/*", "crates/whisker"]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
 # https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
@@ -21,6 +21,12 @@ missing_panics_doc = "warn"
 anyhow = "1"
 codespan-reporting = "0.13"
 proptest = "1"
+ra_ap_hir = "0.0.327"
+ra_ap_ide_db = "0.0.327"
+ra_ap_load-cargo = "0.0.327"
+ra_ap_project_model = "0.0.327"
+ra_ap_syntax = "0.0.327"
+ra_ap_vfs = "0.0.327"
 proc-macro2 = "1"
 quote = "1"
 serde = { version = "1", features = ["derive"] }
