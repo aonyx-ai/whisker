@@ -28,6 +28,50 @@ The `whisker check` command must forward trailing arguments to
 r[cli.version]
 The `whisker --version` command must print the whisker version.
 
+## File discovery
+
+r[cli.discovery.ignore-files]
+When the target path is a directory, `whisker check` must skip files
+excluded by `.gitignore`, `.ignore`, `.git/info/exclude`, and the user's
+global gitignore, as well as hidden files and directories. These files must
+be honored whether or not the target is inside a git repository.
+
+r[cli.discovery.explicit-target]
+The target path itself must be checked even when an ignore rule would
+exclude it, and the rule that excluded it must not be reapplied to what is
+found inside it. Rules matching something further down still apply. A target
+that names a file whisker has no grammar for is an error rather than a file
+that is reported as clean without having been understood.
+
+r[cli.discovery.walk-errors]
+When a directory entry or an ignore file cannot be read, `whisker check`
+must report the failure and continue if `--keep-going` is set, and must fail
+otherwise.
+
+r[cli.discovery.empty]
+When discovery yields no files, `whisker check` must report that it analyzed
+nothing and exit with a non-zero status rather than reporting success.
+
+## Configuration
+
+r[cli.config.workspace-metadata]
+Whisker must read its configuration from the `[workspace.metadata.whisker]`
+table of the target project's Cargo workspace manifest. A target outside a
+Cargo workspace, or a workspace manifest without that table, uses the
+default configuration.
+
+r[cli.config.unknown-keys]
+Whisker must reject a configuration table containing a key it does not
+recognize rather than ignoring the key.
+
+r[cli.config.ignore]
+The configuration must accept an `ignore` key holding a list of
+gitignore-syntax patterns whose matches are excluded from file discovery.
+The patterns must behave as they would in a `.gitignore` written at the
+workspace root: one containing an interior slash names a path relative to
+that root, one without matches at any depth beneath it, and a leading slash
+anchors a pattern that would otherwise match at any depth.
+
 ## Toolchain management
 
 r[cli.toolchain.auto-install]

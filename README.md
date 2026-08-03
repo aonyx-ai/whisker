@@ -20,6 +20,37 @@ Whisker is in early development. Check back soon.
 whisker check .
 ```
 
+Whisker walks the target directory the way `git` and `ripgrep` do: anything
+excluded by `.gitignore`, `.ignore`, `.git/info/exclude`, or your global
+gitignore is skipped, as are hidden files and directories. Those files are
+honored even outside a git checkout, since a `.gitignore` in an exported or
+vendored tree still describes what that tree generates. A path named directly
+on the command line is always checked, even if a rule would have excluded it,
+and so is everything inside it unless a rule names something further down.
+
+A run that finds nothing to check is an error rather than a success, because
+a linter reporting no problems having opened no files is indistinguishable
+from a clean project and far more likely to mean a pattern went too wide.
+
+### Configuration
+
+Whisker reads its configuration from the `[workspace.metadata.whisker]` table
+of the target project's Cargo workspace manifest:
+
+```toml
+[workspace.metadata.whisker]
+ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
+```
+
+`ignore` holds gitignore-syntax patterns, which is the right place for test
+fixtures, vendored sources, and anything else that is deliberately not
+idiomatic. The patterns behave exactly as they would in a `.gitignore` written
+at the workspace root: `crates/app/generated/` names one directory relative to
+that root, a bare `examples/` matches a directory of that name at any depth
+beneath it, and `/examples/` anchors it to the root. Whisker rejects keys it
+does not recognize, so a typo is an error rather than a setting that quietly
+does nothing.
+
 ## License
 
 Licensed under either of

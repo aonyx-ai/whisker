@@ -1,4 +1,6 @@
 mod commands;
+mod config;
+mod discovery;
 
 // r[impl cli.version]
 fn main() -> Result<(), Box<dyn std::error::Error>> {

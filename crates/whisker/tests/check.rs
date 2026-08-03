@@ -2,32 +2,91 @@ use std::process::Command;
 
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use tempfile::TempDir;
+
+/// Source that trips none of the lints the CLI runs
+const CLEAN_SOURCE: &str = "pub fn answer() -> u32 {\n    42\n}\n";
+
+/// A manifest for a standalone package with no dependencies
+const MANIFEST: &str = "[package]\nname = \"target\"\nversion = \"0.1.0\"\nedition = \"2024\"\n";
+
+/// Source that trips `lint.bool-param` and nothing else
+///
+/// The rule is purely syntactic, so this fires whether or not the decoration
+/// provider resolved anything, which keeps the severity tests independent of
+/// how much semantic information was available.
+const WARNING_SOURCE: &str = "pub fn set(flag: bool) {\n    let _ = flag;\n}\n";
+
+/// Bytes that are a Rust source file everywhere except that they are not UTF-8
+///
+/// The trailing `0xff` is not a valid UTF-8 sequence, so `read_to_string`
+/// fails on this file while the package around it still loads.
+const NOT_UTF8: &[u8] = b"fn main() {}\n\xff\n";
+
+/// Creates a minimal Cargo package whose `src/lib.rs` holds `source`
+///
+/// The tests that expect a clean run need a target rust-analyzer can actually
+/// load, and a real package is the only thing that qualifies. Loose `.rs`
+/// files belonging to no crate would let a test assert success over source no
+/// decoration provider ever understood, and pointing the tests at whisker's
+/// own source instead would tie them to whisker staying lint-clean, which is a
+/// different claim than the one they are making.
+fn package(source: &str) -> TempDir {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+
+    std::fs::write(directory.path().join("Cargo.toml"), MANIFEST)
+        .expect("manifest should be written");
+    std::fs::create_dir(directory.path().join("src")).expect("src should be created");
+    std::fs::write(directory.path().join("src").join("lib.rs"), source)
+        .expect("source should be written");
+
+    directory
+}
+
+/// Creates a package holding one readable source and one that is not UTF-8
+///
+/// The unreadable file is a sibling rather than the crate root so the package
+/// still loads: the failure under test is whisker reading the file, not Cargo
+/// refusing the target.
+fn package_with_unreadable_source() -> TempDir {
+    let directory = package(CLEAN_SOURCE);
+
+    std::fs::write(directory.path().join("src").join("broken.rs"), NOT_UTF8)
+        .expect("unreadable source should be written");
+
+    directory
+}
 
 fn whisker() -> Command {
     Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
-/// Pins that a directory of conforming sources produces no output at all
-///
-/// Everything under `tests/fixtures/clean` has to conform to the conventions
-/// whisker enforces, not merely fail to trip a lint. A lint that needs
-/// semantic decorations returns nothing when it cannot resolve its subject,
-/// so a fixture that violates such a rule would sit here silently until the
-/// decoration provider improved and then break this test for the right
-/// reason. Fixtures belong in `tests/fixtures/warnings` if they are meant to
-/// be flagged.
-#[test]
-fn check_clean_fixture_directory_succeeds() {
-    whisker()
-        .args(["check", "tests/fixtures/clean"])
-        .assert()
-        .success()
-        .stderr(predicate::str::is_empty());
-}
-
 #[test]
 fn check_current_directory_succeeds() {
     whisker().arg("check").assert().success();
+}
+
+// r[verify cli.discovery.empty]
+#[test]
+fn check_directory_without_sources_fails() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+
+    whisker()
+        .arg("check")
+        .arg(directory.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+// r[verify cli.discovery.explicit-target]
+#[test]
+fn check_non_rust_file_fails() {
+    whisker()
+        .args(["check", "Cargo.toml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no grammar for `.toml` files"));
 }
 
 #[test]
@@ -40,9 +99,58 @@ fn check_nonexistent_path_fails() {
 }
 
 #[test]
-fn check_single_file_succeeds() {
+fn check_package_directory_succeeds() {
+    let package = package(CLEAN_SOURCE);
+
     whisker()
-        .args(["check", "tests/fixtures/clean/exhaustive_match.rs"])
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+// r[verify cli.discovery.empty]
+// r[verify cli.discovery.ignore-files]
+#[test]
+fn check_package_whose_sources_a_gitignore_excludes_fails() {
+    let package = package(CLEAN_SOURCE);
+    std::fs::write(package.path().join(".gitignore"), "src/\n")
+        .expect("gitignore should be written");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+// r[verify cli.config.ignore]
+#[test]
+fn check_package_whose_sources_the_configuration_excludes_fails() {
+    let package = package(CLEAN_SOURCE);
+    std::fs::write(
+        package.path().join("Cargo.toml"),
+        format!("{MANIFEST}\n[workspace]\n\n[workspace.metadata.whisker]\nignore = [\"src/\"]\n"),
+    )
+    .expect("manifest should be written");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+#[test]
+fn check_single_file_succeeds() {
+    let package = package(CLEAN_SOURCE);
+
+    whisker()
+        .args(["check", "src/lib.rs"])
+        .current_dir(package.path())
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
@@ -51,8 +159,11 @@ fn check_single_file_succeeds() {
 // r[verify cli.check.deny-warnings]
 #[test]
 fn check_with_deny_warnings_fails_on_warnings() {
+    let package = package(WARNING_SOURCE);
+
     whisker()
-        .args(["check", "--deny-warnings", "tests/fixtures/warnings"])
+        .args(["check", "--deny-warnings"])
+        .arg(package.path())
         .assert()
         .code(1)
         .stderr(predicate::str::contains("error[lint.bool-param]"));
@@ -61,64 +172,62 @@ fn check_with_deny_warnings_fails_on_warnings() {
 /// Pins the exit code to the failure recorded while walking the files, not
 /// just to the diagnostics that came out of the walk
 ///
-/// The fixture is a Rust source file that is not valid UTF-8, so reading it
-/// fails and `--keep-going` records that failure and moves on. No diagnostic
-/// survives the run, which means the exit code can only be non-zero if the
-/// recorded failure is folded into the final outcome.
+/// The package holds one source that is not valid UTF-8, so reading it fails
+/// and `--keep-going` records that failure and moves on. The readable sibling
+/// is clean, so no diagnostic survives the run, which means the exit code can
+/// only be non-zero if the recorded failure is folded into the final outcome.
 ///
-/// The assertion names the whole line the recovering path prints, because
-/// `--keep-going` and the hard-failure path both mention the underlying I/O
-/// error and both exit 1. Only the recovering path prints `error: {path}:`;
-/// aborting prints `Error: check {path}:`. Matching on the cause alone would
-/// leave the flag itself unpinned.
-///
-/// The fixture is named `.rs.bin` rather than `.rs` so that no directory walk
-/// ever picks it up. A deliberately unreadable source file anywhere under this
-/// crate would otherwise turn every `whisker check` over the crate into a hard
-/// error, so the test names the file directly instead.
+/// The assertion distinguishes the recovering path from the aborting one:
+/// both mention the underlying I/O error and both exit 1, but only recovery
+/// prints a lowercase `error:` line and lets the run continue.
 // r[verify cli.check.keep-going]
 #[test]
 fn check_with_keep_going_and_unreadable_file_fails() {
+    let package = package_with_unreadable_source();
+
     whisker()
-        .args([
-            "check",
-            "--keep-going",
-            "tests/fixtures/invalid_utf8.rs.bin",
-        ])
+        .args(["check", "--keep-going"])
+        .arg(package.path())
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "error: tests/fixtures/invalid_utf8.rs.bin: stream did not contain valid UTF-8",
+            "stream did not contain valid UTF-8",
         ))
+        .stderr(predicate::str::contains("error: "))
         .stderr(predicate::str::contains("Error:").not());
 }
 
 #[test]
 fn check_with_keep_going_succeeds() {
+    let package = package(CLEAN_SOURCE);
+
     whisker()
-        .args(["check", "--keep-going", "tests/fixtures/clean"])
+        .args(["check", "--keep-going"])
+        .arg(package.path())
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
 }
 
-/// Pins the hard-failure path that the `--keep-going` test has to be
-/// distinguished from
+/// Pins the hard-failure path that the `--keep-going` test is distinguished
+/// from
 ///
-/// Without the flag the same fixture ends the run, and the error names the
+/// Without the flag the same package ends the run, and the error names the
 /// file it came from so a failure deep in a walk stays attributable. The
 /// cause arrives as a separate line because anyhow renders the context chain
 /// as a report rather than a single line.
 // r[verify cli.check.keep-going]
 #[test]
 fn check_with_unreadable_file_and_no_keep_going_fails() {
+    let package = package_with_unreadable_source();
+
     whisker()
-        .args(["check", "tests/fixtures/invalid_utf8.rs.bin"])
+        .arg("check")
+        .arg(package.path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains(
-            "Error: check tests/fixtures/invalid_utf8.rs.bin",
-        ))
+        .stderr(predicate::str::contains("Error:"))
+        .stderr(predicate::str::contains("broken.rs"))
         .stderr(predicate::str::contains(
             "stream did not contain valid UTF-8",
         ));
@@ -127,8 +236,11 @@ fn check_with_unreadable_file_and_no_keep_going_fails() {
 // r[verify cli.check.deny-warnings]
 #[test]
 fn check_without_deny_warnings_reports_warnings_and_succeeds() {
+    let package = package(WARNING_SOURCE);
+
     whisker()
-        .args(["check", "tests/fixtures/warnings"])
+        .arg("check")
+        .arg(package.path())
         .assert()
         .success()
         .stderr(predicate::str::contains("warning[lint.bool-param]"));

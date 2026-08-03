@@ -10,11 +10,13 @@ use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
-use whisker_types::{DecorationProvider, Diagnostic, Language, LintPass};
+use whisker_types::{DecorationProvider, Diagnostic, LintPass};
 
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::ErrorRecovery;
 use self::failure_threshold::FailureThreshold;
+use crate::config::WhiskerConfig;
+use crate::discovery::{Discovery, WalkErrorPolicy};
 
 /// Run whisker lints against a project
 #[derive(Debug, Args)]
@@ -80,11 +82,36 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         false => ErrorRecovery::Abort,
     };
 
-    let files = discover_files(&path)?;
+    anyhow::ensure!(path.exists(), "{} does not exist", path.display());
 
-    if files.is_empty() {
-        return Ok(());
+    let config = WhiskerConfig::load(&path).context("failed to load the whisker configuration")?;
+
+    let on_error = match keep_going {
+        true => WalkErrorPolicy::ReportAndContinue,
+        false => WalkErrorPolicy::Fail,
+    };
+
+    let discovery =
+        Discovery::run(&path, &config, on_error).context("failed to discover source files")?;
+
+    let mut outcome = CheckOutcome::Success;
+
+    // r[impl cli.discovery.walk-errors]
+    for error in discovery.errors() {
+        eprintln!("error: {error:#}");
+        outcome = CheckOutcome::Failure;
     }
+
+    let files = discovery.files();
+
+    // r[impl cli.discovery.empty]
+    anyhow::ensure!(
+        !files.is_empty(),
+        "whisker analyzed no files under {}: either nothing there is written in a language \
+         whisker has a grammar for, or the ignore files and configured patterns excluded all of \
+         it",
+        path.display()
+    );
 
     let mut pipeline =
         Pipeline::new(&whisker_rust::language()).context("failed to initialize pipeline")?;
@@ -95,9 +122,8 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     let mut all_diagnostics = Vec::new();
     let mut sources: HashMap<Arc<Path>, String> = HashMap::new();
-    let mut outcome = CheckOutcome::Success;
 
-    for file in &files {
+    for file in files {
         let source = match std::fs::read_to_string(file) {
             Ok(source) => source,
             Err(e) => {
@@ -135,79 +161,5 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     match outcome {
         CheckOutcome::Failure => std::process::exit(1),
         CheckOutcome::Success => Ok(()),
-    }
-}
-
-/// Returns the files to analyze under a path named on the command line
-///
-/// A path that names a file is returned exactly as given, without the
-/// extension test the directory walk applies. Pointing whisker at one file
-/// must never silently analyze nothing, so every rule that narrows discovery
-/// belongs to the walk and not to an explicitly named path. Whatever later
-/// teaches this function to skip files — ignore rules, for instance — has to
-/// keep that split, and the integration test over
-/// `tests/fixtures/invalid_utf8.rs.bin` depends on it: the fixture is named
-/// so that no walk can reach it and the test has to name it directly.
-///
-/// # Errors
-///
-/// Returns an error if the path does not exist.
-fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
-    anyhow::ensure!(path.exists(), "{} does not exist", path.display());
-
-    if path.is_file() {
-        return Ok(vec![path.clone()]);
-    }
-
-    let mut files = Vec::new();
-
-    for entry in walkdir::WalkDir::new(path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let Some(ext) = entry.path().extension() else {
-            continue;
-        };
-        if Language::from_extension(&ext.to_string_lossy()).is_some() {
-            files.push(entry.into_path());
-        }
-    }
-
-    Ok(files)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn discover_files_with_a_directory_applies_the_extension_test() {
-        let path = PathBuf::from("tests/fixtures");
-
-        let files = discover_files(&path).expect("the fixture directory should be discoverable");
-
-        assert!(files.contains(&PathBuf::from("tests/fixtures/clean/exhaustive_match.rs")));
-        assert!(!files.contains(&PathBuf::from("tests/fixtures/invalid_utf8.rs.bin")));
-    }
-
-    #[test]
-    fn discover_files_with_a_missing_path_returns_an_error() {
-        let path = PathBuf::from("does/not/exist");
-
-        let error = discover_files(&path).expect_err("a missing path should fail");
-
-        assert_eq!(error.to_string(), "does/not/exist does not exist");
-    }
-
-    #[test]
-    fn discover_files_with_a_named_file_ignores_the_extension_test() {
-        let path = PathBuf::from("tests/fixtures/invalid_utf8.rs.bin");
-
-        let files = discover_files(&path).expect("a named file should be discoverable");
-
-        assert_eq!(files, vec![path]);
     }
 }
