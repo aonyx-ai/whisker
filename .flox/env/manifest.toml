@@ -55,14 +55,6 @@ fi
 # Rustup handles this idempotently — it's a no-op if already installed.
 rustup show > /dev/null 2>&1
 
-# Install dylint tools needed for building and testing lint libraries.
-# Errors are left on stderr: discarding them turns a failed install into a
-# "command not found" several minutes later, which names the tool but not
-# the reason it is missing.
-if ! cargo install --quiet cargo-dylint dylint-link; then
-  echo "warning: failed to install cargo-dylint and dylint-link" >&2
-fi
-
 # Install Tracey for spec coverage tracking. Prefer the prebuilt binary and
 # fall back to building it, so that a transient binstall failure costs time
 # rather than a red build.
