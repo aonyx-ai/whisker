@@ -11,13 +11,11 @@ use whisker_types::{DecoratedNode, Diagnostic, RuleId, Severity};
 pub struct WildcardMatchArm;
 
 impl RustLintPass for WildcardMatchArm {
-    // r[impl lint.wildcard-match-arm.detect]
     fn check_match_expression(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(scrutinee) = node.child_by_field_name("value") else {
             return Vec::new();
         };
 
-        // r[impl lint.wildcard-match-arm.non-enum-types]
         let Some(resolved) = scrutinee.decoration::<ResolvedType>() else {
             return Vec::new();
         };
@@ -25,8 +23,6 @@ impl RustLintPass for WildcardMatchArm {
             return Vec::new();
         }
 
-        // r[impl lint.wildcard-match-arm.non-exhaustive-external]
-        // r[impl lint.wildcard-match-arm.non-exhaustive-local]
         if let Some(flags) = scrutinee.decoration::<AdtFlags>()
             && flags.non_exhaustive_external()
         {
@@ -47,7 +43,6 @@ impl RustLintPass for WildcardMatchArm {
                 continue;
             };
             if is_wildcard_pattern(&pattern) {
-                // r[impl lint.wildcard-match-arm.message]
                 diagnostics.push(Diagnostic::new(
                     RuleId("lint.wildcard-match-arm"),
                     Severity::Warn,

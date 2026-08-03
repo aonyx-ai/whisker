@@ -89,7 +89,6 @@ fn compute_expected_order(names: &[String]) -> Vec<String> {
     result
 }
 
-// r[impl lint.derive-order.detect]
 impl RustLintPass for DeriveOrder {
     fn check_attribute_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let text = node.text();
@@ -108,7 +107,6 @@ impl RustLintPass for DeriveOrder {
             return Vec::new();
         }
 
-        // r[impl lint.derive-order.message]
         let expected_str = expected.join(", ");
         vec![Diagnostic::new(
             RuleId("lint.derive-order"),

@@ -10,9 +10,6 @@ use crate::tree_walker;
 /// The pipeline reads a source file, parses it with the appropriate
 /// tree-sitter grammar, runs decoration providers, then walks the
 /// decorated tree through all enabled lint passes.
-// r[impl core.pipeline.parse]
-// r[impl core.pipeline.decorate]
-// r[impl core.pipeline.execute]
 pub struct Pipeline {
     parser: tree_sitter::Parser,
 }
@@ -23,7 +20,6 @@ impl Pipeline {
     /// # Errors
     ///
     /// Returns an error if the tree-sitter language cannot be set.
-    // r[impl core.pipeline.language-detection]
     pub fn new(language: &tree_sitter::Language) -> anyhow::Result<Self> {
         let mut parser = tree_sitter::Parser::new();
         parser

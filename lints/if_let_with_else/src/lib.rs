@@ -17,7 +17,6 @@ pub struct IfLetWithElse;
 const DIVERGING_MACROS: &[&str] = &["panic", "unreachable", "todo", "unimplemented"];
 
 impl RustLintPass for IfLetWithElse {
-    // r[impl lint.if-let-with-else.detect]
     fn check_if_expression(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(condition) = node.child_by_field_name("condition") else {
             return Vec::new();
@@ -27,17 +26,14 @@ impl RustLintPass for IfLetWithElse {
             return Vec::new();
         }
 
-        // r[impl lint.if-let-with-else.no-else-allowed]
         let Some(alternative) = node.child_by_field_name("alternative") else {
             return Vec::new();
         };
 
-        // r[impl lint.if-let-with-else.diverging-else-ignored]
         if is_diverging(&alternative) {
             return Vec::new();
         }
 
-        // r[impl lint.if-let-with-else.message]
         vec![Diagnostic::new(
             RuleId("lint.if-let-with-else"),
             Severity::Warn,

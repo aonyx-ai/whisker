@@ -30,7 +30,6 @@ impl AnyhowMissingContext {
 }
 
 impl RustLintPass for AnyhowMissingContext {
-    // r[impl lint.anyhow-missing-context.detect]
     fn check_try_expression(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(operand) = node.named_child(0) else {
             return Vec::new();
@@ -40,7 +39,6 @@ impl RustLintPass for AnyhowMissingContext {
             return Vec::new();
         };
 
-        // r[impl lint.anyhow-missing-context.option-ignored]
         if resolved.is_option() {
             return Vec::new();
         }
@@ -49,7 +47,6 @@ impl RustLintPass for AnyhowMissingContext {
             return Vec::new();
         }
 
-        // r[impl lint.anyhow-missing-context.anyhow-only]
         let Some(fn_sig) = find_enclosing_fn_signature(node) else {
             return Vec::new();
         };
@@ -60,13 +57,10 @@ impl RustLintPass for AnyhowMissingContext {
             return Vec::new();
         }
 
-        // r[impl lint.anyhow-missing-context.context-allowed]
-        // r[impl lint.anyhow-missing-context.with-context-allowed]
         if is_context_call(&operand) {
             return Vec::new();
         }
 
-        // r[impl lint.anyhow-missing-context.message]
         vec![Diagnostic::new(
             RULE_ID,
             Severity::Warn,

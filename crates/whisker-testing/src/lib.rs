@@ -11,7 +11,6 @@ use whisker_types::{DecoratedTree, DecorationMap, Diagnostic, Language, LintPass
 ///
 /// Panics if the language is unsupported or if tree-sitter fails to
 /// parse.
-// r[impl testing.parse]
 pub fn parse(source: &str, language: Language) -> DecoratedTree {
     let ts_language = match language {
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
@@ -34,13 +33,11 @@ pub fn parse(source: &str, language: Language) -> DecoratedTree {
 /// Replaces the tree's decoration map with the provided one. This
 /// allows testing rules that depend on semantic information without
 /// running a real language toolchain.
-// r[impl testing.decorate]
 pub fn decorate(tree: &mut DecoratedTree, decorations: DecorationMap) {
     *tree.decorations_mut() = decorations;
 }
 
 /// Executes lint passes against a decorated tree and returns diagnostics
-// r[impl testing.execute]
 pub fn execute(tree: &DecoratedTree, passes: &mut [Box<dyn LintPass>]) -> Vec<Diagnostic> {
     whisker_core::walk(tree, passes)
 }
@@ -56,7 +53,6 @@ pub fn execute(tree: &DecoratedTree, passes: &mut [Box<dyn LintPass>]) -> Vec<Di
 ///     .has_severity(Severity::Warn)
 ///     .message_contains("wildcard");
 /// ```
-// r[impl testing.assert-diagnostic]
 pub fn assert_diagnostic(diagnostic: &Diagnostic) -> DiagnosticAssertion<'_> {
     DiagnosticAssertion { diagnostic }
 }
@@ -66,7 +62,6 @@ pub fn assert_diagnostic(diagnostic: &Diagnostic) -> DiagnosticAssertion<'_> {
 /// # Panics
 ///
 /// Panics if `diagnostics` is not empty, printing all diagnostics.
-// r[impl testing.assert-no-diagnostic]
 pub fn assert_no_diagnostics(diagnostics: &[Diagnostic]) {
     assert!(
         diagnostics.is_empty(),
@@ -84,7 +79,6 @@ pub fn assert_no_diagnostics(diagnostics: &[Diagnostic]) {
 /// # Panics
 ///
 /// Panics if the directory cannot be read.
-// r[impl testing.fixture.directory]
 pub fn fixtures(dir: &str, language: Language) -> Vec<(String, String)> {
     let path = Path::new(dir);
     let mut cases = Vec::new();

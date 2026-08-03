@@ -11,17 +11,14 @@ use whisker_types::{DecorationProvider, Language, LintPass, Severity};
 /// Run whisker lints against a project
 #[derive(Debug, Args)]
 pub struct CheckArgs {
-    // r[impl cli.check.path]
     /// Path to the target project directory
     #[arg(default_value = ".")]
     path: PathBuf,
 
-    // r[impl cli.check.keep-going]
     /// Continue checking after encountering errors
     #[arg(long)]
     keep_going: bool,
 
-    // r[impl cli.check.extra-args]
     /// Additional arguments forwarded to the analysis pipeline
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
@@ -31,7 +28,6 @@ pub struct CheckArgs {
 ///
 /// Every rule ships as its own crate and is linked in here. A rule that is
 /// not in this list does not run, however complete its own tests are.
-// r[impl cli.check.passes]
 fn create_lint_passes() -> Vec<Box<dyn LintPass>> {
     vec![
         Box::new(RustLintPassAdapter::new(
@@ -47,7 +43,6 @@ fn create_lint_passes() -> Vec<Box<dyn LintPass>> {
     ]
 }
 
-// r[impl cli.check]
 #[command]
 pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     let CheckArgs {
@@ -112,7 +107,6 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         eprint!("{output}");
     }
 
-    // r[impl cli.diagnostics.exit-code]
     let has_errors = all_diagnostics
         .iter()
         .any(|d| d.severity() >= Severity::Error);

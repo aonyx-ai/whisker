@@ -17,7 +17,6 @@ gcc.systems = ["aarch64-linux", "x86_64-linux"]
 gcc.outputs = "all"
 
 # Local development tools
-cargo-binstall.pkg-path = "cargo-binstall"
 cargo-deny.pkg-path = "cargo-deny"
 cargo-nextest.pkg-path = "cargo-nextest"
 git.pkg-path = "git"
@@ -54,16 +53,6 @@ fi
 # Install the nightly toolchain and components specified in rust-toolchain.toml.
 # Rustup handles this idempotently — it's a no-op if already installed.
 rustup show > /dev/null 2>&1
-
-# Install Tracey for spec coverage tracking. Prefer the prebuilt binary and
-# fall back to building it, so that a transient binstall failure costs time
-# rather than a red build.
-if ! cargo binstall --no-confirm --quiet tracey; then
-  echo "warning: binstall failed for tracey; building it from source" >&2
-  if ! cargo install --quiet tracey; then
-    echo "warning: failed to install tracey" >&2
-  fi
-fi
 '''
 
 [profile]
