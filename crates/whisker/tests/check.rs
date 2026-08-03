@@ -1,32 +1,52 @@
-use std::path::PathBuf;
+use std::process::Command;
 
-use assert_cmd::Command;
-use predicates::str::contains;
+use assert_cmd::prelude::*;
+use predicates::prelude::*;
 
-fn sample_project_manifest() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/sample_project/Cargo.toml")
+fn whisker() -> Command {
+    Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
-// r[verify cli.check]
-// r[verify cli.check.manifest-path]
 #[test]
-fn check_runs_lints_on_sample_project() {
-    Command::cargo_bin("whisker")
-        .expect("whisker binary not found")
-        .args(["check", "--manifest-path"])
-        .arg(sample_project_manifest())
+fn check_single_file_succeeds() {
+    whisker()
+        .args(["check", "tests/fixtures/wildcard_match.rs"])
         .assert()
-        .stderr(contains("wildcard match arm"));
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
-// r[verify cli.check.extra-args]
 #[test]
-fn check_forwards_extra_args() {
-    Command::cargo_bin("whisker")
-        .expect("whisker binary not found")
-        .args(["check", "--manifest-path"])
-        .arg(sample_project_manifest())
-        .args(["--", "-p", "sample_project"])
+fn check_fixture_directory_succeeds() {
+    whisker()
+        .args(["check", "tests/fixtures"])
         .assert()
-        .stderr(contains("wildcard match arm"));
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn check_nonexistent_path_fails() {
+    whisker()
+        .args(["check", "does/not/exist"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
+fn check_current_directory_succeeds() {
+    whisker()
+        .arg("check")
+        .assert()
+        .success();
+}
+
+#[test]
+fn check_with_keep_going_succeeds() {
+    whisker()
+        .args(["check", "--keep-going", "tests/fixtures"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }

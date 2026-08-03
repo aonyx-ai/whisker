@@ -15,24 +15,13 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clawless = "0.5.0"
-
-# Lint crates linked directly into the driver binary
-anyhow_missing_context = { path = "../../lints/anyhow_missing_context" }
-bool_param = { path = "../../lints/bool_param" }
-derive_order = { path = "../../lints/derive_order" }
-if_let_with_else = { path = "../../lints/if_let_with_else" }
-no_matches_macro = { path = "../../lints/no_matches_macro" }
-wildcard_match_arm = { path = "../../lints/wildcard_match_arm" }
-
-# The `constituent` feature suppresses `#[no_mangle]` on the lint crates'
-# `register_lints` functions, avoiding symbol conflicts when linking multiple
-# lint libraries into a single binary.
-dylint_linting = { version = "6.0.0", features = ["constituent"] }
+walkdir = "2"
+whisker-core = { path = "../whisker-core" }
+whisker-reporting = { path = "../whisker-reporting" }
+whisker-rust = { path = "../whisker-rust" }
+whisker-types = { path = "../whisker-types" }
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-trycmd = "1.0"
-
-[package.metadata.rust-analyzer]
-rustc_private = true
+trycmd = "0.15"
