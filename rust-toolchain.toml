@@ -1,5 +1,6 @@
-# The nightly channel must match the clippy_utils version: 0.1.XY requires
-# a nightly where `rustc -V` reports 1.XY. clippy_utils is from crates.io.
+# Nightly is required only by `.rustfmt.toml`, which sets `group_imports`, an
+# unstable rustfmt option. Nothing else in the tree needs it: no `#![feature]`,
+# no `rustc_private`, and the rust-analyzer crates build on stable.
 [toolchain]
 channel = "nightly-2026-05-28"
-components = ["clippy", "llvm-tools-preview", "rustc-dev", "rustfmt"]
+components = ["clippy", "rustfmt"]
