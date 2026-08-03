@@ -680,6 +680,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "no_matches_macro"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-testing",
+ "whisker-types",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
