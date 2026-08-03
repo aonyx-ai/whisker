@@ -56,10 +56,22 @@ fi
 rustup show > /dev/null 2>&1
 
 # Install dylint tools needed for building and testing lint libraries.
-cargo install --quiet cargo-dylint dylint-link 2> /dev/null
+# Errors are left on stderr: discarding them turns a failed install into a
+# "command not found" several minutes later, which names the tool but not
+# the reason it is missing.
+if ! cargo install --quiet cargo-dylint dylint-link; then
+  echo "warning: failed to install cargo-dylint and dylint-link" >&2
+fi
 
-# Install Tracey for spec coverage tracking.
-cargo binstall --no-confirm --quiet tracey 2> /dev/null
+# Install Tracey for spec coverage tracking. Prefer the prebuilt binary and
+# fall back to building it, so that a transient binstall failure costs time
+# rather than a red build.
+if ! cargo binstall --no-confirm --quiet tracey; then
+  echo "warning: binstall failed for tracey; building it from source" >&2
+  if ! cargo install --quiet tracey; then
+    echo "warning: failed to install tracey" >&2
+  fi
+fi
 '''
 
 [profile]
