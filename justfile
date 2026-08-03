@@ -47,7 +47,7 @@ lint-github-actions:
 
 # Lint Markdown files
 lint-markdown:
-    markdownlint --ignore-path .gitignore **/*.md
+    markdownlint --ignore-path .gitignore "**/*.md"
 
 # Lint Rust files
 lint-rust:
