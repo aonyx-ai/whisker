@@ -10,7 +10,7 @@ use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
-use whisker_types::{DecorationProvider, Diagnostic, LintPass};
+use whisker_types::{DecorationProvider, Diagnostic, LintPass, UncoveredFile};
 
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::ErrorRecovery;
@@ -62,7 +62,49 @@ fn create_lint_passes() -> Vec<Box<dyn LintPass>> {
     ]
 }
 
+/// The distinct remedies for the files this run could not analyze
+///
+/// Remedies are gathered for the whole run and printed once, because a
+/// directory of orphaned files would otherwise repeat the same sentence on
+/// every line and bury the diagnostics. Each one comes from the
+/// [`CoverageGap`] that produced it, so a run that trips two kinds of gap
+/// offers both fixes rather than one that fits neither.
+///
+/// [`CoverageGap`]: whisker_types::CoverageGap
+#[derive(Clone, Eq, PartialEq, Debug, Default)]
+struct CoverageRemedies {
+    remedies: Vec<&'static str>,
+}
+
+impl CoverageRemedies {
+    /// Records the remedy for every gap reported against one file
+    ///
+    /// Repeats are dropped, so the number of lines this eventually prints
+    /// is bounded by the number of [`CoverageGap`] variants however many
+    /// files the run skipped.
+    ///
+    /// [`CoverageGap`]: whisker_types::CoverageGap
+    fn record(&mut self, uncovered: &UncoveredFile) {
+        for (_provider, gap) in uncovered.gaps() {
+            let remedy = gap.help();
+            if !self.remedies.contains(&remedy) {
+                self.remedies.push(remedy);
+            }
+        }
+    }
+
+    /// Prints each remedy once, after the per-file errors that earned it
+    ///
+    /// The per-file error names the file and the reason; this names the fix.
+    fn print(&self) {
+        for remedy in &self.remedies {
+            eprintln!("help: {remedy}");
+        }
+    }
+}
+
 // r[impl cli.check]
+// r[impl cli.check.coverage]
 #[command]
 pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     let CheckArgs {
@@ -122,12 +164,16 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     let mut all_diagnostics = Vec::new();
     let mut sources: HashMap<Arc<Path>, String> = HashMap::new();
+    let mut remedies = CoverageRemedies::default();
 
     for file in files {
         let source = match std::fs::read_to_string(file) {
             Ok(source) => source,
             Err(e) => {
-                recovery.record(&mut outcome, file, anyhow::Error::new(e))?;
+                if let Err(aborted) = recovery.record(&mut outcome, file, anyhow::Error::new(e)) {
+                    remedies.print();
+                    return Err(aborted);
+                }
                 continue;
             }
         };
@@ -142,9 +188,20 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
                     all_diagnostics.extend(diagnostics);
                 }
             }
-            Err(e) => recovery.record(&mut outcome, file, e)?,
+            Err(e) => {
+                if let Some(uncovered) = e.downcast_ref::<UncoveredFile>() {
+                    remedies.record(uncovered);
+                }
+
+                if let Err(aborted) = recovery.record(&mut outcome, file, e) {
+                    remedies.print();
+                    return Err(aborted);
+                }
+            }
         }
     }
+
+    remedies.print();
 
     let all_diagnostics: Vec<Diagnostic> = all_diagnostics
         .into_iter()
@@ -161,5 +218,84 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     match outcome {
         CheckOutcome::Failure => std::process::exit(1),
         CheckOutcome::Success => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use whisker_types::{CoverageGap, ProviderName};
+
+    use super::*;
+
+    fn root() -> Arc<Path> {
+        Arc::from(PathBuf::from("/ws"))
+    }
+
+    #[test]
+    fn record_with_no_gaps_collects_no_remedy() {
+        let uncovered = UncoveredFile::new(PathBuf::from("stray.rs"), Vec::new());
+        let mut remedies = CoverageRemedies::default();
+
+        remedies.record(&uncovered);
+
+        assert!(remedies.remedies.is_empty());
+    }
+
+    #[test]
+    fn record_with_repeated_gap_keeps_one_remedy() {
+        let gap = CoverageGap::Unreachable { root: root() };
+        let first = UncoveredFile::new(
+            PathBuf::from("one.rs"),
+            vec![(ProviderName("rust"), gap.clone())],
+        );
+        let second = UncoveredFile::new(PathBuf::from("two.rs"), vec![(ProviderName("rust"), gap)]);
+        let mut remedies = CoverageRemedies::default();
+
+        remedies.record(&first);
+        remedies.record(&second);
+
+        assert_eq!(remedies.remedies.len(), 1);
+        assert_eq!(
+            remedies.remedies[0],
+            CoverageGap::Unreachable { root: root() }.help()
+        );
+    }
+
+    #[test]
+    fn record_with_two_kinds_of_gap_keeps_both_remedies() {
+        let uncovered = UncoveredFile::new(
+            PathBuf::from("stray.rs"),
+            vec![
+                (
+                    ProviderName("rust"),
+                    CoverageGap::Unreachable { root: root() },
+                ),
+                (ProviderName("other"), CoverageGap::StaleSource),
+            ],
+        );
+        let mut remedies = CoverageRemedies::default();
+
+        remedies.record(&uncovered);
+
+        assert_eq!(remedies.remedies.len(), 2);
+        assert_eq!(remedies.remedies[1], CoverageGap::StaleSource.help());
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<CoverageRemedies>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<CoverageRemedies>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<CoverageRemedies>();
     }
 }

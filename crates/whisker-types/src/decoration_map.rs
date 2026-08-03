@@ -47,6 +47,19 @@ impl DecorationMap {
             .and_then(|d| d.value.downcast_ref())
     }
 
+    /// Merges another map into this one
+    ///
+    /// Entries already present win: [`DecorationMap::get`] returns the
+    /// first decoration of a type for a node, so when two providers
+    /// decorate the same node with the same type, the provider consulted
+    /// first is the one lint rules see. Both remain reachable through
+    /// [`DecorationMap::get_all`].
+    pub fn merge(&mut self, other: DecorationMap) {
+        for (node_id, entries) in other.entries {
+            self.entries.entry(node_id).or_default().extend(entries);
+        }
+    }
+
     /// Retrieves all decorations of type `T` attached to the given node
     pub fn get_all<T: Any + Send + Sync>(&self, node_id: usize) -> Vec<&T> {
         let Some(decorations) = self.entries.get(&node_id) else {
@@ -140,6 +153,59 @@ mod tests {
     }
 
     #[test]
+    fn merge_with_conflicting_type_keeps_first() {
+        let mut map = DecorationMap::new();
+        map.insert(1, TypeInfo("first".into()));
+        let mut other = DecorationMap::new();
+        other.insert(1, TypeInfo("second".into()));
+
+        map.merge(other);
+
+        assert_eq!(map.get::<TypeInfo>(1).expect("should find").0, "first");
+        let all = map.get_all::<TypeInfo>(1);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].0, "first");
+        assert_eq!(all[1].0, "second");
+    }
+
+    #[test]
+    fn merge_with_disjoint_nodes_keeps_both() {
+        let mut map = DecorationMap::new();
+        map.insert(1, TypeInfo("i32".into()));
+        let mut other = DecorationMap::new();
+        other.insert(2, TypeInfo("u64".into()));
+
+        map.merge(other);
+
+        assert_eq!(map.get::<TypeInfo>(1).expect("should find").0, "i32");
+        assert_eq!(map.get::<TypeInfo>(2).expect("should find").0, "u64");
+    }
+
+    #[test]
+    fn merge_with_empty_other_is_noop() {
+        let mut map = DecorationMap::new();
+        map.insert(1, TypeInfo("i32".into()));
+
+        map.merge(DecorationMap::new());
+
+        assert_eq!(map.get::<TypeInfo>(1).expect("should find").0, "i32");
+        assert_eq!(map.get_all::<TypeInfo>(1).len(), 1);
+    }
+
+    #[test]
+    fn merge_with_same_node_different_types_keeps_both() {
+        let mut map = DecorationMap::new();
+        map.insert(1, TypeInfo("i32".into()));
+        let mut other = DecorationMap::new();
+        other.insert(1, Scope(3));
+
+        map.merge(other);
+
+        assert_eq!(map.get::<TypeInfo>(1).expect("should find").0, "i32");
+        assert_eq!(map.get::<Scope>(1).expect("should find").0, 3);
+    }
+
+    #[test]
     fn multiple_types_on_same_node() {
         let mut map = DecorationMap::new();
         map.insert(1, TypeInfo("i32".into()));
@@ -213,6 +279,29 @@ mod tests {
                 let results = map.get_all::<u32>(node_id);
                 let result_values: Vec<u32> = results.into_iter().copied().collect();
                 prop_assert_eq!(result_values, values);
+            }
+
+            #[test]
+            fn merge_preserves_total_entry_count(
+                left in proptest::collection::vec((any::<usize>(), any::<u32>()), 0..=20),
+                right in proptest::collection::vec((any::<usize>(), any::<u32>()), 0..=20),
+            ) {
+                fn total(map: &DecorationMap) -> usize {
+                    map.entries.values().map(Vec::len).sum()
+                }
+
+                let mut map = DecorationMap::new();
+                for (node_id, value) in &left {
+                    map.insert(*node_id, *value);
+                }
+                let mut other = DecorationMap::new();
+                for (node_id, value) in &right {
+                    other.insert(*node_id, *value);
+                }
+
+                map.merge(other);
+
+                prop_assert_eq!(total(&map), left.len() + right.len());
             }
 
             #[test]

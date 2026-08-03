@@ -1,3 +1,6 @@
+// r[verify cli.check.coverage]
+// r[verify cli.check.keep-going]
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use assert_cmd::prelude::*;
@@ -57,6 +60,27 @@ fn package(source: &str) -> TempDir {
     directory
 }
 
+/// Creates a package whose `src` holds Rust files no module declares
+///
+/// An orphan is a file the walk finds but no crate reaches, which is exactly
+/// the shape the coverage errors describe. Building them in a temporary
+/// package rather than checking them in matters: an orphan committed to this
+/// repository would make `whisker check .` fail for everyone, which is what
+/// the earlier `tests/fixtures` directory did before it was removed.
+fn package_with_orphans(names: &[&str]) -> TempDir {
+    let directory = package(CLEAN_SOURCE);
+
+    for name in names {
+        std::fs::write(
+            directory.path().join("src").join(format!("{name}.rs")),
+            CLEAN_SOURCE,
+        )
+        .expect("orphan source should be written");
+    }
+
+    directory
+}
+
 /// Creates a package holding one readable source and one that is not UTF-8
 ///
 /// The unreadable file is a sibling rather than the crate root so the package
@@ -75,6 +99,40 @@ fn whisker() -> Command {
     Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
+/// Returns the fixture workspace that whisker-rust's own tests analyze
+///
+/// It is a real Cargo package with a real crate graph, so files under its
+/// `src` directory are the only ones in this repository that whisker can
+/// actually decorate.
+fn sample_project() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../whisker-rust/tests/fixtures/sample_project")
+}
+
+/// Counts how many times whisker reported a file it could not get through
+///
+/// The count is what separates the two `--keep-going` modes: one file
+/// reported means the run stopped at the first failure, every file reported
+/// means it carried on. A `contains` assertion cannot tell them apart.
+fn error_count(stderr: &str) -> usize {
+    stderr.matches("error: ").count()
+}
+
+/// Counts how many times whisker printed the remedy for an unreachable file
+///
+/// The remedy is deliberately printed once per run rather than once per
+/// file, so that a directory of orphans does not bury the diagnostics.
+fn unreachable_help_count(stderr: &str) -> usize {
+    stderr
+        .matches("help: add the file to a crate's module tree")
+        .count()
+}
+
+/// Pins that this crate itself holds no Rust source belonging to no crate
+///
+/// An earlier version of this test asserted the opposite, because checked-in
+/// orphan fixtures made a clean run impossible. Those fixtures are gone, and
+/// asserting success is the stronger claim: it fails if anyone reintroduces
+/// source the decoration provider cannot reach.
 #[test]
 fn check_current_directory_succeeds() {
     whisker().arg("check").assert().success();
@@ -110,6 +168,51 @@ fn check_nonexistent_path_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("does not exist"));
+}
+
+/// Pins that without `--keep-going` an uncoverable file ends the run, and
+/// that the remedy is printed before it does
+///
+/// Aborting returns the error rather than printing a lowercase `error:` line,
+/// so the file is named by the report clawless renders. The remedy still has
+/// to reach the user: a run that says a file cannot be analyzed without
+/// saying what to do about it leaves them nowhere to go, and the remedy is
+/// collected during the walk, so nothing would print it if the abort simply
+/// propagated.
+#[test]
+fn check_orphan_directory_reports_no_coverage() {
+    let package = package_with_orphans(&["stray"]);
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no decoration provider covers this file",
+        ))
+        .stderr(predicate::str::contains("Error: check"))
+        .stderr(predicate::str::contains("stray.rs"))
+        .stderr(predicate::function(|stderr: &str| {
+            unreachable_help_count(stderr) == 1
+        }));
+}
+
+#[test]
+fn check_orphan_file_reports_no_coverage() {
+    let package = package_with_orphans(&["stray"]);
+
+    whisker()
+        .args(["check", "src/stray.rs"])
+        .current_dir(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no decoration provider covers this file",
+        ))
+        .stderr(predicate::str::contains(
+            "no crate in that workspace reaches it",
+        ));
 }
 
 #[test]
@@ -285,6 +388,22 @@ fn check_package_with_an_unreadable_directory_fails() {
         .stderr(predicate::str::contains("failed to read a directory entry"));
 }
 
+/// Pins that a package the provider can fully reach produces lint output
+/// rather than coverage errors
+///
+/// Without this the coverage tests could all pass against a provider that
+/// covered nothing at all, since every assertion they make is about failure.
+#[test]
+fn check_real_crate_produces_diagnostics_not_coverage_errors() {
+    whisker()
+        .current_dir(sample_project())
+        .args(["check", "src"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("no decoration provider covers this file").not())
+        .stderr(predicate::str::contains("warning[lint.wildcard-match-arm]"));
+}
+
 #[test]
 fn check_single_file_succeeds() {
     let package = package(CLEAN_SOURCE);
@@ -336,6 +455,31 @@ fn check_with_keep_going_and_unreadable_file_fails() {
         ))
         .stderr(predicate::str::contains("error: "))
         .stderr(predicate::str::contains("Error:").not());
+}
+
+/// Pins that `--keep-going` reports every uncoverable file, not just the first
+///
+/// The counts are what separate the two modes: one error means the run
+/// stopped at the first orphan, two means it carried on. A `contains`
+/// assertion cannot tell them apart. The remedy is still printed once,
+/// because a directory of orphans would otherwise bury the diagnostics.
+// r[verify cli.check.coverage]
+// r[verify cli.check.keep-going]
+#[test]
+fn check_with_keep_going_reports_every_orphan_file() {
+    let package = package_with_orphans(&["first_stray", "second_stray"]);
+
+    whisker()
+        .args(["check", "--keep-going"])
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("first_stray.rs"))
+        .stderr(predicate::str::contains("second_stray.rs"))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 2))
+        .stderr(predicate::function(|stderr: &str| {
+            unreachable_help_count(stderr) == 1
+        }));
 }
 
 #[test]

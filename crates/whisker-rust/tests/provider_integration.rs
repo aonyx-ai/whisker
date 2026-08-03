@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use whisker_rust::RustDecorationProvider;
 use whisker_rust::decorations::{AdtFlags, FnSignature, ResolvedType};
-use whisker_types::{DecoratedNode, DecoratedTree, DecorationProvider};
+use whisker_types::{Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider};
 
 static PROVIDER: OnceLock<RustDecorationProvider> = OnceLock::new();
 
@@ -24,18 +24,32 @@ fn load_provider() -> &'static RustDecorationProvider {
         .get_or_init(|| RustDecorationProvider::load(&fixture_path()).expect("should load fixture"))
 }
 
-fn parse_and_decorate_fixture(provider: &RustDecorationProvider) -> DecoratedTree {
-    let file_path = fixture_path().join("src/lib.rs");
-    let source = std::fs::read_to_string(&file_path).expect("should read fixture source");
-
+fn parse_source(source: String, file_path: PathBuf) -> DecoratedTree {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&whisker_rust::language()).unwrap();
     let tree = parser.parse(&source, None).unwrap();
 
-    let mut decorated = DecoratedTree::new(tree, source, file_path);
-    provider
-        .decorate(&mut decorated)
+    DecoratedTree::new(tree, source, file_path)
+}
+
+fn parse_fixture_file(relative: &str) -> DecoratedTree {
+    let file_path = fixture_path().join(relative);
+    let source = std::fs::read_to_string(&file_path).expect("should read fixture source");
+
+    parse_source(source, file_path)
+}
+
+fn parse_and_decorate_fixture(provider: &RustDecorationProvider) -> DecoratedTree {
+    let mut decorated = parse_fixture_file("src/lib.rs");
+
+    let coverage = provider
+        .decorate(&decorated)
         .expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(decorations) => decorated.merge_decorations(decorations),
+        Coverage::NotCovered(gap) => panic!("fixture should be covered, got: {gap}"),
+    }
     decorated
 }
 
@@ -64,6 +78,81 @@ fn find_first_node_of_kind<'a>(node: &DecoratedNode<'a>, kind: &str) -> Option<D
         }
     }
     None
+}
+
+#[test]
+fn decorate_with_file_outside_workspace_reports_outside_workspace() {
+    let provider = load_provider();
+    let tree = parse_source(
+        "fn main() {}\n".to_string(),
+        PathBuf::from("/tmp/not_a_real_file.rs"),
+    );
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("a file outside the workspace must not be covered"),
+        Coverage::NotCovered(CoverageGap::OutsideWorkspace { .. }) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
+}
+
+/// A generated file under the root must not be called "outside" the root
+///
+/// `whisker check .` runs the workspace's build scripts, which create
+/// `target`, so the next run offers the provider files under the workspace
+/// root that rust-analyzer never interned. Reporting those as
+/// [`CoverageGap::OutsideWorkspace`] prints a path plainly inside the root
+/// next to a message claiming it is outside, and a remedy the user cannot
+/// act on.
+#[test]
+fn decorate_with_generated_file_under_root_reports_unreachable() {
+    let provider = load_provider();
+    let tree = parse_source(
+        "fn main() {}\n".to_string(),
+        fixture_path().join("target/debug/build/generated_out/out/generated.rs"),
+    );
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("a file no crate reaches must not be covered"),
+        Coverage::NotCovered(CoverageGap::Unreachable { .. }) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
+}
+
+#[test]
+fn decorate_with_modified_source_reports_stale_source() {
+    let provider = load_provider();
+    let file_path = fixture_path().join("src/lib.rs");
+    let source = std::fs::read_to_string(&file_path).expect("should read fixture source");
+    let tree = parse_source(
+        format!("{source}\npub fn added_after_load() {{}}\n"),
+        file_path,
+    );
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("text the toolchain never saw must not be covered"),
+        Coverage::NotCovered(CoverageGap::StaleSource) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
+}
+
+#[test]
+fn decorate_with_orphan_file_reports_unreachable() {
+    let provider = load_provider();
+    let tree = parse_fixture_file("orphan.rs");
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("a file no crate reaches must not be covered"),
+        Coverage::NotCovered(CoverageGap::Unreachable { .. }) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
 }
 
 #[test]

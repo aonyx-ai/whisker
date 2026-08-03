@@ -1,15 +1,19 @@
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
 use ra_ap_hir::{Adt, HasAttrs, HirDisplay, Semantics, attach_db};
 use ra_ap_ide_db::RootDatabase;
+use ra_ap_ide_db::base_db::SourceDatabase as _;
 use ra_ap_load_cargo::{LoadCargoConfig, ProcMacroServerChoice};
-use ra_ap_project_model::CargoConfig;
+use ra_ap_project_model::{CargoConfig, ProjectManifest, ProjectWorkspace};
 use ra_ap_syntax::AstNode;
 use ra_ap_syntax::ast;
-use ra_ap_vfs::Vfs;
-use whisker_types::{DecoratedNode, DecoratedTree, DecorationProvider};
+use ra_ap_vfs::{AbsPathBuf, FileExcluded, FileId, Vfs, VfsPath};
+use whisker_types::{
+    Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationMap, DecorationProvider,
+    ProviderName,
+};
 
 use crate::decorations::{AdtFlags, FnSignature, ResolvedType};
 
@@ -20,28 +24,47 @@ use crate::decorations::{AdtFlags, FnSignature, ResolvedType};
 /// decorate phase. The workspace load is expensive and happens once; the
 /// per-file decoration pass is relatively cheap.
 ///
+/// The loaded workspace is also the boundary of what this provider can
+/// honestly say anything about, so the root is kept around: every
+/// [`CoverageGap`] it reports names the workspace that declined.
+///
 /// # Examples
 ///
 /// ```ignore
 /// let provider = RustDecorationProvider::load(Path::new("."))?;
-/// provider.decorate(&mut tree)?;
+/// let coverage = provider.decorate(&tree)?;
 /// ```
 // r[impl sdk.provider.toolchain-connection]
 pub struct RustDecorationProvider {
     db: Mutex<RootDatabase>,
     vfs: Vfs,
+    root: Arc<Path>,
 }
 
 impl RustDecorationProvider {
+    /// The name this provider is reported under in diagnostics
+    const NAME: ProviderName = ProviderName("rust");
+
     /// Loads a Cargo workspace for semantic analysis
+    ///
+    /// `workspace_root` is a starting point, not necessarily the answer:
+    /// rust-analyzer discovers the nearest manifest above it and Cargo then
+    /// expands that to the whole workspace. This spells out the steps that
+    /// [`ra_ap_load_cargo::load_workspace_at`] would otherwise perform in
+    /// one call, because the workspace it settles on is what every
+    /// [`CoverageGap`] this provider reports has to name. Telling a user
+    /// their file is outside "the workspace at src/lib.rs" helps nobody.
     ///
     /// This is an expensive operation that builds rust-analyzer's internal
     /// database from the project's Cargo.toml. Call this once at startup.
     ///
     /// # Errors
     ///
-    /// Returns an error if the workspace cannot be loaded (missing
-    /// Cargo.toml, dependency resolution failure, etc.).
+    /// Returns an error if the current directory cannot be read, if
+    /// `workspace_root` is not valid UTF-8, if no Cargo project can be
+    /// discovered from it, or if any stage of the load fails: resolving the
+    /// workspace, running its build scripts, or building the analysis
+    /// database. Each stage names itself, because their remedies differ.
     // r[impl sdk.provider.scope]
     pub fn load(workspace_root: &Path) -> anyhow::Result<Self> {
         let cargo_config = CargoConfig {
@@ -56,50 +79,144 @@ impl RustDecorationProvider {
             proc_macro_processes: 0,
         };
 
-        let manifest = workspace_root.join("Cargo.toml");
-        let manifest = if manifest.exists() {
-            manifest
-        } else {
-            workspace_root.to_path_buf()
-        };
+        let cwd = std::env::current_dir().context("read the current directory")?;
+        let discover_from = cwd.join(workspace_root);
+        anyhow::ensure!(
+            discover_from.to_str().is_some(),
+            "{} is not valid UTF-8, and rust-analyzer only addresses UTF-8 paths",
+            discover_from.display()
+        );
+        let discover_from = AbsPathBuf::assert_utf8(discover_from);
+        let manifest = ProjectManifest::discover_single(&discover_from)
+            .with_context(|| format!("discover a Cargo project at {}", workspace_root.display()))?;
+
+        let mut workspace = ProjectWorkspace::load(manifest, &cargo_config, &|_msg| {})
+            .with_context(|| {
+                format!(
+                    "resolve the Cargo workspace discovered from {}",
+                    workspace_root.display()
+                )
+            })?;
+
+        if load_config.load_out_dirs_from_check {
+            let build_scripts = workspace
+                .run_build_scripts(&cargo_config, &|_msg| {})
+                .context("run build scripts for the workspace")?;
+            workspace.set_build_scripts(build_scripts);
+        }
+
+        let root: Arc<Path> = Arc::from(workspace.workspace_root().as_ref() as &Path);
 
         let (db, vfs, _proc_macro_client) =
-            ra_ap_load_cargo::load_workspace_at(&manifest, &cargo_config, &load_config, &|_msg| {})
-                .context("failed to load Cargo workspace for analysis")?;
+            ra_ap_load_cargo::load_workspace(workspace, &cargo_config.extra_env, &load_config)
+                .context("build the analysis database for the workspace")?;
 
         Ok(Self {
             db: Mutex::new(db),
             vfs,
+            root,
         })
     }
 
-    /// Creates a no-op provider that attaches no decorations
+    /// Creates a provider holding an empty workspace
     ///
-    /// Useful for testing syntax-only lints or when semantic analysis is
-    /// not needed.
+    /// Its VFS knows no files and its root is relative, so no absolute file
+    /// path can ever lie under it: every file is declined with
+    /// [`CoverageGap::OutsideWorkspace`]. That is the honest description of
+    /// what an unloaded provider can do, and it is why this constructor
+    /// cannot be used as a fallback when [`RustDecorationProvider::load`]
+    /// fails: the pipeline would refuse every file rather than report them
+    /// all clean.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let provider = RustDecorationProvider::empty();
+    ///
+    /// match provider.decorate(&tree)? {
+    ///     Coverage::Covered(_) => unreachable!("an empty VFS covers nothing"),
+    ///     Coverage::NotCovered(CoverageGap::OutsideWorkspace { root }) => {
+    ///         eprintln!("no workspace loaded at {}", root.display());
+    ///     }
+    ///     Coverage::NotCovered(gap) => eprintln!("declined: {gap}"),
+    /// }
+    /// ```
     pub fn empty() -> Self {
         Self {
             db: Mutex::new(RootDatabase::default()),
             vfs: Vfs::default(),
+            root: Arc::from(Path::new(".")),
+        }
+    }
+
+    /// Classifies a file rust-analyzer never interned
+    ///
+    /// A path under the loaded root is one the toolchain could have known
+    /// about and did not: a file no crate reaches, or one that appeared
+    /// after the load, such as build-script output under `target`. Calling
+    /// that "outside the workspace" while printing a path plainly inside it
+    /// sends the user looking for a second workspace that does not exist,
+    /// so only a path that really is elsewhere gets that verdict.
+    fn gap_for_unknown_file(&self, file_path: &Path) -> CoverageGap {
+        if file_path.starts_with(&*self.root) {
+            CoverageGap::Unreachable {
+                root: Arc::clone(&self.root),
+            }
+        } else {
+            CoverageGap::OutsideWorkspace {
+                root: Arc::clone(&self.root),
+            }
         }
     }
 }
 
 // r[impl sdk.provider.translation]
 impl DecorationProvider for RustDecorationProvider {
-    /// Attaches type decorations to the tree's nodes
+    fn name(&self) -> ProviderName {
+        Self::NAME
+    }
+
+    /// Attaches type decorations to the tree's nodes, or declines the file
+    ///
+    /// Four conditions must hold before a single decoration is produced,
+    /// and their order matters. The file must be interned by the VFS, or
+    /// rust-analyzer has never heard of it. It must not be excluded, or
+    /// reading its text panics — the toolchain keeps an excluded file's
+    /// identity but not its contents. It must belong to a module, because
+    /// `parse_guess_edition` papers over a missing module by guessing the
+    /// current edition and then resolves nothing. And the text the
+    /// pipeline parsed must equal the text the database holds, because the
+    /// byte offsets carried by every target index into rust-analyzer's
+    /// parse of that text.
+    ///
+    /// Reading the file text is safe only after the exclusion and module
+    /// checks: rustc accepts UTF-8 source only, so any non-excluded file
+    /// reachable from a crate root has recorded contents.
     ///
     /// # Errors
     ///
-    /// Returns an error if semantic analysis fails.
-    fn decorate(&self, tree: &mut DecoratedTree) -> anyhow::Result<()> {
+    /// Returns an error if the file path cannot be made absolute or the
+    /// database lock is poisoned. A file this provider knows nothing about
+    /// is a [`Coverage::NotCovered`] verdict, not an error.
+    fn decorate(&self, tree: &DecoratedTree) -> anyhow::Result<Coverage> {
         let file_path = tree.file();
-        let file_path = std::path::absolute(file_path).unwrap_or_else(|_| file_path.to_path_buf());
+        let file_path = std::path::absolute(file_path)
+            .with_context(|| format!("resolve {} to an absolute path", file_path.display()))?;
 
-        let vfs_path = ra_ap_vfs::VfsPath::new_real_path(file_path.to_string_lossy().to_string());
-        let Some((file_id, _excluded)) = self.vfs.file_id(&vfs_path) else {
-            return Ok(());
+        let vfs_path = VfsPath::new_real_path(file_path.to_string_lossy().to_string());
+
+        let Some((file_id, excluded)) = self.vfs.file_id(&vfs_path) else {
+            return Ok(Coverage::NotCovered(self.gap_for_unknown_file(&file_path)));
         };
+
+        match excluded {
+            FileExcluded::Yes => {
+                return Ok(Coverage::NotCovered(CoverageGap::ExcludedByToolchain {
+                    root: Arc::clone(&self.root),
+                }));
+            }
+            FileExcluded::No => {}
+        }
 
         let db = self
             .db
@@ -109,77 +226,86 @@ impl DecorationProvider for RustDecorationProvider {
         let mut targets = Vec::new();
         collect_targets(&tree.root_node(), &mut targets);
 
-        let results: Vec<Decoration> = attach_db(&*db, || {
+        let coverage = attach_db(&*db, || {
             let sema = Semantics::new(&*db);
-            let source_file = sema.parse_guess_edition(file_id);
-            let syntax = source_file.syntax().clone();
 
-            let ctx = DecorateCtx {
-                sema: &sema,
-                syntax: &syntax,
-            };
-
-            let mut decorations = Vec::new();
-            for target in &targets {
-                match target {
-                    Target::Function {
-                        node_id,
-                        start_byte,
-                    } => {
-                        if let Some(sig) = resolve_function(&ctx, *start_byte) {
-                            decorations.push(Decoration::FnSig(*node_id, sig));
-                        }
-                    }
-                    Target::MatchScrutinee {
-                        scrutinee_start_byte,
-                        scrutinee_node_id,
-                    } => {
-                        if let Some((ty, flags)) =
-                            resolve_match_scrutinee(&ctx, *scrutinee_start_byte)
-                        {
-                            decorations.push(Decoration::Type(*scrutinee_node_id, ty));
-                            if let Some(f) = flags {
-                                decorations.push(Decoration::Adt(*scrutinee_node_id, f));
-                            }
-                        }
-                    }
-                    Target::IfElse {
-                        else_start_byte,
-                        else_node_id,
-                    } => {
-                        if let Some(ty) = resolve_expr_type(&ctx, *else_start_byte) {
-                            decorations.push(Decoration::Type(*else_node_id, ty));
-                        }
-                    }
-                    Target::TryExpr {
-                        operand_start_byte,
-                        operand_node_id,
-                    } => {
-                        if let Some(ty) = resolve_expr_type(&ctx, *operand_start_byte) {
-                            decorations.push(Decoration::Type(*operand_node_id, ty));
-                        }
-                    }
-                }
+            if sema.file_to_module_def(file_id).is_none() {
+                return Coverage::NotCovered(CoverageGap::Unreachable {
+                    root: Arc::clone(&self.root),
+                });
             }
-            decorations
+
+            let db_text: &str = db.file_text(file_id).text(&*db);
+            if db_text != tree.source() {
+                return Coverage::NotCovered(CoverageGap::StaleSource);
+            }
+
+            Coverage::Covered(resolve_targets(&sema, file_id, &targets))
         });
 
-        for decoration in results {
-            match decoration {
-                Decoration::Type(id, ty) => tree.decorations_mut().insert(id, ty),
-                Decoration::Adt(id, flags) => tree.decorations_mut().insert(id, flags),
-                Decoration::FnSig(id, sig) => tree.decorations_mut().insert(id, sig),
-            }
-        }
-
-        Ok(())
+        Ok(coverage)
     }
 }
 
-enum Decoration {
-    Type(usize, ResolvedType),
-    Adt(usize, AdtFlags),
-    FnSig(usize, FnSignature),
+/// Resolves every collected target against rust-analyzer's parse
+///
+/// The caller has already established that `file_id` belongs to a module
+/// and that its recorded text matches the text the targets' byte offsets
+/// were taken from.
+fn resolve_targets(
+    sema: &Semantics<'_, RootDatabase>,
+    file_id: FileId,
+    targets: &[Target],
+) -> DecorationMap {
+    let source_file = sema.parse_guess_edition(file_id);
+    let syntax = source_file.syntax().clone();
+
+    let ctx = DecorateCtx {
+        sema,
+        syntax: &syntax,
+    };
+
+    let mut decorations = DecorationMap::new();
+    for target in targets {
+        match target {
+            Target::Function {
+                node_id,
+                start_byte,
+            } => {
+                if let Some(sig) = resolve_function(&ctx, *start_byte) {
+                    decorations.insert(*node_id, sig);
+                }
+            }
+            Target::MatchScrutinee {
+                scrutinee_start_byte,
+                scrutinee_node_id,
+            } => {
+                if let Some((ty, flags)) = resolve_match_scrutinee(&ctx, *scrutinee_start_byte) {
+                    decorations.insert(*scrutinee_node_id, ty);
+                    if let Some(flags) = flags {
+                        decorations.insert(*scrutinee_node_id, flags);
+                    }
+                }
+            }
+            Target::IfElse {
+                else_start_byte,
+                else_node_id,
+            } => {
+                if let Some(ty) = resolve_expr_type(&ctx, *else_start_byte) {
+                    decorations.insert(*else_node_id, ty);
+                }
+            }
+            Target::TryExpr {
+                operand_start_byte,
+                operand_node_id,
+            } => {
+                if let Some(ty) = resolve_expr_type(&ctx, *operand_start_byte) {
+                    decorations.insert(*operand_node_id, ty);
+                }
+            }
+        }
+    }
+    decorations
 }
 
 enum Target {
@@ -242,12 +368,12 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
     }
 }
 
-struct DecorateCtx<'a> {
-    sema: &'a Semantics<'a, RootDatabase>,
+struct DecorateCtx<'a, 'db> {
+    sema: &'a Semantics<'db, RootDatabase>,
     syntax: &'a ra_ap_syntax::SyntaxNode,
 }
 
-impl DecorateCtx<'_> {
+impl DecorateCtx<'_, '_> {
     fn display_type(&self, ty: &ra_ap_hir::Type<'_>, func: &ra_ap_hir::Function) -> String {
         let krate = func.module(self.sema.db).krate(self.sema.db);
         let target = krate.to_display_target(self.sema.db);
@@ -256,7 +382,7 @@ impl DecorateCtx<'_> {
 }
 
 fn find_enclosing_fn(
-    ctx: &DecorateCtx<'_>,
+    ctx: &DecorateCtx<'_, '_>,
     offset: ra_ap_syntax::TextSize,
 ) -> Option<ra_ap_hir::Function> {
     let fn_node = ctx
@@ -268,14 +394,14 @@ fn find_enclosing_fn(
     ctx.sema.to_def(&fn_node)
 }
 
-fn find_expr_at(ctx: &DecorateCtx<'_>, offset: ra_ap_syntax::TextSize) -> Option<ast::Expr> {
+fn find_expr_at(ctx: &DecorateCtx<'_, '_>, offset: ra_ap_syntax::TextSize) -> Option<ast::Expr> {
     ctx.syntax
         .token_at_offset(offset)
         .right_biased()
         .and_then(|t| t.parent_ancestors().find_map(ast::Expr::cast))
 }
 
-fn resolve_function(ctx: &DecorateCtx<'_>, start_byte: usize) -> Option<FnSignature> {
+fn resolve_function(ctx: &DecorateCtx<'_, '_>, start_byte: usize) -> Option<FnSignature> {
     let offset = ra_ap_syntax::TextSize::from(start_byte as u32);
     let func = find_enclosing_fn(ctx, offset)?;
 
@@ -298,7 +424,7 @@ fn resolve_function(ctx: &DecorateCtx<'_>, start_byte: usize) -> Option<FnSignat
 }
 
 fn resolve_match_scrutinee(
-    ctx: &DecorateCtx<'_>,
+    ctx: &DecorateCtx<'_, '_>,
     scrutinee_start_byte: usize,
 ) -> Option<(ResolvedType, Option<AdtFlags>)> {
     let offset = ra_ap_syntax::TextSize::from(scrutinee_start_byte as u32);
@@ -329,7 +455,7 @@ fn resolve_match_scrutinee(
     Some((resolved, flags))
 }
 
-fn resolve_expr_type(ctx: &DecorateCtx<'_>, start_byte: usize) -> Option<ResolvedType> {
+fn resolve_expr_type(ctx: &DecorateCtx<'_, '_>, start_byte: usize) -> Option<ResolvedType> {
     let offset = ra_ap_syntax::TextSize::from(start_byte as u32);
     let expr = find_expr_at(ctx, offset)?;
     let ty_info = ctx.sema.type_of_expr(&expr)?;
@@ -402,6 +528,25 @@ mod tests {
         assert_eq!(
             extract_result_error_type("Result<(), Box<dyn Error>>"),
             Some("Box<dyn Error>".into())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_with_non_utf8_path_returns_error() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt as _;
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(OsStr::from_bytes(b"whisker-\xff-not-utf8"));
+
+        let Err(error) = RustDecorationProvider::load(&path) else {
+            panic!("a path that is not UTF-8 should be rejected");
+        };
+
+        assert!(
+            error.to_string().contains("not valid UTF-8"),
+            "unexpected error: {error:#}"
         );
     }
 }

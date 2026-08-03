@@ -29,10 +29,28 @@ impl DecoratedTree {
         }
     }
 
-    /// Returns a mutable reference to the decoration map for providers to
-    /// populate
+    /// Returns a mutable reference to the decoration map for test helpers
+    /// that hand-build a decorated tree
+    ///
+    /// A [`DecorationProvider`] cannot reach this: it is handed the tree
+    /// immutably and returns its decorations instead, which the pipeline
+    /// applies with [`DecoratedTree::merge_decorations`]. This escape hatch
+    /// exists so a test can stage a decoration without loading a toolchain.
+    ///
+    /// [`DecorationProvider`]: crate::DecorationProvider
     pub fn decorations_mut(&mut self) -> &mut DecorationMap {
         &mut self.decorations
+    }
+
+    /// Merges provider decorations into this tree
+    ///
+    /// This is the only path available to a [`DecorationProvider`], which
+    /// receives the tree immutably, and the pipeline calls it only after
+    /// establishing that some provider claimed the file.
+    ///
+    /// [`DecorationProvider`]: crate::DecorationProvider
+    pub fn merge_decorations(&mut self, decorations: DecorationMap) {
+        self.decorations.merge(decorations);
     }
 
     /// Returns the root node wrapped as a [`DecoratedNode`]
@@ -95,6 +113,41 @@ mod tests {
     fn trait_unpin() {
         fn assert_unpin<T: Unpin>() {}
         assert_unpin::<DecoratedTree>();
+    }
+
+    #[test]
+    fn merge_decorations_makes_decorations_visible_on_nodes() {
+        let source = "fn main() {}";
+        let tree = parse_tree(source);
+        let mut decorated = DecoratedTree::new(tree, source.into(), PathBuf::from("test.rs"));
+        let root_id = decorated.root_node().id();
+        let mut decorations = DecorationMap::new();
+        decorations.insert(root_id, 7u32);
+
+        decorated.merge_decorations(decorations);
+
+        assert_eq!(decorated.root_node().decoration::<u32>(), Some(&7));
+    }
+
+    #[test]
+    fn merge_decorations_twice_keeps_first_of_a_type() {
+        let source = "fn main() {}";
+        let tree = parse_tree(source);
+        let mut decorated = DecoratedTree::new(tree, source.into(), PathBuf::from("test.rs"));
+        let root_id = decorated.root_node().id();
+        let mut first = DecorationMap::new();
+        first.insert(root_id, 1u32);
+        let mut second = DecorationMap::new();
+        second.insert(root_id, 2u32);
+
+        decorated.merge_decorations(first);
+        decorated.merge_decorations(second);
+
+        assert_eq!(decorated.root_node().decoration::<u32>(), Some(&1));
+        assert_eq!(
+            decorated.root_node().decorations_of_type::<u32>(),
+            vec![&1, &2]
+        );
     }
 
     #[test]

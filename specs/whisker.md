@@ -25,6 +25,11 @@ r[cli.check.extra-args]
 The `whisker check` command must forward trailing arguments to
 `cargo check`.
 
+r[cli.check.coverage]
+The `whisker check` command must fail when a file it is asked to lint
+cannot be decorated by any decoration provider, reporting the file, the
+providers consulted, and each provider's reason for declining.
+
 r[cli.version]
 The `whisker --version` command must print the whisker version.
 
