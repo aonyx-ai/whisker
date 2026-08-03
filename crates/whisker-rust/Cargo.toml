@@ -1,0 +1,22 @@
+[package]
+name = "whisker-rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+whisker-types.workspace = true
+tree-sitter.workspace = true
+tree-sitter-rust.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+whisker-core.workspace = true
+
+[build-dependencies]
+whisker-codegen.workspace = true
+
+[lints]
+workspace = true

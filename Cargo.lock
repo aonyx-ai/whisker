@@ -1617,6 +1617,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "whisker-rust"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "proptest",
+ "tree-sitter",
+ "tree-sitter-rust",
+ "whisker-codegen",
+ "whisker-core",
+ "whisker-types",
+]
+
+[[package]]
 name = "whisker-types"
 version = "0.1.0"
 dependencies = [
