@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use whisker_rust::RustDecorationProvider;
+use anyhow_missing_context::AnyhowMissingContext;
 use whisker_rust::decorations::{AdtFlags, FnSignature, ResolvedType};
-use whisker_types::{Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider};
+use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
+use whisker_types::{
+    Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, LintPass,
+};
+use wildcard_match_arm::WildcardMatchArm;
 
 static PROVIDER: OnceLock<RustDecorationProvider> = OnceLock::new();
 
@@ -116,6 +120,36 @@ fn find_first_node_of_kind<'a>(node: &DecoratedNode<'a>, kind: &str) -> Option<D
         }
     }
     None
+}
+
+/// Returns the operand of the first `?` expression inside `node`
+fn find_first_try_operand<'a>(node: &DecoratedNode<'a>) -> Option<DecoratedNode<'a>> {
+    find_first_node_of_kind(node, "try_expression")?.named_child(0)
+}
+
+/// Returns the source text covered by each diagnostic raised inside `func`
+///
+/// Diagnostics are attributed to a function by byte containment rather than
+/// by their position in the list, because these tests are about which of the
+/// fixture's functions a lint reaches at all. An expectation written against
+/// list positions would survive a lint that stopped seeing one function and
+/// started seeing another.
+///
+/// Returning the covered text rather than raw offsets also lets the fixture
+/// grow without every expectation being renumbered.
+fn flagged_within<'a>(
+    tree: &'a DecoratedTree,
+    diagnostics: &[Diagnostic],
+    func: &DecoratedNode<'_>,
+) -> Vec<&'a str> {
+    let range = func.raw().byte_range();
+
+    diagnostics
+        .iter()
+        .map(Diagnostic::span)
+        .filter(|span| range.contains(&span.start()))
+        .map(|span| &tree.source()[span.start()..span.end()])
+        .collect()
 }
 
 /// One unreadable file must not take the rest of its crate down with it
@@ -373,6 +407,74 @@ fn match_scrutinee_on_integer_has_is_enum_false() {
     assert!(!ty.is_enum(), "i32 should not be an enum");
 }
 
+/// A scrutinee reached through a field must be typed as the field
+///
+/// `match palette.primary` starts on the token `palette`, and the smallest
+/// expression around that token is the path `palette`, whose type is the
+/// struct. Typing the scrutinee from where it starts rather than from what
+/// it spans therefore reports a struct, and every lint that asks whether the
+/// scrutinee is an enum quietly gets the wrong answer.
+#[test]
+fn match_scrutinee_on_field_expression_has_is_enum_true() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "match_on_field_expression")
+        .expect("should find match_on_field_expression");
+
+    let match_expr =
+        find_first_node_of_kind(&func, "match_expression").expect("should find match_expression");
+
+    let scrutinee = match_expr
+        .child_by_field_name("value")
+        .expect("match should have value field");
+
+    let ty = scrutinee
+        .decoration::<ResolvedType>()
+        .expect("scrutinee should have ResolvedType");
+
+    assert_eq!(scrutinee.text(), "palette.primary");
+    assert!(
+        ty.is_enum(),
+        "the field's Color type should be an enum, got: {}",
+        ty.display()
+    );
+}
+
+/// A scrutinee returned by a call must be typed as the call's result
+///
+/// `match pick_color()` starts on the token `pick_color`, whose smallest
+/// enclosing expression is the callee path. Typing that yields the function
+/// itself, not the `Color` it returns.
+#[test]
+fn match_scrutinee_on_call_expression_has_is_enum_true() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "match_on_call_expression")
+        .expect("should find match_on_call_expression");
+
+    let match_expr =
+        find_first_node_of_kind(&func, "match_expression").expect("should find match_expression");
+
+    let scrutinee = match_expr
+        .child_by_field_name("value")
+        .expect("match should have value field");
+
+    let ty = scrutinee
+        .decoration::<ResolvedType>()
+        .expect("scrutinee should have ResolvedType");
+
+    assert_eq!(scrutinee.text(), "pick_color()");
+    assert!(
+        ty.is_enum(),
+        "the returned Color type should be an enum, got: {}",
+        ty.display()
+    );
+}
+
 #[test]
 fn local_enum_has_non_exhaustive_external_false() {
     let provider = load_provider();
@@ -446,6 +548,165 @@ fn if_let_with_non_diverging_else_is_not_never() {
             "non-diverging else should not have never type"
         );
     }
+}
+
+/// The operand of `?` must be typed as the call, not as the callee
+///
+/// `std::fs::read_to_string("anyhow_bare.txt")?` starts on the token `std`,
+/// and the smallest expression around that token is the callee path. Typing
+/// the operand from where it starts therefore reports a function type, which
+/// is not a `Result`, and every lint gated on the operand being a `Result`
+/// gives up before it looks at anything else.
+#[test]
+fn try_operand_on_call_expression_is_typed_as_the_call_result() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "returns_anyhow_result")
+        .expect("should find returns_anyhow_result");
+
+    let operand = find_first_try_operand(&func).expect("should find a `?` operand");
+
+    let ty = operand
+        .decoration::<ResolvedType>()
+        .expect("`?` operand should have ResolvedType");
+
+    assert_eq!(
+        operand.text(),
+        "std::fs::read_to_string(\"anyhow_bare.txt\")"
+    );
+    assert!(
+        ty.is_result(),
+        "read_to_string returns a Result, got: {}",
+        ty.display()
+    );
+}
+
+/// The operand of `?` must be typed as the method call, not as the receiver
+///
+/// `loader.load()?` starts on the token `loader`, whose type is a reference
+/// to the struct. This is the same fault as the callee case, reached through
+/// a different shape, so it is pinned separately.
+#[test]
+fn try_operand_on_method_call_is_typed_as_the_call_result() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func =
+        find_function_by_name(&root, "try_on_method_call").expect("should find try_on_method_call");
+
+    let operand = find_first_try_operand(&func).expect("should find a `?` operand");
+
+    let ty = operand
+        .decoration::<ResolvedType>()
+        .expect("`?` operand should have ResolvedType");
+
+    assert_eq!(operand.text(), "loader.load()");
+    assert!(
+        ty.is_result(),
+        "Loader::load returns a Result, got: {}",
+        ty.display()
+    );
+}
+
+/// The `anyhow_missing_context` rule fires on decorations the provider made
+///
+/// Its own unit tests attach the decorations by hand, so they went on passing
+/// for as long as the provider produced decorations that never satisfied the
+/// rule. Running the real provider and the real rule over real source is the
+/// only arrangement that can tell the two apart.
+///
+/// The expectation is the complete list of what the rule flags inside the
+/// function, so it also pins the negative: the `?` on the neighboring
+/// `.context(..)` call must not be reported.
+#[test]
+fn anyhow_missing_context_flags_a_bare_try_in_an_anyhow_function() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "returns_anyhow_result")
+        .expect("should find returns_anyhow_result");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(
+        flagged_within(&tree, &diagnostics, &func),
+        vec!["std::fs::read_to_string(\"anyhow_bare.txt\")?"]
+    );
+}
+
+#[test]
+fn anyhow_missing_context_flags_a_bare_try_on_a_method_call() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func =
+        find_function_by_name(&root, "try_on_method_call").expect("should find try_on_method_call");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(
+        flagged_within(&tree, &diagnostics, &func),
+        vec!["loader.load()?"]
+    );
+}
+
+/// The `wildcard_match_arm` rule sees scrutinees it reaches through a field
+///
+/// The rule was already firing on the fixture, but only on scrutinees that
+/// are a bare name, which is the one shape the old start-offset lookup got
+/// right. This pins the shapes it used to miss.
+#[test]
+fn wildcard_match_arm_flags_a_scrutinee_reached_through_a_field() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "match_on_field_expression")
+        .expect("should find match_on_field_expression");
+    let mut passes: Vec<Box<dyn LintPass>> =
+        vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["_"]);
+}
+
+#[test]
+fn wildcard_match_arm_flags_a_scrutinee_returned_by_a_call() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "match_on_call_expression")
+        .expect("should find match_on_call_expression");
+    let mut passes: Vec<Box<dyn LintPass>> =
+        vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["_"]);
+}
+
+/// Reaching more scrutinees must not mean reaching every scrutinee
+///
+/// A lookup that resolved to something too broad would make `is_enum` true
+/// far too often, and this is the cheapest place to notice that.
+#[test]
+fn wildcard_match_arm_ignores_a_scrutinee_that_is_not_an_enum() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func =
+        find_function_by_name(&root, "match_on_integer").expect("should find match_on_integer");
+    let mut passes: Vec<Box<dyn LintPass>> =
+        vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
 
 #[test]
