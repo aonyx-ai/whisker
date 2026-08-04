@@ -18,8 +18,14 @@ tree-sitter-rust.workspace = true
 whisker-types.workspace = true
 
 [dev-dependencies]
+# The lint crates depend on this one, so the two lint entries below close a
+# cycle. Cargo permits that for dev-dependencies. The cycle lets the
+# integration tests assert on diagnostics that real lints draw from real
+# decorations, not on the decorations alone.
+anyhow_missing_context = { path = "../../lints/anyhow_missing_context" }
 proptest.workspace = true
 whisker-core.workspace = true
+wildcard_match_arm = { path = "../../lints/wildcard_match_arm" }
 
 [build-dependencies]
 whisker-codegen.workspace = true
