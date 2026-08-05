@@ -1,4 +1,5 @@
 mod check_outcome;
+mod error_recovery;
 mod failure_threshold;
 
 use std::collections::HashMap;
@@ -12,6 +13,7 @@ use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
 use whisker_types::{DecorationProvider, Diagnostic, Language, LintPass};
 
 use self::check_outcome::CheckOutcome;
+use self::error_recovery::ErrorRecovery;
 use self::failure_threshold::FailureThreshold;
 
 /// Run whisker lints against a project
@@ -73,6 +75,11 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         false => FailureThreshold::Errors,
     };
 
+    let recovery = match keep_going {
+        true => ErrorRecovery::Continue,
+        false => ErrorRecovery::Abort,
+    };
+
     let files = discover_files(&path)?;
 
     if files.is_empty() {
@@ -92,14 +99,10 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     for file in &files {
         let source = match std::fs::read_to_string(file) {
-            Ok(s) => s,
+            Ok(source) => source,
             Err(e) => {
-                if keep_going {
-                    eprintln!("error: {}: {e:#}", file.display());
-                    outcome = CheckOutcome::Failure;
-                    continue;
-                }
-                return Err(anyhow::anyhow!("read {}: {e}", file.display()));
+                recovery.record(&mut outcome, file, anyhow::Error::new(e))?;
+                continue;
             }
         };
 
@@ -113,14 +116,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
                     all_diagnostics.extend(diagnostics);
                 }
             }
-            Err(e) => {
-                if keep_going {
-                    eprintln!("error: {}: {e:#}", file.display());
-                    outcome = CheckOutcome::Failure;
-                } else {
-                    return Err(e);
-                }
-            }
+            Err(e) => recovery.record(&mut outcome, file, e)?,
         }
     }
 
