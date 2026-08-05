@@ -17,7 +17,8 @@ mod tests {
     use std::path::PathBuf;
 
     use whisker_types::{
-        DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, RuleId, Severity,
+        Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationMap, DecorationProvider,
+        Diagnostic, RuleId, Severity,
     };
 
     use super::*;
@@ -64,20 +65,45 @@ mod tests {
     }
 
     #[test]
-    fn provider_decorate_succeeds_on_empty_tree() {
+    fn decorate_with_empty_provider_leaves_existing_decorations_intact() {
         let provider = RustDecorationProvider::empty();
-        let mut tree = parse_rust("");
-        provider.decorate(&mut tree).expect("should succeed");
+        let mut tree = parse_rust("fn main() {}");
+        let root_id = tree.root_node().id();
+        let mut staged = DecorationMap::new();
+        staged.insert(root_id, 7u32);
+        tree.merge_decorations(staged);
+
+        let coverage = provider.decorate(&tree).expect("should succeed");
+
+        match coverage {
+            Coverage::Covered(_) => panic!("an empty VFS cannot cover any file"),
+            Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
+            Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+        }
+        assert_eq!(tree.root_node().decoration::<u32>(), Some(&7));
     }
 
     #[test]
-    fn provider_decorate_does_not_add_decorations() {
+    fn decorate_with_empty_provider_reports_outside_workspace() {
         let provider = RustDecorationProvider::empty();
-        let mut tree = parse_rust("fn main() {}");
-        provider.decorate(&mut tree).expect("should succeed");
+        let tree = parse_rust("");
 
-        let root = tree.root_node();
-        assert!(root.decoration::<u32>().is_none());
+        let coverage = provider.decorate(&tree).expect("should succeed");
+
+        match coverage {
+            Coverage::Covered(_) => panic!("an empty VFS cannot cover any file"),
+            Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
+            Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+        }
+    }
+
+    #[test]
+    fn name_returns_rust() {
+        let provider = RustDecorationProvider::empty();
+
+        let name = provider.name();
+
+        assert_eq!(name.as_str(), "rust");
     }
 
     #[test]

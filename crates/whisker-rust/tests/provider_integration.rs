@@ -3,12 +3,47 @@ use std::sync::OnceLock;
 
 use whisker_rust::RustDecorationProvider;
 use whisker_rust::decorations::{AdtFlags, FnSignature, ResolvedType};
-use whisker_types::{DecoratedNode, DecoratedTree, DecorationProvider};
+use whisker_types::{Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider};
 
 static PROVIDER: OnceLock<RustDecorationProvider> = OnceLock::new();
 
 fn fixture_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample_project")
+}
+
+/// Writes a Cargo project whose crate reaches two files that are not UTF-8
+///
+/// This function generates the project at run time, because a committed
+/// file that is not valid UTF-8 rarely survives review or an editor
+/// intact. The project is a separate package, so the bad module cannot
+/// break analysis of any other crate.
+///
+/// The two files cover both routes on which rust-analyzer reads text.
+/// It reads the module `src/bad.rs` when it builds the definition map.
+/// It reads the [`include_str!`] target `src/notes.md` when it infers
+/// the body that includes it.
+fn not_utf8_project() -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("not_utf8_project");
+    std::fs::create_dir_all(root.join("src")).expect("should create the fixture directories");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\n\n[package]\nname = \"not_utf8_project\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .expect("should write the fixture manifest");
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub mod bad;\n\npub enum Color {\n    Red,\n    Green,\n}\n\npub fn match_on_enum(color: Color) {\n    let _notes = include_str!(\"notes.md\");\n    match color {\n        Color::Red => {}\n        _ => {}\n    }\n}\n",
+    )
+    .expect("should write the fixture crate root");
+    std::fs::write(
+        root.join("src/bad.rs"),
+        b"pub fn f() -> u8 { b\"\xff\xfe\"[0] }\n",
+    )
+    .expect("should write the fixture module that is not UTF-8");
+    std::fs::write(root.join("src/notes.md"), b"notes \xff\xfe\n")
+        .expect("should write the fixture include_str target that is not UTF-8");
+
+    root
 }
 
 /// Loads the fixture workspace once and lends it to every test
@@ -24,18 +59,32 @@ fn load_provider() -> &'static RustDecorationProvider {
         .get_or_init(|| RustDecorationProvider::load(&fixture_path()).expect("should load fixture"))
 }
 
-fn parse_and_decorate_fixture(provider: &RustDecorationProvider) -> DecoratedTree {
-    let file_path = fixture_path().join("src/lib.rs");
-    let source = std::fs::read_to_string(&file_path).expect("should read fixture source");
-
+fn parse_source(source: String, file_path: PathBuf) -> DecoratedTree {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&whisker_rust::language()).unwrap();
     let tree = parser.parse(&source, None).unwrap();
 
-    let mut decorated = DecoratedTree::new(tree, source, file_path);
-    provider
-        .decorate(&mut decorated)
+    DecoratedTree::new(tree, source, file_path)
+}
+
+fn parse_fixture_file(relative: &str) -> DecoratedTree {
+    let file_path = fixture_path().join(relative);
+    let source = std::fs::read_to_string(&file_path).expect("should read fixture source");
+
+    parse_source(source, file_path)
+}
+
+fn parse_and_decorate_fixture(provider: &RustDecorationProvider) -> DecoratedTree {
+    let mut decorated = parse_fixture_file("src/lib.rs");
+
+    let coverage = provider
+        .decorate(&decorated)
         .expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(decorations) => decorated.merge_decorations(decorations),
+        Coverage::NotCovered(gap) => panic!("fixture should be covered, got: {gap}"),
+    }
     decorated
 }
 
@@ -64,6 +113,138 @@ fn find_first_node_of_kind<'a>(node: &DecoratedNode<'a>, kind: &str) -> Option<D
         }
     }
     None
+}
+
+/// Checks that a module that is not UTF-8 leaves its siblings covered
+///
+/// Before the load repaired such files, rust-analyzer panicked over the
+/// missing file text and aborted the whole test binary. The fixture
+/// holds a bad module and a bad [`include_str!`] target, so a repair
+/// narrowed to Rust source also fails this test.
+#[test]
+fn decorate_with_a_module_that_is_not_utf8_covers_its_siblings() {
+    let root = not_utf8_project();
+    let provider = RustDecorationProvider::load(&root).expect("should load the fixture");
+    let file_path = root.join("src/lib.rs");
+    let source = std::fs::read_to_string(&file_path).expect("should read the fixture crate root");
+    let mut tree = parse_source(source, file_path);
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(decorations) => tree.merge_decorations(decorations),
+        Coverage::NotCovered(gap) => panic!("the crate root should be covered, got: {gap}"),
+    }
+    let root_node = tree.root_node();
+    let func =
+        find_function_by_name(&root_node, "match_on_enum").expect("should find the function");
+    let match_expr =
+        find_first_node_of_kind(&func, "match_expression").expect("should find match_expression");
+    let scrutinee = match_expr
+        .child_by_field_name("value")
+        .expect("match should have value field");
+    let ty = scrutinee
+        .decoration::<ResolvedType>()
+        .expect("scrutinee should have ResolvedType");
+    assert!(ty.is_enum(), "Color should be an enum");
+}
+
+/// Checks that code under `#[cfg(test)]` resolves like any other code
+///
+/// Cargo leaves `test` out of the cfg options by default. Without it,
+/// every test block resolves to nothing and whisker reports the file
+/// clean.
+#[test]
+fn decorate_with_code_under_cfg_test_resolves_types() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "match_on_enum_under_cfg_test")
+        .expect("should find match_on_enum_under_cfg_test");
+
+    let match_expr =
+        find_first_node_of_kind(&func, "match_expression").expect("should find match_expression");
+    let scrutinee = match_expr
+        .child_by_field_name("value")
+        .expect("match should have value field");
+    let ty = scrutinee
+        .decoration::<ResolvedType>()
+        .expect("a scrutinee under cfg(test) should have ResolvedType");
+    assert!(ty.is_enum(), "Color should be an enum");
+}
+
+#[test]
+fn decorate_with_file_outside_workspace_reports_outside_workspace() {
+    let provider = load_provider();
+    let tree = parse_source(
+        "fn main() {}\n".to_string(),
+        PathBuf::from("/tmp/not_a_real_file.rs"),
+    );
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("a file outside the loaded root must not be covered"),
+        Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
+}
+
+/// Checks that a generated file under the root reports
+/// [`CoverageGap::Unreachable`]
+///
+/// Build scripts create files under `target` that rust-analyzer never
+/// interned. The [`CoverageGap::OutsideRoot`] verdict would print a
+/// path inside the root next to a message that claims it is outside.
+#[test]
+fn decorate_with_generated_file_under_root_reports_unreachable() {
+    let provider = load_provider();
+    let tree = parse_source(
+        "fn main() {}\n".to_string(),
+        fixture_path().join("target/debug/build/generated_out/out/generated.rs"),
+    );
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("a file no crate reaches must not be covered"),
+        Coverage::NotCovered(CoverageGap::Unreachable { .. }) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
+}
+
+#[test]
+fn decorate_with_modified_source_reports_stale_source() {
+    let provider = load_provider();
+    let file_path = fixture_path().join("src/lib.rs");
+    let source = std::fs::read_to_string(&file_path).expect("should read fixture source");
+    let tree = parse_source(
+        format!("{source}\npub fn added_after_load() {{}}\n"),
+        file_path,
+    );
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("text the toolchain never saw must not be covered"),
+        Coverage::NotCovered(CoverageGap::StaleSource) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
+}
+
+#[test]
+fn decorate_with_orphan_file_reports_unreachable() {
+    let provider = load_provider();
+    let tree = parse_fixture_file("orphan.rs");
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(_) => panic!("a file no crate reaches must not be covered"),
+        Coverage::NotCovered(CoverageGap::Unreachable { .. }) => {}
+        Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+    }
 }
 
 #[test]

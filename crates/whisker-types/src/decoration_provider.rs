@@ -1,32 +1,46 @@
-use crate::DecoratedTree;
+use crate::{Coverage, DecoratedTree, ProviderName};
 
 /// Attaches semantic decorations to a parsed syntax tree
 ///
 /// Decoration providers bridge between a language toolchain (e.g.
 /// rust-analyzer) and the platform's decoration system. A provider reads
-/// the syntax tree, queries the toolchain for semantic information, and
-/// inserts decorations into the tree's [`DecorationMap`].
+/// the syntax tree, queries the toolchain, and returns decorations
+/// together with a [`Coverage`] verdict.
 ///
-/// [`DecorationMap`]: crate::DecorationMap
+/// The verdict tells the caller whether the provider could analyze the
+/// file. An empty decoration set is ambiguous: a file with nothing to
+/// decorate and an unknown file produce the same output.
 pub trait DecorationProvider: Send + Sync {
-    /// Populates decorations on the given tree
+    /// Returns the name that identifies this provider in diagnostics
+    fn name(&self) -> ProviderName;
+
+    /// Decorates the file, or explains why the provider declines it
+    ///
+    /// The provider cannot mutate the tree, so a declined file carries no
+    /// partial state.
     ///
     /// # Errors
     ///
-    /// Returns an error if the toolchain connection fails or produces
-    /// invalid results.
-    fn decorate(&self, tree: &mut DecoratedTree) -> anyhow::Result<()>;
+    /// Returns an error only when the toolchain itself malfunctions, for
+    /// example a poisoned lock. Lack of information about a file is not
+    /// an error; the provider reports [`Coverage::NotCovered`] instead.
+    fn decorate(&self, tree: &DecoratedTree) -> anyhow::Result<Coverage>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DecorationMap;
 
     struct Stub;
 
     impl DecorationProvider for Stub {
-        fn decorate(&self, _tree: &mut DecoratedTree) -> anyhow::Result<()> {
-            Ok(())
+        fn name(&self) -> ProviderName {
+            ProviderName("stub")
+        }
+
+        fn decorate(&self, _tree: &DecoratedTree) -> anyhow::Result<Coverage> {
+            Ok(Coverage::Covered(DecorationMap::new()))
         }
     }
 
