@@ -27,10 +27,17 @@ honored even outside a git checkout, since a `.gitignore` in an exported or
 vendored tree still describes what that tree generates. A path named directly
 on the command line is always checked, even if a rule would have excluded it,
 and so is everything inside it unless a rule names something further down.
+Naming a file whisker has no grammar for is an error, though, since calling it
+clean would mean vouching for a file whisker never understood.
 
 A run that finds nothing to check is an error rather than a success, because
 a linter reporting no problems having opened no files is indistinguishable
 from a clean project and far more likely to mean a pattern went too wide.
+
+A directory that cannot be read, or an ignore file that cannot be parsed,
+ends the run for the same reason: either one quietly changes which files get
+looked at. Pass `--keep-going` to report them and carry on, which still exits
+non-zero.
 
 ### Configuration
 

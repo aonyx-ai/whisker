@@ -8,8 +8,10 @@ use whisker_types::Language;
 use crate::config::WhiskerConfig;
 
 mod walk_error_policy;
+mod walk_failure;
 
 pub use walk_error_policy::WalkErrorPolicy;
+use walk_failure::WalkFailure;
 
 /// The source files a `whisker check` run will inspect
 ///
@@ -133,8 +135,8 @@ impl Discovery {
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(error) => {
-                    let error =
-                        anyhow::Error::new(error).context("failed to read a directory entry");
+                    let context = WalkFailure::classify(&error).context();
+                    let error = anyhow::Error::new(error).context(context);
 
                     // r[impl cli.discovery.walk-errors]
                     match on_error {
@@ -295,6 +297,42 @@ mod tests {
         }
     }
 
+    /// Panics unless `directory` reads back in an order that needs sorting
+    ///
+    /// The walk hands entries on in whatever order the filesystem stores them,
+    /// which on the filesystems whisker is developed against is a hash order
+    /// that a short list of names can easily come out of already sorted. A
+    /// test asserting a sorted result over such a list asserts nothing about
+    /// the sort, so this makes the assumption it rests on explicit and fails
+    /// where it stops holding instead of quietly passing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `directory` cannot be read, or if it reads back sorted.
+    fn assert_stored_out_of_order(directory: &Path) {
+        let names: Vec<String> = std::fs::read_dir(directory)
+            .expect("directory should be read")
+            .map(|entry| {
+                entry
+                    .expect("entry should be read")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+
+        let mut sorted = names.clone();
+        sorted.sort();
+
+        assert_ne!(
+            names,
+            sorted,
+            "{} reads back in sorted order, so a sorted result proves nothing about whisker \
+             sorting anything; give the test more files or different names",
+            directory.display()
+        );
+    }
+
     /// Builds a configuration anchored at `root` with the given patterns
     fn config(root: &Path, patterns: &[&str]) -> WhiskerConfig {
         let root = std::fs::canonicalize(root).expect("root should resolve");
@@ -440,6 +478,48 @@ mod tests {
         );
     }
 
+    /// Pins the sort that makes a run's diagnostics reproducible
+    ///
+    /// Every other ordered assertion here is satisfied by the filesystem
+    /// rather than by whisker: they name two or three files, and two or three
+    /// files come back sorted often enough that removing the sort breaks
+    /// nothing. Diagnostics arriving in a different order on every machine is
+    /// a real cost to anyone diffing two runs, so this uses enough names for
+    /// the storage order to be visibly its own, and says so out loud if that
+    /// stops being true.
+    #[test]
+    fn run_returns_files_in_sorted_order() {
+        let directory = tree(&[
+            "zebra.rs",
+            "yak.rs",
+            "xray.rs",
+            "walrus.rs",
+            "viper.rs",
+            "umbrella.rs",
+            "tiger.rs",
+            "snake.rs",
+        ]);
+        assert_stored_out_of_order(directory.path());
+        let config = config(directory.path(), &[]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(
+            discovered(&discovery, directory.path()),
+            [
+                "snake.rs",
+                "tiger.rs",
+                "umbrella.rs",
+                "viper.rs",
+                "walrus.rs",
+                "xray.rs",
+                "yak.rs",
+                "zebra.rs"
+            ]
+        );
+    }
+
     // r[verify cli.config.ignore]
     #[test]
     fn run_with_anchored_pattern_prunes_only_at_the_workspace_root() {
@@ -463,6 +543,20 @@ mod tests {
     fn run_with_directory_pattern_prunes_the_directory() {
         let directory = tree(&["src/main.rs", "examples/demo/src/main.rs"]);
         let config = config(directory.path(), &["examples/"]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
+    }
+
+    // r[verify cli.discovery.ignore-files]
+    #[test]
+    fn run_with_dot_ignore_file_excludes_it() {
+        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
+        std::fs::write(directory.path().join(".ignore"), "generated/\n")
+            .expect("ignore file should be written");
+        let config = config(directory.path(), &[]);
 
         let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
@@ -535,6 +629,33 @@ mod tests {
             format!("{error:#}").contains("no grammar for `.toml` files"),
             "error should name the extension whisker cannot parse: {error:#}"
         );
+    }
+
+    /// Pins the one exclusion whose rules live outside the tree they describe
+    ///
+    /// A `.git/info/exclude` is how a checkout hides something without saying
+    /// so in a tracked file, and the walker only reads it after recognizing
+    /// the directory as a repository. That recognition is the fragile part:
+    /// an empty `.git` directory is enough here, but the moment whisker
+    /// reconfigures the walk it is also the first of the four ignore sources
+    /// to fall out silently.
+    // r[verify cli.discovery.ignore-files]
+    #[test]
+    fn run_with_git_exclude_file_excludes_it() {
+        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
+        std::fs::create_dir_all(directory.path().join(".git").join("info"))
+            .expect("git directory should be created");
+        std::fs::write(
+            directory.path().join(".git").join("info").join("exclude"),
+            "generated/\n",
+        )
+        .expect("exclude file should be written");
+        let config = config(directory.path(), &[]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
     // r[verify cli.discovery.ignore-files]
@@ -662,6 +783,37 @@ mod tests {
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
+    }
+
+    /// Pins that an ignore file is named as one wherever the walker found it
+    ///
+    /// The rules a directory's ancestors impose are collected before the walk
+    /// has any entry to hang a failure on, so this fault takes the walker's
+    /// generic error path rather than the one every other unparsable ignore
+    /// file takes. The user has the same file to fix either way, and being
+    /// told to go looking at directory entries instead is worse than being
+    /// told nothing.
+    // r[verify cli.discovery.walk-errors]
+    #[test]
+    fn run_with_unparsable_ignore_file_above_the_root_returns_error() {
+        let directory = tree(&["proj/src/main.rs"]);
+        std::fs::write(directory.path().join(".gitignore"), "{a,b\n")
+            .expect("gitignore should be written");
+        let config = config(directory.path(), &[]);
+        let target = directory.path().join("proj");
+
+        let error = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
+
+        let error = format!("{error:#}");
+        assert!(
+            error.contains("failed to read an ignore file"),
+            "error should describe the unparsable ignore file: {error}"
+        );
+        assert!(
+            !error.contains("failed to read a directory entry"),
+            "error should not blame the directory walk: {error}"
+        );
     }
 
     // r[verify cli.discovery.walk-errors]
