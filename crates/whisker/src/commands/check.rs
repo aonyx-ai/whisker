@@ -138,6 +138,20 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     }
 }
 
+/// Returns the files to analyze under a path named on the command line
+///
+/// A path that names a file is returned exactly as given, without the
+/// extension test the directory walk applies. Pointing whisker at one file
+/// must never silently analyze nothing, so every rule that narrows discovery
+/// belongs to the walk and not to an explicitly named path. Whatever later
+/// teaches this function to skip files — ignore rules, for instance — has to
+/// keep that split, and the integration test over
+/// `tests/fixtures/invalid_utf8.rs.bin` depends on it: the fixture is named
+/// so that no walk can reach it and the test has to name it directly.
+///
+/// # Errors
+///
+/// Returns an error if the path does not exist.
 fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
     anyhow::ensure!(path.exists(), "{} does not exist", path.display());
 
@@ -163,4 +177,37 @@ fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
     }
 
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discover_files_with_a_directory_applies_the_extension_test() {
+        let path = PathBuf::from("tests/fixtures");
+
+        let files = discover_files(&path).expect("the fixture directory should be discoverable");
+
+        assert!(files.contains(&PathBuf::from("tests/fixtures/clean/exhaustive_match.rs")));
+        assert!(!files.contains(&PathBuf::from("tests/fixtures/invalid_utf8.rs.bin")));
+    }
+
+    #[test]
+    fn discover_files_with_a_missing_path_returns_an_error() {
+        let path = PathBuf::from("does/not/exist");
+
+        let error = discover_files(&path).expect_err("a missing path should fail");
+
+        assert_eq!(error.to_string(), "does/not/exist does not exist");
+    }
+
+    #[test]
+    fn discover_files_with_a_named_file_ignores_the_extension_test() {
+        let path = PathBuf::from("tests/fixtures/invalid_utf8.rs.bin");
+
+        let files = discover_files(&path).expect("a named file should be discoverable");
+
+        assert_eq!(files, vec![path]);
+    }
 }
