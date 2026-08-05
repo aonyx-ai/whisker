@@ -7,6 +7,15 @@ fn whisker() -> Command {
     Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
+/// Pins that a directory of conforming sources produces no output at all
+///
+/// Everything under `tests/fixtures/clean` has to conform to the conventions
+/// whisker enforces, not merely fail to trip a lint. A lint that needs
+/// semantic decorations returns nothing when it cannot resolve its subject,
+/// so a fixture that violates such a rule would sit here silently until the
+/// decoration provider improved and then break this test for the right
+/// reason. Fixtures belong in `tests/fixtures/warnings` if they are meant to
+/// be flagged.
 #[test]
 fn check_clean_fixture_directory_succeeds() {
     whisker()
@@ -33,7 +42,7 @@ fn check_nonexistent_path_fails() {
 #[test]
 fn check_single_file_succeeds() {
     whisker()
-        .args(["check", "tests/fixtures/clean/wildcard_match.rs"])
+        .args(["check", "tests/fixtures/clean/exhaustive_match.rs"])
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
