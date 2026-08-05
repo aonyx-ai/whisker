@@ -4,8 +4,21 @@ use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
+#[cfg(unix)]
+#[path = "support/unreadable.rs"]
+mod unreadable;
+
+#[cfg(unix)]
+use unreadable::make_unreadable;
+
 /// Source that trips none of the lints the CLI runs
 const CLEAN_SOURCE: &str = "pub fn answer() -> u32 {\n    42\n}\n";
+
+/// An ignore file the walker cannot parse
+///
+/// An unclosed alternate group fails the walk on every platform. The other
+/// trigger, an unreadable directory, does not exist on Windows.
+const UNPARSABLE_IGNORE_FILE: &str = "{a,b\n";
 
 /// A manifest for a standalone package with no dependencies
 const MANIFEST: &str = "[package]\nname = \"target\"\nversion = \"0.1.0\"\nedition = \"2024\"\n";
@@ -59,6 +72,27 @@ fn check_current_directory_succeeds() {
 }
 
 #[test]
+fn check_directory_without_sources_fails() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+
+    whisker()
+        .arg("check")
+        .arg(directory.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+#[test]
+fn check_non_rust_file_fails() {
+    whisker()
+        .args(["check", "Cargo.toml"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no grammar for `.toml` files"));
+}
+
+#[test]
 fn check_nonexistent_path_fails() {
     whisker()
         .args(["check", "does/not/exist"])
@@ -77,6 +111,132 @@ fn check_package_directory_succeeds() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
+}
+
+#[test]
+fn check_package_whose_sources_a_gitignore_excludes_fails() {
+    let package = package(CLEAN_SOURCE);
+    std::fs::write(package.path().join(".gitignore"), "src/\n")
+        .expect("gitignore should be written");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+/// Pins the exclusion source that lives entirely outside the project
+///
+/// The test points `GIT_CONFIG_GLOBAL` at a temporary config, so it neither
+/// reads nor disturbs the developer's own settings.
+#[test]
+fn check_package_whose_sources_the_global_gitignore_excludes_fails() {
+    let package = package(CLEAN_SOURCE);
+    let git = tempfile::tempdir().expect("temporary directory should be created");
+    let excludes = git.path().join("ignore");
+    std::fs::write(&excludes, "src/\n").expect("global gitignore should be written");
+    let config = git.path().join("config");
+    std::fs::write(
+        &config,
+        format!("[core]\n\texcludesfile = {}\n", excludes.display()),
+    )
+    .expect("git configuration should be written");
+
+    whisker()
+        .env("GIT_CONFIG_GLOBAL", &config)
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+/// Pins that `--keep-going` survives a walk error and still fails the run
+///
+/// The discovery unit tests pin what each policy does, not which one the
+/// CLI chooses, so only this test covers that wiring.
+#[test]
+fn check_package_with_an_unparsable_ignore_file_and_keep_going_reports_it_and_fails() {
+    let package = package(CLEAN_SOURCE);
+    std::fs::write(
+        package.path().join("src").join(".gitignore"),
+        UNPARSABLE_IGNORE_FILE,
+    )
+    .expect("gitignore should be written");
+
+    whisker()
+        .args(["check", "--keep-going"])
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "error: failed to read an ignore file",
+        ))
+        .stderr(predicate::str::contains("error parsing glob '{a,b'"))
+        .stderr(predicate::str::contains("failed to discover source files").not());
+}
+
+/// Pins that a walk error ends the run when `--keep-going` is not given
+///
+/// Both policies exit non-zero, so this also asserts the discovery context,
+/// which the `--keep-going` path never prints.
+#[test]
+fn check_package_with_an_unparsable_ignore_file_fails() {
+    let package = package(CLEAN_SOURCE);
+    std::fs::write(
+        package.path().join("src").join(".gitignore"),
+        UNPARSABLE_IGNORE_FILE,
+    )
+    .expect("gitignore should be written");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to discover source files"))
+        .stderr(predicate::str::contains("failed to read an ignore file"))
+        .stderr(predicate::str::contains("error parsing glob '{a,b'"));
+}
+
+#[cfg(unix)]
+#[test]
+fn check_package_with_an_unreadable_directory_and_keep_going_reports_it_and_fails() {
+    let package = package(CLEAN_SOURCE);
+    let locked = package.path().join("src").join("locked");
+    std::fs::create_dir(&locked).expect("directory should be created");
+    std::fs::write(locked.join("inner.rs"), CLEAN_SOURCE).expect("source should be written");
+    let _unreadable = make_unreadable(&locked);
+
+    whisker()
+        .args(["check", "--keep-going"])
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "error: failed to read a directory entry",
+        ))
+        .stderr(predicate::str::contains("failed to discover source files").not());
+}
+
+#[cfg(unix)]
+#[test]
+fn check_package_with_an_unreadable_directory_fails() {
+    let package = package(CLEAN_SOURCE);
+    let locked = package.path().join("src").join("locked");
+    std::fs::create_dir(&locked).expect("directory should be created");
+    std::fs::write(locked.join("inner.rs"), CLEAN_SOURCE).expect("source should be written");
+    let _unreadable = make_unreadable(&locked);
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("failed to discover source files"))
+        .stderr(predicate::str::contains("failed to read a directory entry"));
 }
 
 #[test]
