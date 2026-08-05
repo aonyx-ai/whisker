@@ -4,28 +4,21 @@ use super::failure_threshold::FailureThreshold;
 
 /// Whether a `whisker check` run should report success or failure
 ///
-/// The run's verdict is computed as a value, not by calling
-/// [`std::process::exit`] at the point each problem is discovered. A run
-/// fails for two independent reasons — a file that could not be read or
-/// analyzed, and a diagnostic severe enough to meet the configured
-/// [`FailureThreshold`] — and both are folded into one outcome so the
-/// command has a single place where it turns the verdict into an exit code.
-/// Keeping the decision out of the process-exiting code is what makes it
-/// testable.
+/// A run fails when whisker cannot read or analyze a file, or when a
+/// diagnostic meets the configured [`FailureThreshold`].
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub(crate) enum CheckOutcome {
-    /// Nothing worth failing the build over was found
+    /// The run found no failures
     Success,
-    /// At least one failure was found and the process must exit non-zero
+    /// The run must exit non-zero
     Failure,
 }
 
 impl CheckOutcome {
-    /// Returns the outcome implied by a set of diagnostics
+    /// Returns the outcome a set of diagnostics implies
     ///
-    /// The diagnostics may be given before or after promotion by the same
-    /// threshold: promotion only ever raises a diagnostic that already met
-    /// the threshold, so the verdict is the same either way.
+    /// [`FailureThreshold::promote`] does not change the result, because
+    /// promotion only raises diagnostics that already meet the threshold.
     // r[impl cli.diagnostics.exit-code]
     pub(crate) fn from_diagnostics(
         diagnostics: &[Diagnostic],
@@ -41,14 +34,13 @@ impl CheckOutcome {
         }
     }
 
-    /// Combines two outcomes, failing if either of them failed
+    /// Returns [`CheckOutcome::Failure`] if either outcome is a failure
     pub(crate) fn combine(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Success, Self::Success) => Self::Success,
-            (Self::Success, Self::Failure) => Self::Failure,
-            (Self::Failure, Self::Success) => Self::Failure,
-            (Self::Failure, Self::Failure) => Self::Failure,
+        if self == Self::Failure || other == Self::Failure {
+            return Self::Failure;
         }
+
+        Self::Success
     }
 }
 

@@ -7,6 +7,11 @@ fn whisker() -> Command {
     Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
+/// The fixtures under `tests/fixtures/clean` must follow every convention
+/// whisker enforces. A semantic rule finds nothing while the provider cannot
+/// resolve its subject, so a hidden violation breaks this test later, when
+/// the provider improves. Fixtures that must be flagged belong in
+/// `tests/fixtures/warnings`.
 #[test]
 fn check_clean_fixture_directory_succeeds() {
     whisker()
@@ -33,7 +38,7 @@ fn check_nonexistent_path_fails() {
 #[test]
 fn check_single_file_succeeds() {
     whisker()
-        .args(["check", "tests/fixtures/clean/wildcard_match.rs"])
+        .args(["check", "tests/fixtures/clean/exhaustive_match.rs"])
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
@@ -49,18 +54,10 @@ fn check_with_deny_warnings_fails_on_warnings() {
         .stderr(predicate::str::contains("error[lint.bool-param]"));
 }
 
-/// Pins the exit code to the failure recorded while walking the files, not
-/// just to the diagnostics that came out of the walk
-///
-/// The fixture is a Rust source file that is not valid UTF-8, so reading it
-/// fails and `--keep-going` records that failure and moves on. No diagnostic
-/// survives the run, which means the exit code can only be non-zero if the
-/// recorded failure is folded into the final outcome.
-///
-/// The fixture is named `.rs.bin` rather than `.rs` so that no directory walk
-/// ever picks it up. A deliberately unreadable source file anywhere under this
-/// crate would otherwise turn every `whisker check` over the crate into a hard
-/// error, so the test names the file directly instead.
+/// The fixture is not valid UTF-8, so the read fails and produces no
+/// diagnostic. Only the recorded failure can make the exit code non-zero.
+/// The `.rs.bin` name keeps directory walks away from the fixture, so the
+/// test names it directly.
 #[test]
 fn check_with_keep_going_and_unreadable_file_fails() {
     whisker()

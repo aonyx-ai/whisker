@@ -51,11 +51,8 @@ impl Diagnostic {
 
     /// Replaces the severity of this diagnostic
     ///
-    /// Lints pick the severity that fits the rule, but a front-end may need
-    /// to override it: a CLI that denies warnings has to render them as
-    /// errors so that what the user is shown matches why the command
-    /// failed. Unlike the other `with_*` methods this one replaces rather
-    /// than appends, because a diagnostic has exactly one severity.
+    /// The other `with_*` methods append. This one replaces, because a
+    /// diagnostic has exactly one severity.
     ///
     /// # Examples
     ///

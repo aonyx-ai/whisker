@@ -2,25 +2,8 @@ use whisker_types::{Diagnostic, Severity};
 
 /// The lowest diagnostic severity that makes `whisker check` fail
 ///
-/// Every lint whisker currently ships emits [`Severity::Warn`], so under the
-/// default threshold the command reports problems and still exits zero. That
-/// is the right default for interactive use, where a warning is advice rather
-/// than a blocker, but it makes the command useless as a CI gate. The
-/// `--deny-warnings` flag raises the threshold, mirroring what
-/// `cargo clippy -- -D warnings` does for Clippy.
-///
-/// The threshold governs rendering as well as the exit code. A diagnostic
-/// that meets the threshold is promoted to [`Severity::Error`] before it is
-/// rendered, so a user is never shown the word "warning" for the very thing
-/// that made the command fail.
-///
-/// The flag itself arrives as a [`bool`] because that is what clap parses at
-/// the command line boundary. The caller turns it into a threshold as soon as
-/// it destructures the parsed arguments, so no part of the program below that
-/// boundary has to work out what a bare boolean means.
-///
-/// [`Severity::Error`]: whisker_types::Severity::Error
-/// [`Severity::Warn`]: whisker_types::Severity::Warn
+/// The default is [`FailureThreshold::Errors`]. The `--deny-warnings` flag
+/// selects [`FailureThreshold::Warnings`].
 // r[impl cli.check.deny-warnings]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub(crate) enum FailureThreshold {
@@ -48,15 +31,13 @@ impl FailureThreshold {
         }
     }
 
-    /// Promotes a diagnostic that meets this threshold to error severity
+    /// Raises a failing diagnostic to error severity
     ///
-    /// Diagnostics below the threshold are returned untouched, so
-    /// [`Severity::Help`] and [`Severity::Info`] notes keep their own
-    /// severity no matter how strict the threshold is. Taking the diagnostic
-    /// by value avoids cloning the spans and suggestions it owns.
+    /// A diagnostic that meets the threshold gets [`Severity::Error`], so
+    /// the rendered output matches the exit code. A diagnostic below the
+    /// threshold comes back unchanged.
     ///
-    /// [`Severity::Help`]: whisker_types::Severity::Help
-    /// [`Severity::Info`]: whisker_types::Severity::Info
+    /// [`Severity::Error`]: whisker_types::Severity::Error
     pub(crate) fn promote(self, diagnostic: Diagnostic) -> Diagnostic {
         match self.is_met_by(diagnostic.severity()) {
             true => diagnostic.with_severity(Severity::Error),
