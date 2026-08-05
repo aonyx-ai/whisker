@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow_missing_context::AnyhowMissingContext;
-use whisker_rust::decorations::{AdtFlags, FnSignature, ResolvedType};
+use whisker_rust::decorations::{AdtFlags, FnSignature, ResolvedType, ReturnMode, TypePathRef};
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
 use whisker_types::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, LintPass,
@@ -143,6 +143,18 @@ fn flagged_within<'a>(
         .iter()
         .map(Diagnostic::span)
         .filter(|span| start <= span.start() && span.end() <= end)
+        .map(|span| &tree.source()[span.start()..span.end()])
+        .collect()
+}
+
+/// Returns the source text covered by every diagnostic in the file
+///
+/// A per-function expectation cannot notice a rule that fires somewhere
+/// else. A whole-file expectation fails on any change in the rule's reach.
+fn flagged_in_file<'a>(tree: &'a DecoratedTree, diagnostics: &[Diagnostic]) -> Vec<&'a str> {
+    diagnostics
+        .iter()
+        .map(Diagnostic::span)
         .map(|span| &tree.source()[span.start()..span.end()])
         .collect()
 }
@@ -311,6 +323,40 @@ fn fn_signature_on_anyhow_result_function() {
     );
 }
 
+/// An `async fn`'s signature must describe the awaited type
+///
+/// `Function::ret_type` reads the opaque future from the signature, and a
+/// regression to it fails both the mode and the error-type assertions.
+#[test]
+fn fn_signature_on_async_function_reports_the_awaited_type() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "returns_anyhow_result_async")
+        .expect("should find returns_anyhow_result_async");
+
+    let sig = func
+        .decoration::<FnSignature>()
+        .expect("should have FnSignature decoration");
+
+    assert_eq!(sig.return_mode(), ReturnMode::Awaited);
+    let ret = sig.return_type().expect("should have return type");
+    assert!(
+        ret.is_result(),
+        "the awaited type should be Result, got display: {}",
+        ret.display()
+    );
+    let error = sig.error_type().expect("should have an error type");
+    assert!(
+        error.is(TypePathRef::new("anyhow", &[], "Error")),
+        "the awaited error should be anyhow's, got: {error:?}"
+    );
+}
+
+/// The error of `std::io::Result` resolves to `core::io::error::Error`
+///
+/// `std::io::Error` is a re-export, so the definition path names `core`.
 #[test]
 fn fn_signature_on_io_result_function() {
     let provider = load_provider();
@@ -330,6 +376,11 @@ fn fn_signature_on_io_result_function() {
         "return type should be Result, got display: {}",
         ret.display()
     );
+    let error = sig.error_type().expect("should have an error type");
+    assert!(
+        error.is(TypePathRef::new("core", &["io", "error"], "Error")),
+        "the error should be io's, got: {error:?}"
+    );
 }
 
 #[test]
@@ -346,7 +397,50 @@ fn fn_signature_on_non_result_function() {
 
     let ret = sig.return_type().expect("should have return type");
     assert!(!ret.is_result(), "return type should not be Result");
-    assert!(sig.error_type_name().is_none());
+    assert!(sig.error_type().is_none());
+}
+
+#[test]
+fn fn_signature_on_sync_function_reports_direct_mode() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "returns_anyhow_result")
+        .expect("should find returns_anyhow_result");
+
+    let sig = func
+        .decoration::<FnSignature>()
+        .expect("should have FnSignature decoration");
+
+    assert_eq!(sig.return_mode(), ReturnMode::Direct);
+}
+
+/// A crate's own `Result` is not the standard one, however it renders
+///
+/// `myres::Result<()>` renders as `Result<()>`, which any prefix test on the
+/// rendering accepts. Only a comparison against the enum `FamousDefs`
+/// resolves can tell the two apart.
+#[test]
+fn fn_signature_on_user_defined_result_is_not_a_result() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "user_defined_result")
+        .expect("should find user_defined_result");
+
+    let sig = func
+        .decoration::<FnSignature>()
+        .expect("should have FnSignature decoration");
+
+    let ret = sig.return_type().expect("should have return type");
+    assert!(
+        !ret.is_result(),
+        "a user-defined Result is not core's, got display: {}",
+        ret.display()
+    );
+    assert!(sig.error_type().is_none());
 }
 
 #[test]
@@ -473,13 +567,14 @@ fn local_enum_has_non_exhaustive_external_false() {
         .child_by_field_name("value")
         .expect("match should have value field");
 
-    let flags = scrutinee.decoration::<AdtFlags>();
-    if let Some(flags) = flags {
-        assert!(
-            !flags.non_exhaustive_external(),
-            "local enum should not be non_exhaustive_external"
-        );
-    }
+    let flags = scrutinee
+        .decoration::<AdtFlags>()
+        .expect("a local enum scrutinee should have AdtFlags");
+
+    assert!(
+        !flags.non_exhaustive_external(),
+        "local enum should not be non_exhaustive_external"
+    );
 }
 
 #[test]
@@ -524,13 +619,14 @@ fn if_let_with_non_diverging_else_is_not_never() {
         .child_by_field_name("alternative")
         .expect("should have else branch");
 
-    let ty = else_clause.decoration::<ResolvedType>();
-    if let Some(ty) = ty {
-        assert!(
-            !ty.is_never(),
-            "non-diverging else should not have never type"
-        );
-    }
+    let ty = else_clause
+        .decoration::<ResolvedType>()
+        .expect("else clause should have ResolvedType");
+
+    assert!(
+        !ty.is_never(),
+        "non-diverging else should not have never type"
+    );
 }
 
 /// The operand of `?` must be typed as the call, not as the callee
@@ -637,6 +733,48 @@ fn anyhow_missing_context_flags_a_bare_try_in_an_anyhow_function() {
     );
 }
 
+/// An `async fn` that returns `anyhow::Result` is still an anyhow function
+///
+/// The signature output is the opaque future, so a provider that reads the
+/// signature verbatim reports no error type and misses every `async fn`.
+#[test]
+fn anyhow_missing_context_flags_a_bare_try_in_an_async_anyhow_function() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "returns_anyhow_result_async")
+        .expect("should find returns_anyhow_result_async");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(
+        flagged_within(&tree, &diagnostics, &func),
+        vec!["std::fs::read_to_string(\"async_anyhow_bare.txt\")?"]
+    );
+}
+
+/// An `async fn` in an impl block is reached the same way a free one is
+///
+/// The trait declares the method with an `impl Future` return type, a
+/// different shape from the `async fn` that implements it. The awaited
+/// type must come from the implementation, not the declaration.
+#[test]
+fn anyhow_missing_context_flags_a_bare_try_in_an_async_trait_method() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "load_async").expect("should find load_async");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(
+        flagged_within(&tree, &diagnostics, &func),
+        vec!["std::fs::read_to_string(&self.path)?"]
+    );
+}
+
 #[test]
 fn anyhow_missing_context_flags_a_bare_try_on_a_method_call() {
     let provider = load_provider();
@@ -651,6 +789,173 @@ fn anyhow_missing_context_flags_a_bare_try_on_a_method_call() {
     assert_eq!(
         flagged_within(&tree, &diagnostics, &func),
         vec!["loader.load()?"]
+    );
+}
+
+/// Only the anyhow function is flagged, out of four that all render `Error`
+///
+/// `syn::Result`, `std::fmt::Result`, `std::io::Result`, and
+/// `anyhow::Result` all render their `E` as `Error`, so a rule that reads
+/// the rendering flags all four. The `syn` case also covers an `Error`
+/// whose definition path differs from its public re-export path.
+#[test]
+fn anyhow_missing_context_flags_only_the_anyhow_function_among_lookalike_errors() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    let anyhow_fn = find_function_by_name(&root, "returns_anyhow_result")
+        .expect("should find returns_anyhow_result");
+    let syn_fn =
+        find_function_by_name(&root, "returns_syn_result").expect("should find returns_syn_result");
+    let fmt_fn = find_function_by_name(&root, "fmt").expect("should find Display::fmt");
+    let io_fn =
+        find_function_by_name(&root, "returns_io_result").expect("should find returns_io_result");
+
+    assert_eq!(
+        flagged_within(&tree, &diagnostics, &anyhow_fn),
+        vec!["std::fs::read_to_string(\"anyhow_bare.txt\")?"]
+    );
+    assert!(flagged_within(&tree, &diagnostics, &syn_fn).is_empty());
+    assert!(flagged_within(&tree, &diagnostics, &fmt_fn).is_empty());
+    assert!(flagged_within(&tree, &diagnostics, &io_fn).is_empty());
+}
+
+/// An `async fn` that returns `std::io::Result` is not an anyhow function
+///
+/// The async projection must identify the awaited error type, not just
+/// make every `async fn` visible to the rule.
+#[test]
+fn anyhow_missing_context_ignores_a_bare_try_in_an_async_io_function() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "returns_io_result_async")
+        .expect("should find returns_io_result_async");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
+}
+
+/// A function that returns `std::io::Result` is outside this rule
+///
+/// `std::io::Result<()>` renders as `Result<(), Error>`, so a rule that
+/// reads the rendering cannot tell this `Error` from anyhow's.
+#[test]
+fn anyhow_missing_context_ignores_a_bare_try_in_an_io_function() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func =
+        find_function_by_name(&root, "returns_io_result").expect("should find returns_io_result");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
+}
+
+/// `Box<dyn Error>` occupies the `E` slot as an ADT, and it is not anyhow's
+///
+/// The `E` resolves to `Box`, defined in `alloc`, so the rule sees a named
+/// error type with the wrong path.
+#[test]
+fn anyhow_missing_context_ignores_a_boxed_error() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "returns_boxed_error")
+        .expect("should find returns_boxed_error");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
+}
+
+/// An error type the signature leaves open cannot be anyhow's
+///
+/// A caller may instantiate `E` as `anyhow::Error`, but the body must
+/// compile for every `E` the bounds admit. `.context(..)` is not available
+/// there, so the rule reports nothing.
+#[test]
+fn anyhow_missing_context_ignores_a_generic_error() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "returns_generic_error")
+        .expect("should find returns_generic_error");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
+}
+
+/// A crate's own `Error` type must not match anyhow's
+///
+/// This shape produced most of the false positives when the rule first ran
+/// over whisker's own source.
+#[test]
+fn anyhow_missing_context_ignores_a_local_error_type() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "returns_local_error_result")
+        .expect("should find returns_local_error_result");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
+}
+
+/// A `?` in a closure belongs to the closure, not to the function around it
+///
+/// The closure returns `std::io::Result`, so `.context(..)` on its `?`
+/// would not compile. The function's own `read()?` is a genuine hit, so a
+/// removed barrier fails the expectation with an extra entry.
+#[test]
+fn anyhow_missing_context_ignores_a_try_inside_a_closure() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+    let func = find_function_by_name(&root, "closure_returning_io_result")
+        .expect("should find closure_returning_io_result");
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["read()?"]);
+}
+
+/// Every place the rule fires in the fixture, listed once
+///
+/// Per-function expectations once stayed green while the rule fired on a
+/// `std::io::Result` function nothing asserted about. The whole-file list
+/// pins the rule's reach.
+#[test]
+fn anyhow_missing_context_over_the_whole_file_reports_only_anyhow_bodies() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(
+        flagged_in_file(&tree, &diagnostics),
+        vec![
+            "std::fs::read_to_string(\"anyhow_bare.txt\")?",
+            "loader.load()?",
+            "std::fs::read_to_string(\"async_anyhow_bare.txt\")?",
+            "std::fs::read_to_string(&self.path)?",
+            "read()?",
+        ]
     );
 }
 
@@ -707,6 +1012,23 @@ fn wildcard_match_arm_ignores_a_scrutinee_that_is_not_an_enum() {
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
 
+/// Counts the fixture's `function_item` nodes and how many carry a signature
+///
+/// The walk recurses because a method inside an `impl` block is a
+/// `function_item` too. A top-level loop would never count the `async`
+/// trait method.
+fn count_fn_signatures(node: &DecoratedNode<'_>, functions: &mut usize, signatures: &mut usize) {
+    if node.kind() == "function_item" {
+        *functions += 1;
+        if node.decoration::<FnSignature>().is_some() {
+            *signatures += 1;
+        }
+    }
+    for child in node.named_children() {
+        count_fn_signatures(&child, functions, signatures);
+    }
+}
+
 #[test]
 fn every_function_item_has_fn_signature() {
     let provider = load_provider();
@@ -715,15 +1037,7 @@ fn every_function_item_has_fn_signature() {
 
     let mut fn_count = 0;
     let mut sig_count = 0;
-
-    for child in root.named_children() {
-        if child.kind() == "function_item" {
-            fn_count += 1;
-            if child.decoration::<FnSignature>().is_some() {
-                sig_count += 1;
-            }
-        }
-    }
+    count_fn_signatures(&root, &mut fn_count, &mut sig_count);
 
     assert!(fn_count > 0, "fixture should have functions");
     assert_eq!(

@@ -97,6 +97,87 @@ pub struct Config {
     pub debug: bool,
 }
 
+pub mod errors {
+    #[derive(Debug)]
+    pub struct Error;
+}
+
+pub mod myres {
+    pub enum Result<T> {
+        Ok(T),
+    }
+}
+
+pub struct Rendered;
+
+impl std::fmt::Display for Rendered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rendered")?;
+        Ok(())
+    }
+}
+
+pub fn returns_syn_result() -> syn::Result<()> {
+    let _ident: syn::Ident = syn::parse_str("whisker")?;
+    Ok(())
+}
+
+pub fn returns_local_error_result() -> Result<(), errors::Error> {
+    inner_local()?;
+    Ok(())
+}
+
+fn inner_local() -> Result<(), errors::Error> {
+    Ok(())
+}
+
+pub fn returns_boxed_error() -> Result<(), Box<dyn std::error::Error>> {
+    let _file = std::fs::read_to_string("boxed.txt")?;
+    Ok(())
+}
+
+pub fn returns_generic_error<E>() -> Result<(), E>
+where
+    E: From<std::io::Error>,
+{
+    let _file = std::fs::read_to_string("generic.txt")?;
+    Ok(())
+}
+
+pub async fn returns_anyhow_result_async() -> anyhow::Result<()> {
+    let _file = std::fs::read_to_string("async_anyhow_bare.txt")?;
+    Ok(())
+}
+
+pub async fn returns_io_result_async() -> std::io::Result<()> {
+    let _file = std::fs::read_to_string("async_io_bare.txt")?;
+    Ok(())
+}
+
+pub trait AsyncLoad {
+    fn load_async(&self) -> impl std::future::Future<Output = anyhow::Result<()>>;
+}
+
+impl AsyncLoad for Loader {
+    async fn load_async(&self) -> anyhow::Result<()> {
+        let _file = std::fs::read_to_string(&self.path)?;
+        Ok(())
+    }
+}
+
+pub fn closure_returning_io_result() -> anyhow::Result<()> {
+    let read = || -> std::io::Result<()> {
+        let _file = std::fs::read_to_string("closure.txt")?;
+        Ok(())
+    };
+    read()?;
+    Ok(())
+}
+
+pub fn user_defined_result() -> myres::Result<()> {
+    myres::Result::Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

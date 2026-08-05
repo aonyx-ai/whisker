@@ -1,17 +1,27 @@
 use whisker_rust::RustLintPass;
-use whisker_rust::decorations::{FnSignature, ResolvedType};
+use whisker_rust::decorations::{FnSignature, ResolvedType, TypePathRef};
 use whisker_types::{DecoratedNode, Diagnostic, LintPass, RuleId, Severity};
 
 const RULE_ID: RuleId = RuleId("lint.anyhow-missing-context");
+
+/// The definition path of `anyhow::Error`
+///
+/// `anyhow` declares `Error` at its crate root, so the module segment list
+/// is empty. The comparison uses the definition path, so another crate's
+/// `Error` never matches, whatever its rendered name.
+const ANYHOW_ERROR: TypePathRef<'static> = TypePathRef::new("anyhow", &[], "Error");
 
 /// Flags uses of `?` on [`Result`] types without a preceding `.context()`
 /// or `.with_context()` call, but only when the enclosing function returns
 /// `Result<T, anyhow::Error>`
 ///
-/// Using `?` without `.context()` propagates errors without adding
-/// information about what operation failed. Rich error context makes
-/// debugging significantly easier by providing a chain of explanations
-/// for how the error occurred.
+/// A `?` without `.context()` propagates an error with no information
+/// about the operation that failed. Context calls build a chain of
+/// explanations for how the error occurred, which makes debugging easier.
+///
+/// A `?` inside a closure, an `async` block, or a `try` block converts
+/// into that body's error type, not the enclosing function's. The rule
+/// leaves those alone, because `.context(..)` would not compile there.
 ///
 /// [`Result`]: std::result::Result
 pub struct AnyhowMissingContext;
@@ -50,10 +60,10 @@ impl RustLintPass for AnyhowMissingContext {
         let Some(fn_sig) = find_enclosing_fn_signature(node) else {
             return Vec::new();
         };
-        let Some(error_name) = fn_sig.error_type_name() else {
+        let Some(error_type) = fn_sig.error_type() else {
             return Vec::new();
         };
-        if !is_anyhow_error(error_name) {
+        if !error_type.is(ANYHOW_ERROR) {
             return Vec::new();
         }
 
@@ -70,25 +80,38 @@ impl RustLintPass for AnyhowMissingContext {
     }
 }
 
+/// Node kinds whose bodies own a `?`, so the ancestor walk stops at them
+///
+/// A closure, an `async` block, a `gen` block, a `const` block, and a
+/// `try` block each have their own return type. A `?` inside one converts
+/// into that type, not into the enclosing function's error type.
+const BODY_BARRIERS: &[&str] = &[
+    "async_block",
+    "closure_expression",
+    "const_block",
+    "gen_block",
+    "try_block",
+];
+
 /// Walks up the tree to find the enclosing `function_item` and returns
 /// its [`FnSignature`] decoration, if present
+///
+/// Returns [`None`] when the walk meets a [`BODY_BARRIERS`] kind first.
+/// That accepts a false negative: the rule does not flag a `?` inside a
+/// closure that itself returns `anyhow::Result`. A missed diagnostic costs
+/// less than a suggestion that does not compile.
 fn find_enclosing_fn_signature<'a>(node: &DecoratedNode<'a>) -> Option<&'a FnSignature> {
     let mut current = node.parent();
     while let Some(ancestor) = current {
+        if BODY_BARRIERS.contains(&ancestor.kind()) {
+            return None;
+        }
         if ancestor.kind() == "function_item" {
             return ancestor.decoration::<FnSignature>();
         }
         current = ancestor.parent();
     }
     None
-}
-
-/// Returns whether the error type name refers to `anyhow::Error`
-///
-/// Rust-analyzer may display the type as fully qualified `"anyhow::Error"`
-/// or as just `"Error"` depending on context. Both forms are accepted.
-fn is_anyhow_error(name: &str) -> bool {
-    name == "anyhow::Error" || name == "Error"
 }
 
 /// Returns whether the operand is a `.context()` or `.with_context()` call
@@ -111,7 +134,7 @@ fn is_context_call(operand: &DecoratedNode<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use whisker_rust::decorations::{FnSignature, ResolvedType};
+    use whisker_rust::decorations::{ErrorType, FnSignature, ResolvedType, ReturnMode, TypePath};
     use whisker_testing::{assert_diagnostic, assert_no_diagnostics, decorate, execute, parse};
     use whisker_types::{DecorationMap, Language, LintPass, Severity};
 
@@ -122,21 +145,29 @@ mod tests {
     }
 
     fn result_type() -> ResolvedType {
-        ResolvedType::new("Result<(), anyhow::Error>".into()).with_result(true)
+        ResolvedType::new("Result<(), Error>".into()).with_result(true)
     }
 
     fn option_type() -> ResolvedType {
         ResolvedType::new("Option<String>".into()).with_option(true)
     }
 
+    /// Returns the signature the provider reports for `anyhow::Result<()>`
     fn anyhow_fn_sig() -> FnSignature {
-        let ret = ResolvedType::new("Result<(), anyhow::Error>".into()).with_result(true);
-        FnSignature::new(Some(ret), Some("anyhow::Error".into()))
+        let ret = ResolvedType::new("Result<(), Error>".into()).with_result(true);
+        let error = ErrorType::Named(TypePath::new("anyhow", [] as [&str; 0], "Error"));
+        FnSignature::new(Some(ret), Some(error), ReturnMode::Direct)
     }
 
+    /// Returns the signature the provider reports for `std::io::Result<()>`
+    ///
+    /// The rendering matches `anyhow_fn_sig`, so only the definition path
+    /// tells the two apart. The path names `core`, because `std::io::Error`
+    /// is a re-export of `core::io::error::Error`.
     fn non_anyhow_fn_sig() -> FnSignature {
-        let ret = ResolvedType::new("Result<(), std::io::Error>".into()).with_result(true);
-        FnSignature::new(Some(ret), Some("std::io::Error".into()))
+        let ret = ResolvedType::new("Result<(), Error>".into()).with_result(true);
+        let error = ErrorType::Named(TypePath::new("core", ["io", "error"], "Error"));
+        FnSignature::new(Some(ret), Some(error), ReturnMode::Direct)
     }
 
     /// Walks the tree to find the first node with the given kind
@@ -188,6 +219,48 @@ mod tests {
             .has_rule_id("lint.anyhow-missing-context")
             .has_severity(Severity::Warn)
             .message_contains("without error context");
+    }
+
+    /// A `?` inside an `async` block converts into that block's error type
+    ///
+    /// The block is its own body, so the enclosing `fn`'s signature says
+    /// nothing about what the `?` there produces.
+    #[test]
+    fn in_async_block_inside_anyhow_fn_is_not_flagged() {
+        let source = "fn foo() -> Result<(), Error> { async { something()?; } }";
+        let mut tree = parse(source, Language::Rust);
+        let operand_id = find_try_operand_id(&tree);
+        let fn_id = find_node_by_kind(&tree.root_node(), "function_item").expect("should find fn");
+
+        let mut map = DecorationMap::new();
+        map.insert(operand_id, result_type());
+        map.insert(fn_id, anyhow_fn_sig());
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    /// A `?` inside a closure converts into the closure's error type
+    ///
+    /// The enclosing function's signature does not apply inside the
+    /// closure's body.
+    #[test]
+    fn in_closure_inside_anyhow_fn_is_not_flagged() {
+        let source = "fn foo() -> Result<(), Error> { let f = || { something()?; }; }";
+        let mut tree = parse(source, Language::Rust);
+        let operand_id = find_try_operand_id(&tree);
+        let fn_id = find_node_by_kind(&tree.root_node(), "function_item").expect("should find fn");
+
+        let mut map = DecorationMap::new();
+        map.insert(operand_id, result_type());
+        map.insert(fn_id, anyhow_fn_sig());
+        decorate(&mut tree, map);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
     }
 
     #[test]
