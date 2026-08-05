@@ -8,7 +8,6 @@ use super::check_outcome::CheckOutcome;
 /// [`ErrorRecovery::record`], so one place decides whether a per-file
 /// failure ends the run. The `--keep-going` flag selects
 /// [`ErrorRecovery::Continue`].
-// r[impl cli.check.keep-going]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub(crate) enum ErrorRecovery {
     /// The first failing file ends the run with its error

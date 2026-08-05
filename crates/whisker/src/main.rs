@@ -1,4 +1,5 @@
 mod commands;
+mod discovery;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cancellation = clawless::cancellation::Cancellation::new();
