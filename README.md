@@ -41,6 +41,23 @@ a clean project.
 Whisker refuses a named file that it has no grammar for. A parse with the
 wrong grammar finds nothing and would report the file clean.
 
+### Configuration
+
+Whisker reads its configuration from the `[workspace.metadata.whisker]` table
+of the target workspace manifest:
+
+```toml
+[workspace.metadata.whisker]
+ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
+```
+
+`ignore` holds gitignore-syntax patterns. Use it for test fixtures, vendored
+sources, and other code that git tracks on purpose. The patterns behave as
+they would in a `.gitignore` at the workspace root: `crates/app/generated/`
+names one directory relative to that root, `examples/` matches at any depth,
+and `/examples/` anchors to the root. Whisker rejects keys it does not
+recognize, so a typo is an error and not a silent no-op.
+
 ## License
 
 Licensed under either of

@@ -13,6 +13,16 @@ edition = "2024"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/aonyx-ai/whisker.git"
 
+# Whisker's own configuration, read by `whisker check` when it runs against
+# this repository. Every path listed here is deliberately violation-laden
+# fixture material for the lint suite, and none of it belongs to this
+# workspace's crate graph, so rust-analyzer has nothing to say about it.
+[workspace.metadata.whisker]
+ignore = [
+  "/examples/",
+  "crates/whisker-rust/tests/fixtures/",
+]
+
 [workspace.lints.clippy]
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
