@@ -13,7 +13,7 @@ use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
 use whisker_types::{DecorationProvider, Diagnostic, LintPass, UncoveredFile};
 
 use self::check_outcome::CheckOutcome;
-use self::error_recovery::ErrorRecovery;
+use self::error_recovery::{ErrorRecovery, Walk};
 use self::failure_threshold::FailureThreshold;
 use crate::config::WhiskerConfig;
 use crate::discovery::{Discovery, WalkErrorPolicy};
@@ -169,13 +169,10 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     for file in files {
         let source = match std::fs::read_to_string(file) {
             Ok(source) => source,
-            Err(e) => {
-                if let Err(aborted) = recovery.record(&mut outcome, file, anyhow::Error::new(e)) {
-                    remedies.print();
-                    return Err(aborted);
-                }
-                continue;
-            }
+            Err(e) => match recovery.record(&mut outcome, file, anyhow::Error::new(e)) {
+                Walk::Continue => continue,
+                Walk::Stop => break,
+            },
         };
 
         let mut passes = create_lint_passes();
@@ -193,9 +190,9 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
                     remedies.record(uncovered);
                 }
 
-                if let Err(aborted) = recovery.record(&mut outcome, file, e) {
-                    remedies.print();
-                    return Err(aborted);
+                match recovery.record(&mut outcome, file, e) {
+                    Walk::Continue => {}
+                    Walk::Stop => break,
                 }
             }
         }

@@ -1,8 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::Language;
-
 /// Why a decoration provider declined to decorate a file
 ///
 /// A gap is not a provider failure; it is a provider correctly reporting
@@ -50,12 +48,6 @@ pub enum CoverageGap {
     /// The text the pipeline parsed differs from the text the toolchain
     /// analyzed, so byte offsets from one do not address the other
     StaleSource,
-
-    /// The provider handles a different language than this file
-    OtherLanguage {
-        /// The language this provider does handle
-        handles: Language,
-    },
 }
 
 impl CoverageGap {
@@ -86,7 +78,6 @@ impl CoverageGap {
                 "remove the file from the toolchain's exclusion list, or exclude it from whisker"
             }
             Self::StaleSource => "re-run whisker",
-            Self::OtherLanguage { .. } => "whisker has no decoration provider for this language",
         }
     }
 }
@@ -110,9 +101,6 @@ impl std::fmt::Display for CoverageGap {
                 root.display()
             ),
             Self::StaleSource => f.write_str("the file changed after the workspace was loaded"),
-            Self::OtherLanguage { handles } => {
-                write!(f, "this provider only handles {handles}")
-            }
         }
     }
 }
@@ -135,17 +123,6 @@ mod tests {
 
         assert!(message.contains("/ws"), "unexpected message: {message}");
         assert!(message.contains("exclude"), "unexpected message: {message}");
-    }
-
-    #[test]
-    fn display_with_other_language_names_language() {
-        let gap = CoverageGap::OtherLanguage {
-            handles: Language::Rust,
-        };
-
-        let message = gap.to_string();
-
-        assert!(message.contains("Rust"), "unexpected message: {message}");
     }
 
     #[test]
@@ -190,9 +167,6 @@ mod tests {
             CoverageGap::Unreachable { root: root() },
             CoverageGap::ExcludedByToolchain { root: root() },
             CoverageGap::StaleSource,
-            CoverageGap::OtherLanguage {
-                handles: Language::Rust,
-            },
         ];
 
         for gap in &gaps {
@@ -210,20 +184,6 @@ mod tests {
         let help = gap.help();
 
         assert!(help.contains("exclusion list"), "unexpected help: {help}");
-    }
-
-    #[test]
-    fn help_with_other_language_suggests_nothing_to_configure() {
-        let gap = CoverageGap::OtherLanguage {
-            handles: Language::Rust,
-        };
-
-        let help = gap.help();
-
-        assert!(
-            help.contains("no decoration provider"),
-            "unexpected help: {help}"
-        );
     }
 
     #[test]

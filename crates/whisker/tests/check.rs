@@ -81,16 +81,25 @@ fn package_with_orphans(names: &[&str]) -> TempDir {
     directory
 }
 
-/// Creates a package holding one readable source and one that is not UTF-8
+/// Creates a package holding two sources that are not UTF-8, and one that is
 ///
-/// The unreadable file is a sibling rather than the crate root so the package
-/// still loads: the failure under test is whisker reading the file, not Cargo
-/// refusing the target.
-fn package_with_unreadable_source() -> TempDir {
+/// The unreadable files are siblings rather than the crate root so the
+/// package still loads: the failure under test is whisker reading a file, not
+/// Cargo refusing the target. There are two of them because the count is the
+/// only thing that separates the two `--keep-going` modes — both report a
+/// failure and both exit non-zero, so a `contains` assertion cannot tell them
+/// apart. Both sort before `lib.rs`, and discovery sorts, so a run that stops
+/// at the first failure has reported exactly one.
+fn package_with_unreadable_sources() -> TempDir {
     let directory = package(CLEAN_SOURCE);
 
-    std::fs::write(directory.path().join("src").join("broken.rs"), NOT_UTF8)
+    for name in ["broken_first", "broken_second"] {
+        std::fs::write(
+            directory.path().join("src").join(format!("{name}.rs")),
+            NOT_UTF8,
+        )
         .expect("unreadable source should be written");
+    }
 
     directory
 }
@@ -106,6 +115,43 @@ fn whisker() -> Command {
 /// actually decorate.
 fn sample_project() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../whisker-rust/tests/fixtures/sample_project")
+}
+
+/// Writes a Cargo project holding one analyzable file and one unreadable one
+///
+/// `CARGO_TARGET_TMPDIR` is a scratch directory, not a Cargo project, and
+/// whisker loads the workspace around the path it is given before it reads
+/// a single file. A fixture written straight into the scratch directory
+/// therefore only works when that directory happens to sit under a project,
+/// which is true for a default `CARGO_TARGET_DIR` and false for anyone who
+/// moved theirs. Writing the manifest states the precondition instead of
+/// inheriting it.
+///
+/// `src/lib.rs` trips a rule that needs type information, so a run that
+/// reaches it produces a diagnostic; `src/not_utf8.rs` cannot be read at
+/// all. They are named so the analyzable one is walked first, because
+/// `discover_files` sorts and a run without `--keep-going` stops at the
+/// first failure.
+///
+/// Each caller passes its own `name` so that two tests running at once
+/// never write the same directory.
+fn mixed_project(name: &str) -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::create_dir_all(root.join("src")).expect("should create the fixture directories");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\n\n[package]\nname = \"mixed_project\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .expect("should write the fixture manifest");
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub enum Color {\n    Red,\n    Green,\n}\n\npub fn match_on_enum(color: Color) {\n    match color {\n        Color::Red => {}\n        _ => {}\n    }\n}\n",
+    )
+    .expect("should write the fixture crate root");
+    std::fs::write(root.join("src/not_utf8.rs"), [0xff, 0xfe, 0x00])
+        .expect("should write the fixture file that is not UTF-8");
+
+    root
 }
 
 /// Counts how many times whisker reported a file it could not get through
@@ -173,12 +219,10 @@ fn check_nonexistent_path_fails() {
 /// Pins that without `--keep-going` an uncoverable file ends the run, and
 /// that the remedy is printed before it does
 ///
-/// Aborting returns the error rather than printing a lowercase `error:` line,
-/// so the file is named by the report clawless renders. The remedy still has
-/// to reach the user: a run that says a file cannot be analyzed without
-/// saying what to do about it leaves them nowhere to go, and the remedy is
-/// collected during the walk, so nothing would print it if the abort simply
-/// propagated.
+/// The remedy still has to reach the user: a run that says a file cannot be
+/// analyzed without saying what to do about it leaves them nowhere to go, and
+/// the remedy is collected during the walk, so nothing would print it if the
+/// run simply stopped.
 #[test]
 fn check_orphan_directory_reports_no_coverage() {
     let package = package_with_orphans(&["stray"]);
@@ -191,8 +235,8 @@ fn check_orphan_directory_reports_no_coverage() {
         .stderr(predicate::str::contains(
             "no decoration provider covers this file",
         ))
-        .stderr(predicate::str::contains("Error: check"))
         .stderr(predicate::str::contains("stray.rs"))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 1))
         .stderr(predicate::function(|stderr: &str| {
             unreachable_help_count(stderr) == 1
         }));
@@ -437,13 +481,12 @@ fn check_with_deny_warnings_fails_on_warnings() {
 /// is clean, so no diagnostic survives the run, which means the exit code can
 /// only be non-zero if the recorded failure is folded into the final outcome.
 ///
-/// The assertion distinguishes the recovering path from the aborting one:
-/// both mention the underlying I/O error and both exit 1, but only recovery
-/// prints a lowercase `error:` line and lets the run continue.
+/// The count is what distinguishes recovery from aborting: carrying on means
+/// every unreadable file is reported, stopping means only the first is.
 // r[verify cli.check.keep-going]
 #[test]
 fn check_with_keep_going_and_unreadable_file_fails() {
-    let package = package_with_unreadable_source();
+    let package = package_with_unreadable_sources();
 
     whisker()
         .args(["check", "--keep-going"])
@@ -453,8 +496,9 @@ fn check_with_keep_going_and_unreadable_file_fails() {
         .stderr(predicate::str::contains(
             "stream did not contain valid UTF-8",
         ))
-        .stderr(predicate::str::contains("error: "))
-        .stderr(predicate::str::contains("Error:").not());
+        .stderr(predicate::str::contains("broken_first.rs"))
+        .stderr(predicate::str::contains("broken_second.rs"))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 2));
 }
 
 /// Pins that `--keep-going` reports every uncoverable file, not just the first
@@ -494,28 +538,26 @@ fn check_with_keep_going_succeeds() {
         .stderr(predicate::str::is_empty());
 }
 
-/// Pins the hard-failure path that the `--keep-going` test is distinguished
-/// from
+/// Pins the stopping path that the `--keep-going` test is distinguished from
 ///
-/// Without the flag the same package ends the run, and the error names the
-/// file it came from so a failure deep in a walk stays attributable. The
-/// cause arrives as a separate line because anyhow renders the context chain
-/// as a report rather than a single line.
+/// Without the flag the walk ends at the first file it cannot read, so only
+/// one of the two unreadable siblings is ever reported. The error names the
+/// file it came from so a failure deep in a walk stays attributable.
 // r[verify cli.check.keep-going]
 #[test]
 fn check_with_unreadable_file_and_no_keep_going_fails() {
-    let package = package_with_unreadable_source();
+    let package = package_with_unreadable_sources();
 
     whisker()
         .arg("check")
         .arg(package.path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("Error:"))
-        .stderr(predicate::str::contains("broken.rs"))
+        .stderr(predicate::str::contains("broken_first.rs"))
         .stderr(predicate::str::contains(
             "stream did not contain valid UTF-8",
-        ));
+        ))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 1));
 }
 
 // r[verify cli.check.deny-warnings]
@@ -529,4 +571,23 @@ fn check_without_deny_warnings_reports_warnings_and_succeeds() {
         .assert()
         .success()
         .stderr(predicate::str::contains("warning[lint.bool-param]"));
+}
+
+/// Stopping at a bad file must not throw away the good files before it
+///
+/// A run without `--keep-going` stops at the first file it cannot get
+/// through, which used to mean returning an error and discarding every
+/// diagnostic collected so far. The work was already done and the findings
+/// were already true, so the user lost them for no reason.
+#[test]
+fn check_without_keep_going_keeps_diagnostics_from_earlier_files() {
+    let root = mixed_project("check_without_keep_going");
+
+    whisker()
+        .current_dir(&root)
+        .args(["check", "src"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error: src/not_utf8.rs"))
+        .stderr(predicate::str::contains("warning[lint.wildcard-match-arm]"));
 }

@@ -11,6 +11,44 @@ fn fixture_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample_project")
 }
 
+/// Writes a Cargo project whose crate reaches two files that are not UTF-8
+///
+/// The project is generated rather than committed because a file that is
+/// not valid UTF-8 survives neither review nor most editors intact, and
+/// because it must be a package of its own: rust-analyzer would otherwise
+/// parse the bad module while building the definition map of whichever
+/// crate owns it, and take the whole test binary down with it.
+///
+/// The two bad files are reached by the two different routes that make
+/// rust-analyzer read a file's text. `src/bad.rs` is a module, read while
+/// the definition map of the crate around it is built. `src/notes.md` is an
+/// [`include_str!`] argument, read while the body that includes it is
+/// inferred — a file whisker would never decorate, and whose extension is
+/// therefore no reason to leave it broken.
+fn not_utf8_project() -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("not_utf8_project");
+    std::fs::create_dir_all(root.join("src")).expect("should create the fixture directories");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\n\n[package]\nname = \"not_utf8_project\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .expect("should write the fixture manifest");
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub mod bad;\n\npub enum Color {\n    Red,\n    Green,\n}\n\npub fn match_on_enum(color: Color) {\n    let _notes = include_str!(\"notes.md\");\n    match color {\n        Color::Red => {}\n        _ => {}\n    }\n}\n",
+    )
+    .expect("should write the fixture crate root");
+    std::fs::write(
+        root.join("src/bad.rs"),
+        b"pub fn f() -> u8 { b\"\xff\xfe\"[0] }\n",
+    )
+    .expect("should write the fixture module that is not UTF-8");
+    std::fs::write(root.join("src/notes.md"), b"notes \xff\xfe\n")
+        .expect("should write the fixture include_str target that is not UTF-8");
+
+    root
+}
+
 /// Loads the fixture workspace once and lends it to every test
 ///
 /// Loading runs `cargo metadata` and `cargo check` against the fixture. Doing
@@ -78,6 +116,71 @@ fn find_first_node_of_kind<'a>(node: &DecoratedNode<'a>, kind: &str) -> Option<D
         }
     }
     None
+}
+
+/// One unreadable file must not take the rest of its crate down with it
+///
+/// `ra_ap_load_cargo` interns a file whose bytes are not UTF-8 without
+/// recording its text, and rust-analyzer panics when it later reads that
+/// text — while building the definition map of the crate around it, or
+/// while inferring a body that includes it, so the file that dies is never
+/// the one whisker was asked about. Before the load repaired such files,
+/// this test aborted the whole binary with "Unable to fetch file text for
+/// `vfs::FileId`" rather than failing. The fixture carries one of each
+/// kind, so narrowing the repair back to Rust source turns this red too.
+#[test]
+fn decorate_with_a_module_that_is_not_utf8_covers_its_siblings() {
+    let root = not_utf8_project();
+    let provider = RustDecorationProvider::load(&root).expect("should load the fixture");
+    let file_path = root.join("src/lib.rs");
+    let source = std::fs::read_to_string(&file_path).expect("should read the fixture crate root");
+    let mut tree = parse_source(source, file_path);
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(decorations) => tree.merge_decorations(decorations),
+        Coverage::NotCovered(gap) => panic!("the crate root should be covered, got: {gap}"),
+    }
+    let root_node = tree.root_node();
+    let func =
+        find_function_by_name(&root_node, "match_on_enum").expect("should find the function");
+    let match_expr =
+        find_first_node_of_kind(&func, "match_expression").expect("should find match_expression");
+    let scrutinee = match_expr
+        .child_by_field_name("value")
+        .expect("match should have value field");
+    let ty = scrutinee
+        .decoration::<ResolvedType>()
+        .expect("scrutinee should have ResolvedType");
+    assert!(ty.is_enum(), "Color should be an enum");
+}
+
+/// Code inside `#[cfg(test)] mod tests` has to resolve like any other code
+///
+/// Cargo leaves `test` out of a crate's cfg options by default, which
+/// resolves every such block to nothing while whisker still walks it and
+/// reports the file clean. Roughly half the lines of a Rust codebase live
+/// in those blocks, so this is the difference between linting a project and
+/// linting the part of it that is not tested.
+#[test]
+fn decorate_with_code_under_cfg_test_resolves_types() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let root = tree.root_node();
+
+    let func = find_function_by_name(&root, "match_on_enum_under_cfg_test")
+        .expect("should find match_on_enum_under_cfg_test");
+
+    let match_expr =
+        find_first_node_of_kind(&func, "match_expression").expect("should find match_expression");
+    let scrutinee = match_expr
+        .child_by_field_name("value")
+        .expect("match should have value field");
+    let ty = scrutinee
+        .decoration::<ResolvedType>()
+        .expect("a scrutinee under cfg(test) should have ResolvedType");
+    assert!(ty.is_enum(), "Color should be an enum");
 }
 
 #[test]

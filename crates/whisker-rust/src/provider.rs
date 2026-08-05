@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
 use ra_ap_hir::{Adt, HasAttrs, HirDisplay, Semantics, attach_db};
-use ra_ap_ide_db::RootDatabase;
 use ra_ap_ide_db::base_db::SourceDatabase as _;
+use ra_ap_ide_db::{ChangeWithProcMacros, RootDatabase};
 use ra_ap_load_cargo::{LoadCargoConfig, ProcMacroServerChoice};
 use ra_ap_project_model::{CargoConfig, ProjectManifest, ProjectWorkspace};
 use ra_ap_syntax::AstNode;
@@ -58,6 +58,14 @@ impl RustDecorationProvider {
     /// This is an expensive operation that builds rust-analyzer's internal
     /// database from the project's Cargo.toml. Call this once at startup.
     ///
+    /// `set_test` is on, which puts `test` in the cfg options of every crate
+    /// the workspace owns. Cargo's own default is off, so leaving it there
+    /// would resolve a `#[cfg(test)] mod tests` block to nothing: whisker
+    /// would still walk the file and the rules that need types would quietly
+    /// find none, over the half of a typical Rust codebase that lives in
+    /// those blocks. Editors running rust-analyzer turn it on for the same
+    /// reason.
+    ///
     /// # Errors
     ///
     /// Returns an error if the current directory cannot be read, if
@@ -69,6 +77,7 @@ impl RustDecorationProvider {
     pub fn load(workspace_root: &Path) -> anyhow::Result<Self> {
         let cargo_config = CargoConfig {
             sysroot: Some(ra_ap_project_model::RustLibSource::Discover),
+            set_test: true,
             ..CargoConfig::default()
         };
         let load_config = LoadCargoConfig {
@@ -107,9 +116,11 @@ impl RustDecorationProvider {
 
         let root: Arc<Path> = Arc::from(workspace.workspace_root().as_ref() as &Path);
 
-        let (db, vfs, _proc_macro_client) =
+        let (mut db, vfs, _proc_macro_client) =
             ra_ap_load_cargo::load_workspace(workspace, &cargo_config.extra_env, &load_config)
                 .context("build the analysis database for the workspace")?;
+
+        give_text_to_files_that_have_none(&mut db, &vfs, &root);
 
         Ok(Self {
             db: Mutex::new(db),
@@ -170,6 +181,62 @@ impl RustDecorationProvider {
     }
 }
 
+/// Gives a text to every interned file under `root` that has none
+///
+/// [`ra_ap_load_cargo`] interns a file whose bytes are not UTF-8 but drops
+/// its text on the floor, and rust-analyzer's file store panics on a file
+/// whose text was never recorded. The panic cannot be guarded where whisker
+/// asks its questions: rust-analyzer reads a module's text while building
+/// the definition map of the crate around it, so asking about a file is
+/// enough to kill the process over one of its *siblings*, and what the user
+/// sees is a file id with no path. Transcribing the bytes lossily leaves
+/// the database total, which is the only shape in which the rest of the
+/// workspace can be analyzed at all. The file itself stays undecoratable:
+/// its lossy text cannot equal the text whisker parsed, so the source-match
+/// guard in `decorate` declines it.
+///
+/// Only files under `root` are read. Covering the rest would mean re-reading
+/// the sysroot and every dependency on every run, and a file in either that
+/// rust-analyzer would parse is UTF-8 already, or the dependency would not
+/// have compiled.
+///
+/// Extension is not one of the tests. Rust source is the only thing whisker
+/// decorates, but it is not the only thing whose text rust-analyzer reads:
+/// `include_str!` reads whatever path it is given, and the load interns
+/// `.toml` and `.md` beside the `.rs` files. Repairing only Rust source
+/// would leave `include_str!("notes.md")` able to end the run, and the few
+/// manifests a workspace holds cost nothing to check.
+fn give_text_to_files_that_have_none(db: &mut RootDatabase, vfs: &Vfs, root: &Path) {
+    let mut lossy = Vec::new();
+
+    for (file_id, vfs_path) in vfs.iter() {
+        let Some(path) = vfs_path.as_path() else {
+            continue;
+        };
+        let path: &Path = path.as_ref();
+        if !path.starts_with(root) {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
+        if std::str::from_utf8(&bytes).is_ok() {
+            continue;
+        }
+        lossy.push((file_id, String::from_utf8_lossy(&bytes).into_owned()));
+    }
+
+    if lossy.is_empty() {
+        return;
+    }
+
+    let mut change = ChangeWithProcMacros::default();
+    for (file_id, text) in lossy {
+        change.change_file(file_id, Some(text));
+    }
+    db.apply_change(change);
+}
+
 // r[impl sdk.provider.translation]
 impl DecorationProvider for RustDecorationProvider {
     fn name(&self) -> ProviderName {
@@ -181,17 +248,22 @@ impl DecorationProvider for RustDecorationProvider {
     /// Four conditions must hold before a single decoration is produced,
     /// and their order matters. The file must be interned by the VFS, or
     /// rust-analyzer has never heard of it. It must not be excluded, or
-    /// reading its text panics — the toolchain keeps an excluded file's
-    /// identity but not its contents. It must belong to a module, because
-    /// `parse_guess_edition` papers over a missing module by guessing the
-    /// current edition and then resolves nothing. And the text the
-    /// pipeline parsed must equal the text the database holds, because the
-    /// byte offsets carried by every target index into rust-analyzer's
+    /// every question the database can be asked about it panics: the VFS
+    /// keeps an excluded file's identity and neither its contents nor a
+    /// source root, so the check has to come before the database is touched
+    /// at all, not merely before its text is read. It must belong to a
+    /// module, because `parse_guess_edition` papers over a missing module by
+    /// guessing the current edition and then resolves nothing. And the text
+    /// the pipeline parsed must equal the text the database holds, because
+    /// the byte offsets carried by every target index into rust-analyzer's
     /// parse of that text.
     ///
-    /// Reading the file text is safe only after the exclusion and module
-    /// checks: rustc accepts UTF-8 source only, so any non-excluded file
-    /// reachable from a crate root has recorded contents.
+    /// Only the first two conditions are guards. The module check protects
+    /// nothing, because establishing the module reads whatever sibling
+    /// modules the crate declares; a file whose text the load dropped would
+    /// already have brought the process down by then, which is why
+    /// [`give_text_to_files_that_have_none`] repairs the database at load
+    /// time rather than leaving the read here to be ordered carefully.
     ///
     /// # Errors
     ///
@@ -500,7 +572,59 @@ fn extract_result_error_type(display: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
+
+    /// Parses `source` as the contents of `file_path`, without decorating it
+    fn parse_rust(source: &str, file_path: PathBuf) -> DecoratedTree {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&crate::language())
+            .expect("the Rust grammar should load");
+        let tree = parser.parse(source, None).expect("should parse");
+
+        DecoratedTree::new(tree, source.to_string(), file_path)
+    }
+
+    /// An excluded file keeps its identity and loses everything else
+    ///
+    /// The VFS records such a file as present but holds neither its contents
+    /// nor a source root for it, so every question the database can be asked
+    /// about it panics. Whisker cannot decline to have an opinion: the
+    /// exclusion is reported by the same [`Vfs::file_id`] call that hands
+    /// back the id, so the guard is the only thing between that state and a
+    /// panic raised from inside rust-analyzer.
+    ///
+    /// The state is seeded directly because the load whisker performs never
+    /// produces it — rust-analyzer's language server marks files excluded
+    /// from its own configuration, while Cargo's `[workspace] exclude` keeps
+    /// a path out of the VFS entirely rather than marking it. That makes
+    /// this the one guard no fixture workspace can exercise, which is
+    /// exactly why it needs a test of its own rather than trust.
+    #[test]
+    fn decorate_with_excluded_file_reports_excluded_by_toolchain() {
+        let file_path =
+            std::path::absolute("excluded_by_toolchain.rs").expect("should be made absolute");
+        let mut vfs = Vfs::default();
+        vfs.insert_excluded_file(VfsPath::new_real_path(
+            file_path.to_string_lossy().to_string(),
+        ));
+        let provider = RustDecorationProvider {
+            db: Mutex::new(RootDatabase::default()),
+            vfs,
+            root: Arc::from(Path::new("/")),
+        };
+        let tree = parse_rust("fn main() {}\n", file_path);
+
+        let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+        match coverage {
+            Coverage::Covered(_) => panic!("an excluded file must not be covered"),
+            Coverage::NotCovered(CoverageGap::ExcludedByToolchain { .. }) => {}
+            Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+        }
+    }
 
     #[test]
     fn extract_result_error_type_simple() {

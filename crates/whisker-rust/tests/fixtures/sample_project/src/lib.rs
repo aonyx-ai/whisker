@@ -58,3 +58,15 @@ pub fn bool_param(verbose: bool) -> &'static str {
 pub struct Config {
     pub debug: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    pub fn match_on_enum_under_cfg_test(color: Color) {
+        match color {
+            Color::Red => {}
+            _ => {}
+        }
+    }
+}
