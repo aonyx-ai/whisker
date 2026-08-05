@@ -1,20 +1,22 @@
+use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
-use ra_ap_hir::{Adt, HasAttrs, HirDisplay, Semantics, attach_db};
+use ra_ap_hir::{Adt, Enum, Function, HasAttrs, HirDisplay, Module, Semantics, Type, attach_db};
 use ra_ap_ide_db::base_db::SourceDatabase as _;
+use ra_ap_ide_db::famous_defs::FamousDefs;
 use ra_ap_ide_db::{ChangeWithProcMacros, RootDatabase};
 use ra_ap_load_cargo::{LoadCargoConfig, ProcMacroServerChoice};
 use ra_ap_project_model::{CargoConfig, ProjectManifest, ProjectWorkspace};
-use ra_ap_syntax::{AstNode, NodeOrToken, SyntaxNode, TextRange, TextSize, ast};
+use ra_ap_syntax::{AstNode, Edition, NodeOrToken, SyntaxNode, TextRange, TextSize, ast};
 use ra_ap_vfs::{AbsPathBuf, FileExcluded, FileId, Vfs, VfsPath};
 use whisker_types::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationMap, DecorationProvider,
     ProviderName,
 };
 
-use crate::decorations::{AdtFlags, FnSignature, ResolvedType};
+use crate::decorations::{AdtFlags, ErrorType, FnSignature, ResolvedType, ReturnMode, TypePath};
 
 /// Decoration provider for Rust using rust-analyzer
 ///
@@ -300,18 +302,18 @@ impl DecorationProvider for RustDecorationProvider {
         let coverage = attach_db(&*db, || {
             let sema = Semantics::new(&*db);
 
-            if sema.file_to_module_def(file_id).is_none() {
+            let Some(module) = sema.file_to_module_def(file_id) else {
                 return Coverage::NotCovered(CoverageGap::Unreachable {
                     root: Arc::clone(&self.root),
                 });
-            }
+            };
 
             let db_text: &str = db.file_text(file_id).text(&*db);
             if db_text != tree.source() {
                 return Coverage::NotCovered(CoverageGap::StaleSource);
             }
 
-            Coverage::Covered(resolve_targets(&sema, file_id, &targets))
+            Coverage::Covered(resolve_targets(&sema, file_id, module, &targets))
         });
 
         Ok(coverage)
@@ -320,20 +322,32 @@ impl DecorationProvider for RustDecorationProvider {
 
 /// Resolves every collected target against rust-analyzer's parse
 ///
-/// The caller has already established that `file_id` belongs to a module
-/// and that its recorded text matches the text the targets' byte offsets
+/// The caller has already established that `file_id` belongs to `module`
+/// and that its recorded text matches the text the targets' byte ranges
 /// were taken from.
+///
+/// The module is what fixes the crate every question in this file is asked
+/// on behalf of: the edition its names print in, and the `core` whose
+/// `Result` and `Option` a type is compared against. Every function in one
+/// file belongs to one crate, so resolving them once per file rather than
+/// once per target is exact rather than merely cheap.
 fn resolve_targets(
     sema: &Semantics<'_, RootDatabase>,
     file_id: FileId,
+    module: Module,
     targets: &[Target],
 ) -> DecorationMap {
     let source_file = sema.parse_guess_edition(file_id);
     let syntax = source_file.syntax().clone();
 
+    let krate = module.krate(sema.db);
+    let famous = FamousDefs(sema, krate);
     let ctx = DecorateCtx {
         sema,
         syntax: &syntax,
+        edition: krate.edition(sema.db),
+        core_result: famous.core_result_Result(),
+        core_option: famous.core_option_Option(),
     };
 
     let mut decorations = DecorationMap::new();
@@ -408,18 +422,27 @@ enum Target {
     },
 }
 
-/// Converts a tree-sitter node's byte range into rust-analyzer's
+/// Converts a byte range into rust-analyzer's 32-bit one
 ///
 /// Rust-analyzer addresses text with 32-bit offsets, so a file too large for
-/// one is a file it cannot describe. Dropping the target is then the only
+/// one is a file it cannot describe. Returning [`None`] is then the only
 /// honest answer, because a truncated offset would quietly name some other
 /// expression and decorate this node with that expression's type.
-fn text_range_of(node: &DecoratedNode<'_>) -> Option<TextRange> {
-    let range = node.raw().byte_range();
-    let start = u32::try_from(range.start).ok()?;
-    let end = u32::try_from(range.end).ok()?;
+///
+/// The arithmetic is separate from the node access so that the refusal can be
+/// tested. Fused to a [`DecoratedNode`], the only way to reach the boundary
+/// would be a four-gigabyte fixture.
+fn text_range_from(range: Range<usize>) -> Option<TextRange> {
+    let Range { start, end } = range;
+    let start = u32::try_from(start).ok()?;
+    let end = u32::try_from(end).ok()?;
 
     Some(TextRange::new(TextSize::from(start), TextSize::from(end)))
+}
+
+/// Converts a tree-sitter node's byte range into rust-analyzer's
+fn text_range_of(node: &DecoratedNode<'_>) -> Option<TextRange> {
+    text_range_from(node.raw().byte_range())
 }
 
 fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
@@ -471,13 +494,21 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
     }
 }
 
+/// What every question about one file is asked against
+///
+/// The three resolved fields are per-crate, not per-target, and are held
+/// rather than recomputed because they are the whole difference between
+/// asking rust-analyzer what a type *is* and reading what it *printed*.
 struct DecorateCtx<'a, 'db> {
     sema: &'a Semantics<'db, RootDatabase>,
-    syntax: &'a ra_ap_syntax::SyntaxNode,
+    syntax: &'a SyntaxNode,
+    edition: Edition,
+    core_result: Option<Enum>,
+    core_option: Option<Enum>,
 }
 
 impl DecorateCtx<'_, '_> {
-    fn display_type(&self, ty: &ra_ap_hir::Type<'_>, func: &ra_ap_hir::Function) -> String {
+    fn display_type(&self, ty: &Type<'_>, func: &Function) -> String {
         let krate = func.module(self.sema.db).krate(self.sema.db);
         let target = krate.to_display_target(self.sema.db);
         format!("{}", ty.display(self.sema.db, target))
@@ -499,49 +530,150 @@ impl DecorateCtx<'_, '_> {
 /// recovering from a parse error, and a zero-width span "covers" whatever
 /// token it sits inside, which would decorate the broken node with an
 /// unrelated neighbor's type.
-fn covering_node(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<SyntaxNode> {
-    if range.is_empty() || !ctx.syntax.text_range().contains_range(range) {
+///
+/// A range reaching past the end of `syntax` is refused too, and it has to be
+/// refused here: [`SyntaxNode::covering_element`] asserts rather than returns
+/// on one, so the caller would abort instead of skipping a target.
+///
+/// The tree is taken rather than the whole [`DecorateCtx`] because both
+/// refusals are properties of a range against a parse, and a parameter that
+/// needs a loaded workspace to construct is one no unit test can reach.
+fn covering_node(syntax: &SyntaxNode, range: TextRange) -> Option<SyntaxNode> {
+    if range.is_empty() || !syntax.text_range().contains_range(range) {
         return None;
     }
 
-    match ctx.syntax.covering_element(range) {
+    match syntax.covering_element(range) {
         NodeOrToken::Node(node) => Some(node),
         NodeOrToken::Token(token) => token.parent(),
     }
 }
 
-fn find_enclosing_fn(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<ra_ap_hir::Function> {
-    let fn_node = covering_node(ctx, range)?
+fn find_enclosing_fn(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<Function> {
+    let fn_node = covering_node(ctx.syntax, range)?
         .ancestors()
         .find_map(ast::Fn::cast)?;
     ctx.sema.to_def(&fn_node)
 }
 
 fn find_expr_covering(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<ast::Expr> {
-    covering_node(ctx, range)?
+    covering_node(ctx.syntax, range)?
         .ancestors()
         .find_map(ast::Expr::cast)
+}
+
+/// Returns the type `?` and `return` answer to inside the function's body
+///
+/// For an `async fn` that is the future's output, not the future: an
+/// `async fn`'s signature output is the opaque `impl Future`, which is not
+/// what any expression in its body converts into.
+///
+/// The projection is deliberately reached through [`Function::async_ret_type`]
+/// rather than through a "does this implement `Future`" test. The latter also
+/// sees through `fn f() -> impl Future<Output = anyhow::Result<()>>`, where a
+/// `?` in the body cannot target that [`Result<T, E>`] at all, and would
+/// answer confidently and wrongly. Gating on `is_async`, which
+/// `async_ret_type` does itself, is exactly the distinction that matters.
+///
+/// [`Result<T, E>`]: std::result::Result
+fn effective_return_type<'db>(
+    ctx: &DecorateCtx<'_, 'db>,
+    func: Function,
+) -> (Option<Type<'db>>, ReturnMode) {
+    if func.is_async(ctx.sema.db) {
+        match func.async_ret_type(ctx.sema.db) {
+            Some(ty) => (Some(ty), ReturnMode::Awaited),
+            None => (None, ReturnMode::Opaque),
+        }
+    } else {
+        (Some(func.ret_type(ctx.sema.db)), ReturnMode::Direct)
+    }
+}
+
+/// Returns whether `ty` is an instance of the enum `target` names
+///
+/// Identity, not rendering: a user's own `myres::Result<T>` renders as
+/// `Result<..>` and is not this.
+fn is_instance_of(ty: &Type<'_>, target: Option<Enum>) -> bool {
+    let Some(target) = target else {
+        return false;
+    };
+
+    match ty.as_adt() {
+        Some(Adt::Enum(actual)) => actual == target,
+        Some(Adt::Struct(_)) => false,
+        Some(Adt::Union(_)) => false,
+        None => false,
+    }
+}
+
+/// Returns where `ty`'s defining item lives, if it has one
+///
+/// The path is the definition's, not any re-export's, because a definition
+/// only moves in a breaking release while a re-export can appear or vanish
+/// in a patch one.
+fn type_path(ctx: &DecorateCtx<'_, '_>, ty: &Type<'_>) -> Option<TypePath> {
+    let db = ctx.sema.db;
+    let adt = ty.as_adt()?;
+    let module = adt.module(db);
+    let krate = module.krate(db).display_name(db)?;
+    let modules: Vec<String> = module
+        .path_segments(db)
+        .map(|segment| segment.display(db, ctx.edition).to_string())
+        .collect();
+    let name = adt.name(db).display(db, ctx.edition).to_string();
+
+    Some(TypePath::new(&krate.to_string(), modules, &name))
+}
+
+/// Classifies the `E` of a [`Result<T, E>`]
+///
+/// A type with no defining item is reported as such rather than given an
+/// invented name, because the only use of this value is a comparison against
+/// a path, and a name nothing declares can only make that comparison lie.
+///
+/// [`Result<T, E>`]: std::result::Result
+fn classify_error(ctx: &DecorateCtx<'_, '_>, ty: &Type<'_>) -> ErrorType {
+    match type_path(ctx, ty) {
+        Some(path) => ErrorType::Named(path),
+        None => match ty.as_type_param(ctx.sema.db) {
+            Some(_) => ErrorType::Generic,
+            None => ErrorType::Unnamed,
+        },
+    }
+}
+
+/// Returns the classified `E` when `ty` really is `core::result::Result<T, E>`
+fn result_error_type(ctx: &DecorateCtx<'_, '_>, ty: &Type<'_>) -> Option<ErrorType> {
+    let core_result = ctx.core_result?;
+    let (adt, args) = ty.as_adt_with_args()?;
+    let Adt::Enum(actual) = adt else {
+        return None;
+    };
+    if actual != core_result {
+        return None;
+    }
+
+    let error = args.into_iter().nth(1)??;
+    Some(classify_error(ctx, &error))
 }
 
 fn resolve_function(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<FnSignature> {
     let func = find_enclosing_fn(ctx, range)?;
 
-    let ret_type = func.ret_type(ctx.sema.db);
-    let display = ctx.display_type(&ret_type, &func);
-    let is_result = display.starts_with("Result<") || display.contains("::Result<");
-    let is_never = ret_type.is_never();
-
-    let resolved = ResolvedType::new(display.clone())
-        .with_result(is_result)
-        .with_never(is_never);
-
-    let error_type_name = if is_result {
-        extract_result_error_type(&display)
-    } else {
-        None
+    let (ret_type, return_mode) = effective_return_type(ctx, func);
+    let Some(ret_type) = ret_type else {
+        return Some(FnSignature::new(None, None, return_mode));
     };
 
-    Some(FnSignature::new(Some(resolved), error_type_name))
+    let display = ctx.display_type(&ret_type, &func);
+    let error_type = result_error_type(ctx, &ret_type);
+
+    let resolved = ResolvedType::new(display)
+        .with_result(is_instance_of(&ret_type, ctx.core_result))
+        .with_never(ret_type.is_never());
+
+    Some(FnSignature::new(Some(resolved), error_type, return_mode))
 }
 
 fn resolve_match_scrutinee(
@@ -586,8 +718,8 @@ fn resolve_expr_type(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<Reso
         None => format!("{ty:?}"),
     };
 
-    let is_result = display.starts_with("Result<") || display.contains("::Result<");
-    let is_option = display.starts_with("Option<") || display.contains("::Option<");
+    let is_result = is_instance_of(&ty, ctx.core_result);
+    let is_option = is_instance_of(&ty, ctx.core_option);
     let is_never = ty.is_never();
 
     Some(
@@ -598,30 +730,40 @@ fn resolve_expr_type(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<Reso
     )
 }
 
-fn extract_result_error_type(display: &str) -> Option<String> {
-    let inner = display.strip_prefix("Result<")?.strip_suffix('>')?;
-
-    let mut depth = 0;
-    for (i, ch) in inner.char_indices() {
-        match ch {
-            '<' => depth += 1,
-            '>' => depth -= 1,
-            ',' if depth == 0 => {
-                let error_part = inner[i + 1..].trim();
-                return Some(error_part.to_string());
-            }
-            _ => {}
-        }
-    }
-
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
+    use ra_ap_syntax::SourceFile;
+
     use super::*;
+
+    /// The source every `covering_node` test locates a range in
+    ///
+    /// `value` is more than one byte long, so an offset strictly inside it is
+    /// available. That is what makes the empty-range refusal observable: at
+    /// such an offset rowan does have an element to answer with, and the
+    /// guard is the only reason nothing is returned.
+    const COVERING_SOURCE: &str = "fn main() { let value = 1; }";
+
+    fn covering_source_tree() -> SyntaxNode {
+        SourceFile::parse(COVERING_SOURCE, Edition::CURRENT)
+            .tree()
+            .syntax()
+            .clone()
+    }
+
+    fn offset_of(needle: &str) -> u32 {
+        let found = COVERING_SOURCE
+            .find(needle)
+            .unwrap_or_else(|| panic!("the fixture source should contain {needle}"));
+
+        u32::try_from(found).expect("the fixture source is small")
+    }
+
+    fn range_at(offset: u32, len: u32) -> TextRange {
+        TextRange::new(TextSize::from(offset), TextSize::from(offset + len))
+    }
 
     /// Parses `source` as the contents of `file_path`, without decorating it
     fn parse_rust(source: &str, file_path: PathBuf) -> DecoratedTree {
@@ -673,33 +815,49 @@ mod tests {
         }
     }
 
+    /// A zero-width span must not borrow the identity of the token around it
+    ///
+    /// Rowan answers `covering_element` for an empty range with the token it
+    /// falls inside, so without the refusal the caller would decorate a
+    /// tree-sitter node of no width with that token's type. The offset here
+    /// sits in the middle of `value`, which is what makes the difference
+    /// observable: the same offset with any width at all does resolve.
     #[test]
-    fn extract_result_error_type_simple() {
-        assert_eq!(
-            extract_result_error_type("Result<(), anyhow::Error>"),
-            Some("anyhow::Error".into())
+    fn covering_node_with_empty_range_returns_none() {
+        let syntax = covering_source_tree();
+        let inside_an_identifier = TextSize::from(offset_of("value") + 1);
+
+        let covering = covering_node(
+            &syntax,
+            TextRange::new(inside_an_identifier, inside_an_identifier),
         );
+
+        assert!(covering.is_none());
     }
 
     #[test]
-    fn extract_result_error_type_nested_generics() {
-        assert_eq!(
-            extract_result_error_type("Result<Vec<String>, std::io::Error>"),
-            Some("std::io::Error".into())
-        );
+    fn covering_node_with_range_inside_the_file_returns_a_node() {
+        let syntax = covering_source_tree();
+        let value = offset_of("value");
+
+        let covering = covering_node(&syntax, range_at(value, 5)).expect("should cover `value`");
+
+        assert!(covering.text_range().contains_range(range_at(value, 5)));
     }
 
+    /// A span the parse does not reach must be declined, not asserted on
+    ///
+    /// [`SyntaxNode::covering_element`] panics on a range outside the tree,
+    /// so this guard is the difference between skipping one target and
+    /// aborting the whole run.
     #[test]
-    fn extract_result_error_type_no_match() {
-        assert_eq!(extract_result_error_type("Option<i32>"), None);
-    }
+    fn covering_node_with_range_past_the_end_returns_none() {
+        let syntax = covering_source_tree();
+        let past_the_end = u32::try_from(COVERING_SOURCE.len()).expect("fixture is small") + 1;
 
-    #[test]
-    fn extract_result_error_type_unit_ok() {
-        assert_eq!(
-            extract_result_error_type("Result<(), Box<dyn Error>>"),
-            Some("Box<dyn Error>".into())
-        );
+        let covering = covering_node(&syntax, range_at(past_the_end, 1));
+
+        assert!(covering.is_none());
     }
 
     #[cfg(unix)]
@@ -719,5 +877,28 @@ mod tests {
             error.to_string().contains("not valid UTF-8"),
             "unexpected error: {error:#}"
         );
+    }
+
+    /// A span the 32-bit addressing cannot hold must produce no target at all
+    ///
+    /// Truncating instead would name a different, entirely unrelated span,
+    /// and the decoration attached there would be confidently wrong rather
+    /// than absent. Reaching the boundary through a real file would take a
+    /// four-gigabyte fixture, which is why the arithmetic has its own seam.
+    #[test]
+    fn text_range_from_with_offset_past_u32_returns_none() {
+        let past_u32 =
+            usize::try_from(u64::from(u32::MAX) + 1).expect("this test assumes a 64-bit target");
+
+        let converted = text_range_from(0..past_u32);
+
+        assert!(converted.is_none());
+    }
+
+    #[test]
+    fn text_range_from_with_offsets_within_u32_returns_the_range() {
+        let converted = text_range_from(3..7).expect("a small range should convert");
+
+        assert_eq!(converted, range_at(3, 4));
     }
 }
