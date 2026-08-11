@@ -1,4 +1,14 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["github>aonyx-ai/renovate-config"],
+  packageRules: [
+    {
+      // Nothing here needs a current nightly: no `#![feature]`, no
+      // `rustc_private`. The pin exists for one unstable rustfmt option, so a
+      // daily bump only invalidates the CI cache.
+      matchPackageNames: ["rust"],
+      matchDepTypes: ["toolchain"],
+      schedule: ["on the first day of the month"],
+    },
+  ],
 }

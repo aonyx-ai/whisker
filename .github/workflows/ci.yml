@@ -66,12 +66,8 @@ jobs:
       - name: Remove Flox installer (if it exists)
         run: rm -f flox.x86_64-linux.deb
 
-      # Every job starts from an empty runner, so without this each one
-      # rebuilds all 265 dependency crates. The key follows `Cargo.lock` and
-      # `rust-toolchain.toml`, which together decide what gets built. The
-      # runner preinstalls a stable toolchain that no build here uses, so a
-      # key derived from `rustc` instead would miss the nightly bumps that
-      # land most days.
+      # Keyed on the lock file and the toolchain, not on `rustc`: the runner
+      # preinstalls a stable toolchain that no build here uses.
       - name: Cache Cargo downloads and build output
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

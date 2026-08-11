@@ -68,9 +68,7 @@ prettier fix="false" extension="*":
 
 # Run the tests
 #
-# Nextest gives each test its own process, so the slow integration suites
-# overlap instead of running one binary after another. It cannot run doctests,
-# so those follow separately.
+# Nextest cannot run doctests, so those follow separately.
 test-rust:
     cargo nextest run --all-features
     cargo test --doc --all-features
