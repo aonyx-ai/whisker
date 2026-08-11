@@ -10,6 +10,7 @@ fn main() {
     let color = Color::Red;
     match color {
         Color::Red => {}
-        _ => {}
+        Color::Green => {}
+        Color::Blue => {}
     }
 }

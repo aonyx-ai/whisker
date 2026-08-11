@@ -49,6 +49,34 @@ impl Diagnostic {
         self
     }
 
+    /// Replaces the severity of this diagnostic
+    ///
+    /// The other `with_*` methods append. This one replaces, because a
+    /// diagnostic has exactly one severity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::path::PathBuf;
+    ///
+    /// use whisker_types::{Diagnostic, RuleId, Severity, Span};
+    ///
+    /// let diagnostic = Diagnostic::new(
+    ///     RuleId("lint.bool-param"),
+    ///     Severity::Warn,
+    ///     "parameter has type `bool`".into(),
+    ///     Span::new(PathBuf::from("src/lib.rs"), 0, 10),
+    /// );
+    ///
+    /// let denied = diagnostic.with_severity(Severity::Error);
+    ///
+    /// assert_eq!(denied.severity(), Severity::Error);
+    /// ```
+    pub fn with_severity(mut self, severity: Severity) -> Self {
+        self.severity = severity;
+        self
+    }
+
     /// Returns the rule that produced this diagnostic
     pub fn rule_id(&self) -> RuleId {
         self.rule_id
@@ -160,6 +188,30 @@ mod tests {
 
         assert_eq!(diag.related().len(), 1);
         assert_eq!(diag.related()[0].message(), "also used here");
+    }
+
+    #[test]
+    fn with_severity_preserves_other_fields() {
+        let origin = Location::new(
+            Span::new(PathBuf::from("other.rs"), 5, 15),
+            "defined here".into(),
+        );
+
+        let diag = test_diagnostic()
+            .with_origin(origin)
+            .with_severity(Severity::Error);
+
+        assert_eq!(diag.rule_id(), RuleId("lint.test"));
+        assert_eq!(diag.message(), "test message");
+        assert_eq!(diag.span().start(), 0);
+        assert_eq!(diag.origins().len(), 1);
+    }
+
+    #[test]
+    fn with_severity_replaces_severity() {
+        let diag = test_diagnostic().with_severity(Severity::Error);
+
+        assert_eq!(diag.severity(), Severity::Error);
     }
 
     #[test]

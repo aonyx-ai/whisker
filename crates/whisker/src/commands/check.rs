@@ -1,3 +1,6 @@
+mod check_outcome;
+mod failure_threshold;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,7 +9,10 @@ use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
-use whisker_types::{DecorationProvider, Language, LintPass, Severity};
+use whisker_types::{DecorationProvider, Diagnostic, Language, LintPass};
+
+use self::check_outcome::CheckOutcome;
+use self::failure_threshold::FailureThreshold;
 
 /// Run whisker lints against a project
 #[derive(Debug, Args)]
@@ -18,6 +24,10 @@ pub struct CheckArgs {
     /// Continue checking after encountering errors
     #[arg(long)]
     keep_going: bool,
+
+    /// Treat warnings as errors
+    #[arg(long)]
+    deny_warnings: bool,
 
     /// Additional arguments forwarded to the analysis pipeline
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -48,8 +58,14 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     let CheckArgs {
         path,
         keep_going,
+        deny_warnings,
         args: _extra_args,
     } = args;
+
+    let threshold = match deny_warnings {
+        true => FailureThreshold::Warnings,
+        false => FailureThreshold::Errors,
+    };
 
     let files = discover_files(&path)?;
 
@@ -66,7 +82,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     let mut all_diagnostics = Vec::new();
     let mut sources: HashMap<Arc<Path>, String> = HashMap::new();
-    let mut had_error = false;
+    let mut outcome = CheckOutcome::Success;
 
     for file in &files {
         let source = match std::fs::read_to_string(file) {
@@ -74,7 +90,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
             Err(e) => {
                 if keep_going {
                     eprintln!("error: {}: {e:#}", file.display());
-                    had_error = true;
+                    outcome = CheckOutcome::Failure;
                     continue;
                 }
                 return Err(anyhow::anyhow!("read {}: {e}", file.display()));
@@ -94,7 +110,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
             Err(e) => {
                 if keep_going {
                     eprintln!("error: {}: {e:#}", file.display());
-                    had_error = true;
+                    outcome = CheckOutcome::Failure;
                 } else {
                     return Err(e);
                 }
@@ -102,20 +118,22 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         }
     }
 
+    let all_diagnostics: Vec<Diagnostic> = all_diagnostics
+        .into_iter()
+        .map(|diagnostic| threshold.promote(diagnostic))
+        .collect();
+
     let output = whisker_reporting::render_to_string(&all_diagnostics, &sources)?;
     if !output.is_empty() {
         eprint!("{output}");
     }
 
-    let has_errors = all_diagnostics
-        .iter()
-        .any(|d| d.severity() >= Severity::Error);
+    let outcome = outcome.combine(CheckOutcome::from_diagnostics(&all_diagnostics, threshold));
 
-    if has_errors || had_error {
-        std::process::exit(1);
+    match outcome {
+        CheckOutcome::Failure => std::process::exit(1),
+        CheckOutcome::Success => Ok(()),
     }
-
-    Ok(())
 }
 
 fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
