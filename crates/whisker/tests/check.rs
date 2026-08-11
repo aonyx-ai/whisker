@@ -127,6 +127,23 @@ fn check_package_whose_sources_a_gitignore_excludes_fails() {
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
+#[test]
+fn check_package_whose_sources_the_configuration_excludes_fails() {
+    let package = package(CLEAN_SOURCE);
+    std::fs::write(
+        package.path().join("Cargo.toml"),
+        format!("{MANIFEST}\n[workspace]\n\n[workspace.metadata.whisker]\nignore = [\"src/\"]\n"),
+    )
+    .expect("manifest should be written");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
 /// Pins the exclusion source that lives entirely outside the project
 ///
 /// The test points `GIT_CONFIG_GLOBAL` at a temporary config, so it neither

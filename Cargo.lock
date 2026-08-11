@@ -2824,6 +2824,8 @@ dependencies = [
  "ignore",
  "no_matches_macro",
  "predicates",
+ "serde",
+ "serde_json",
  "tempfile",
  "trycmd",
  "whisker-core",

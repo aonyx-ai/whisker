@@ -15,6 +15,7 @@ use whisker_types::{DecorationProvider, Diagnostic, LintPass};
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::ErrorRecovery;
 use self::failure_threshold::FailureThreshold;
+use crate::config::WhiskerConfig;
 use crate::discovery::{Discovery, WalkErrorPolicy};
 
 /// Run whisker lints against a project
@@ -77,12 +78,15 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     anyhow::ensure!(path.exists(), "{} does not exist", path.display());
 
+    let config = WhiskerConfig::load(&path).context("failed to load the whisker configuration")?;
+
     let on_error = match keep_going {
         true => WalkErrorPolicy::ReportAndContinue,
         false => WalkErrorPolicy::Fail,
     };
 
-    let discovery = Discovery::run(&path, on_error).context("failed to discover source files")?;
+    let discovery =
+        Discovery::run(&path, &config, on_error).context("failed to discover source files")?;
 
     let mut outcome = CheckOutcome::Success;
 

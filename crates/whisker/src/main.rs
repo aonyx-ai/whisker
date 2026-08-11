@@ -1,4 +1,5 @@
 mod commands;
+mod config;
 mod discovery;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,8 +1,11 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use ignore::{DirEntry, WalkBuilder};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use ignore::{DirEntry, Match, WalkBuilder};
 use whisker_types::Language;
+
+use crate::config::WhiskerConfig;
 
 mod walk_error_policy;
 mod walk_failure;
@@ -10,13 +13,24 @@ mod walk_failure;
 pub use walk_error_policy::WalkErrorPolicy;
 use walk_failure::WalkFailure;
 
-/// The source files a `whisker check` run inspects
+/// The source files a `whisker check` run will inspect
 ///
-/// The walk skips hidden files and directories, and it honors `.gitignore`,
-/// `.ignore`, `.git/info/exclude`, and the user's global gitignore. Unlike
-/// `ripgrep`, it applies these rules even without a repository. An ignore
-/// file in a tarball or a vendored tree still describes which files that
-/// tree generates.
+/// The walk honors the exclusions the project's own tooling honors:
+/// `.gitignore`, `.ignore`, `.git/info/exclude`, the user's global gitignore,
+/// and hidden files. Whisker's own [`IgnorePattern`]s apply on top, so
+/// generated output stays out of a run.
+///
+/// The walk honors these files even without a repository around them, which
+/// is where whisker departs from `ripgrep`'s default. A `.gitignore` in a
+/// tarball or a vendored checkout still describes which files the project
+/// generates.
+///
+/// Discovery keeps failures alongside the files so the caller can act on
+/// them. An unreadable directory or an unparsable ignore file would
+/// otherwise shrink the scan. A shrunken scan lets a run report success over
+/// source it never opened.
+///
+/// [`IgnorePattern`]: crate::config::IgnorePattern
 #[derive(Debug)]
 pub struct Discovery {
     files: Vec<PathBuf>,
@@ -26,32 +40,47 @@ pub struct Discovery {
 impl Discovery {
     /// Discovers the files to lint beneath `path`
     ///
-    /// A `path` that names one file comes back as-is. Ignore rules do not
-    /// apply to it, because the user already chose the file. The grammar
-    /// comes from the extension of `path`, not from the name a symlink
-    /// resolves to. Whisker reports the path the user named.
+    /// When `path` names a single file, the run returns it as-is, and no
+    /// ignore pattern excludes it. A user who types a file's name already
+    /// made the decision the ignore rules automate. The grammar check
+    /// still applies. Otherwise whisker reports an unsupported file as
+    /// clean. The grammar comes from the extension of `path`, not from the
+    /// name a symlink resolves to, and whisker reports the path the user
+    /// named.
+    ///
+    /// The walk enters a directory named on the command line even when a
+    /// pattern excludes it. That pattern does not apply again to the files
+    /// inside, but patterns that match deeper entries still prune them.
     ///
     /// # Errors
     ///
-    /// Returns an error if `path` cannot be resolved, if `path` names a file
-    /// with no extension, if `path` names a file written in a language
-    /// whisker has no grammar for, if a configured
-    /// ignore pattern is not valid gitignore syntax, or - under
-    /// [`WalkErrorPolicy::Fail`] - if a directory entry or an ignore file
-    /// cannot be read.
+    /// Returns an error if `path` cannot be resolved, or if `path` names a
+    /// file whisker has no grammar for. A file with no extension names no
+    /// language, so it is an error too.
+    ///
+    /// Returns an error if a configured ignore pattern is not valid
+    /// gitignore syntax. Under [`WalkErrorPolicy::Fail`], an unreadable
+    /// directory entry or ignore file is also an error.
     ///
     /// # Examples
     ///
     /// ```ignore
-    /// let discovery = Discovery::run(Path::new("."), WalkErrorPolicy::Fail)?;
+    /// let config = WhiskerConfig::load(Path::new("."))?;
+    /// let discovery = Discovery::run(Path::new("."), &config, WalkErrorPolicy::Fail)?;
     ///
     /// for file in discovery.files() {
     ///     println!("{}", file.display());
     /// }
     /// ```
-    pub fn run(path: &Path, on_error: WalkErrorPolicy) -> anyhow::Result<Self> {
+    pub fn run(
+        path: &Path,
+        config: &WhiskerConfig,
+        on_error: WalkErrorPolicy,
+    ) -> anyhow::Result<Self> {
         let root = std::fs::canonicalize(path)
             .with_context(|| format!("failed to resolve {}", path.display()))?;
+
+        let excludes = build_excludes(config)?;
 
         if root.is_file() {
             let Some(extension) = path.extension() else {
@@ -77,7 +106,20 @@ impl Discovery {
             });
         }
 
-        let walk = WalkBuilder::new(&root).require_git(false).build();
+        let walk = WalkBuilder::new(&root)
+            .require_git(false)
+            .filter_entry(move |entry| {
+                let is_dir = entry
+                    .file_type()
+                    .is_some_and(|file_type| file_type.is_dir());
+
+                match excludes.matched(entry.path(), is_dir) {
+                    Match::None => true,
+                    Match::Ignore(_) => false,
+                    Match::Whitelist(_) => true,
+                }
+            })
+            .build();
 
         let mut files = Vec::new();
         let mut errors = Vec::new();
@@ -169,6 +211,31 @@ fn attached_error(entry: &DirEntry) -> Option<anyhow::Error> {
     Some(anyhow::Error::msg(error.to_string()).context("failed to read an ignore file"))
 }
 
+/// Compiles the configured ignore patterns into a matcher
+///
+/// The matcher anchors patterns at the configured root, not at the walk
+/// root, so a pattern means the same thing from any starting directory.
+/// Within that root the patterns behave as they would in a `.gitignore`
+/// written there.
+///
+/// # Errors
+///
+/// Returns an error that names the offending pattern when it is not valid
+/// gitignore syntax.
+fn build_excludes(config: &WhiskerConfig) -> anyhow::Result<Gitignore> {
+    let mut builder = GitignoreBuilder::new(config.root());
+
+    for pattern in config.ignore() {
+        builder
+            .add_line(None, pattern.as_str())
+            .with_context(|| format!("failed to read the ignore pattern `{pattern}`"))?;
+    }
+
+    builder
+        .build()
+        .context("failed to compile the configured ignore patterns")
+}
+
 /// Rebases `entry` from the resolved `root` onto the `original` argument
 ///
 /// The walk resolves its root, but diagnostics must show the path the user
@@ -185,6 +252,13 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::config::IgnorePattern;
+
+    /// A virtual workspace manifest with no members
+    ///
+    /// The tests that use a manifest read only its metadata table, so
+    /// members are unnecessary.
+    const EMPTY_WORKSPACE: &str = "[workspace]\nresolver = \"3\"\nmembers = []\n";
 
     /// A directory whose permissions are restored when this value is dropped
     ///
@@ -233,6 +307,17 @@ mod tests {
              sorting anything; give the test more files or different names",
             directory.display()
         );
+    }
+
+    /// Builds a configuration anchored at `root` with the given patterns
+    fn config(root: &Path, patterns: &[&str]) -> WhiskerConfig {
+        let root = std::fs::canonicalize(root).expect("root should resolve");
+        let patterns = patterns
+            .iter()
+            .map(|pattern| IgnorePattern::new(*pattern))
+            .collect();
+
+        WhiskerConfig::new(root, patterns)
     }
 
     /// Returns the discovered files as slash-separated paths relative to `root`
@@ -299,6 +384,19 @@ mod tests {
     }
 
     #[test]
+    fn build_excludes_with_invalid_pattern_returns_error() {
+        let directory = tree(&[]);
+        let config = config(directory.path(), &["{a,b"]);
+
+        let error = build_excludes(&config).expect_err("pattern should be rejected");
+
+        assert!(
+            format!("{error:#}").contains("failed to read the ignore pattern `{a,b`"),
+            "error should name the offending pattern: {error:#}"
+        );
+    }
+
+    #[test]
     fn rebase_with_entry_outside_root_returns_the_entry() {
         let entry = Path::new("/elsewhere/main.rs");
 
@@ -314,6 +412,37 @@ mod tests {
         let path = rebase(Path::new("."), Path::new("/project"), entry);
 
         assert_eq!(path, Path::new("./src/main.rs"));
+    }
+
+    /// Pins the exclusions whisker's own manifest declares
+    ///
+    /// The fixture projects exist to violate lint rules, so a pattern that
+    /// stops matching would fill an otherwise clean run with their
+    /// diagnostics.
+    #[test]
+    fn run_over_whiskers_own_workspace_excludes_its_fixture_projects() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let config = WhiskerConfig::load(&root).expect("whisker's own configuration should load");
+
+        let discovery = Discovery::run(&root, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        let files = discovered(&discovery, &root);
+        assert!(
+            files.contains(&"crates/whisker/src/discovery.rs".to_owned()),
+            "discovery should have found whisker's own source: {files:?}"
+        );
+        let fixtures: Vec<&String> = files
+            .iter()
+            .filter(|file| {
+                file.starts_with("examples/")
+                    || file.starts_with("crates/whisker-rust/tests/fixtures/")
+            })
+            .collect();
+        assert!(
+            fixtures.is_empty(),
+            "the configured patterns should have excluded every fixture project: {fixtures:?}"
+        );
     }
 
     /// The sort makes diagnostics reproducible across machines. This test
@@ -332,8 +461,9 @@ mod tests {
             "snake.rs",
         ]);
         assert_stored_out_of_order(directory.path());
+        let config = config(directory.path(), &[]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
 
         assert_eq!(
@@ -352,29 +482,73 @@ mod tests {
     }
 
     #[test]
-    fn run_with_dot_ignore_file_excludes_it() {
-        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
-        std::fs::write(directory.path().join(".ignore"), "generated/\n")
-            .expect("ignore file should be written");
+    fn run_with_anchored_pattern_prunes_only_at_the_workspace_root() {
+        let directory = tree(&[
+            "examples/demo.rs",
+            "crates/app/examples/demo.rs",
+            "src/main.rs",
+        ]);
+        let config = config(directory.path(), &["/examples/"]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(
+            discovered(&discovery, directory.path()),
+            ["crates/app/examples/demo.rs", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn run_with_directory_pattern_prunes_the_directory() {
+        let directory = tree(&["src/main.rs", "examples/demo/src/main.rs"]);
+        let config = config(directory.path(), &["examples/"]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
-    /// An ignore rule that matches a named directory does not prune it. The
-    /// walker reads the ignore files above its root, but it never applies
-    /// them to the root.
+    #[test]
+    fn run_with_dot_ignore_file_excludes_it() {
+        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
+        std::fs::write(directory.path().join(".ignore"), "generated/\n")
+            .expect("ignore file should be written");
+        let config = config(directory.path(), &[]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
+    }
+
+    #[test]
+    fn run_with_excluded_directory_does_not_reinclude_a_file_inside_it() {
+        let directory = tree(&["examples/demo.rs", "examples/keep.rs", "src/main.rs"]);
+        let config = config(directory.path(), &["examples/", "!examples/keep.rs"]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
+    }
+
+    /// An ignore rule that matches a named directory does not prune it
+    ///
+    /// The walker reads the ignore files above its root, but it never
+    /// applies them to the root. A configured pattern behaves the same way,
+    /// so this test states both rules and expects neither to bite.
     #[test]
     fn run_with_explicit_directory_target_is_not_pruned() {
         let directory = tree(&["examples/demo.rs"]);
         std::fs::write(directory.path().join(".gitignore"), "examples/\n")
             .expect("gitignore should be written");
+        let config = config(directory.path(), &["examples/"]);
         let target = directory.path().join("examples");
 
-        let discovery =
-            Discovery::run(&target, WalkErrorPolicy::Fail).expect("discovery should succeed");
+        let discovery = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, &target), ["demo.rs"]);
     }
@@ -382,10 +556,11 @@ mod tests {
     #[test]
     fn run_with_explicit_extensionless_file_target_returns_error() {
         let directory = tree(&["LICENSE"]);
+        let config = config(directory.path(), &[]);
         let target = directory.path().join("LICENSE");
 
-        let error =
-            Discovery::run(&target, WalkErrorPolicy::Fail).expect_err("discovery should fail");
+        let error = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
 
         assert!(
             format!("{error:#}").contains("no file extension"),
@@ -402,12 +577,13 @@ mod tests {
     #[test]
     fn run_with_explicit_extensionless_symlink_to_a_rust_file_returns_error() {
         let directory = tree(&["src/main.rs"]);
+        let config = config(directory.path(), &[]);
         let link = directory.path().join("LICENSE");
         std::os::unix::fs::symlink(directory.path().join("src").join("main.rs"), &link)
             .expect("symlink should be created");
 
-        let error =
-            Discovery::run(&link, WalkErrorPolicy::Fail).expect_err("discovery should fail");
+        let error = Discovery::run(&link, &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
 
         assert!(
             format!("{error:#}").contains("no file extension"),
@@ -415,16 +591,52 @@ mod tests {
         );
     }
 
-    /// A file the user names skips the walk, so no ignore rule reaches it
+    /// Pins that an invalid pattern is an error for a file target too
+    ///
+    /// Patterns do not select an explicit file, so the file branch has no
+    /// other reason to compile them. The error then reaches the user only
+    /// on some invocations.
+    #[test]
+    fn run_with_explicit_file_target_and_invalid_pattern_returns_error() {
+        let directory = tree(&["src/main.rs"]);
+        let config = config(directory.path(), &["{a,b"]);
+        let target = directory.path().join("src").join("main.rs");
+
+        let error = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
+        let over_directory = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
+
+        assert!(
+            format!("{error:#}").contains("failed to read the ignore pattern `{a,b`"),
+            "error should name the offending pattern: {error:#}"
+        );
+        assert_eq!(format!("{error:#}"), format!("{over_directory:#}"));
+    }
+
+    #[test]
+    fn run_with_explicit_file_target_ignores_patterns() {
+        let directory = tree(&["examples/demo.rs"]);
+        let config = config(directory.path(), &["examples/", "*.rs"]);
+        let target = directory.path().join("examples").join("demo.rs");
+
+        let discovery = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovery.files(), vec![target]);
+    }
+
+    /// A file the user names skips the walk, so no ignore file reaches it
     #[test]
     fn run_with_explicit_file_target_is_not_ignored() {
         let directory = tree(&["generated/schema.rs"]);
+        let config = config(directory.path(), &[]);
         std::fs::write(directory.path().join(".gitignore"), "generated/\n")
             .expect("gitignore should be written");
         let target = directory.path().join("generated").join("schema.rs");
 
-        let discovery =
-            Discovery::run(&target, WalkErrorPolicy::Fail).expect("discovery should succeed");
+        let discovery = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
 
         assert_eq!(
             discovered(&discovery, directory.path()),
@@ -435,10 +647,11 @@ mod tests {
     #[test]
     fn run_with_explicit_non_rust_file_target_returns_error() {
         let directory = tree(&["Cargo.toml"]);
+        let config = config(directory.path(), &[]);
         let target = directory.path().join("Cargo.toml");
 
-        let error =
-            Discovery::run(&target, WalkErrorPolicy::Fail).expect_err("discovery should fail");
+        let error = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
 
         assert!(
             format!("{error:#}").contains("no grammar for `.toml` files"),
@@ -454,12 +667,13 @@ mod tests {
     #[test]
     fn run_with_explicit_rust_symlink_to_an_extensionless_file_returns_the_link() {
         let directory = tree(&["data"]);
+        let config = config(directory.path(), &[]);
         let link = directory.path().join("link.rs");
         std::os::unix::fs::symlink(directory.path().join("data"), &link)
             .expect("symlink should be created");
 
-        let discovery =
-            Discovery::run(&link, WalkErrorPolicy::Fail).expect("discovery should succeed");
+        let discovery = Discovery::run(&link, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
 
         assert_eq!(discovery.files(), vec![link]);
     }
@@ -476,8 +690,9 @@ mod tests {
             "generated/\n",
         )
         .expect("exclude file should be written");
+        let config = config(directory.path(), &[]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
@@ -488,8 +703,9 @@ mod tests {
         let directory = tree(&["src/main.rs", "generated/schema.rs"]);
         std::fs::write(directory.path().join(".gitignore"), "generated/\n")
             .expect("gitignore should be written");
+        let config = config(directory.path(), &[]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
@@ -498,18 +714,34 @@ mod tests {
     #[test]
     fn run_with_hidden_directory_excludes_it() {
         let directory = tree(&["src/main.rs", ".cache/build.rs"]);
+        let config = config(directory.path(), &[]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
     #[test]
+    fn run_with_negated_pattern_reincludes_the_file() {
+        let directory = tree(&["examples/demo.rs", "examples/keep.rs", "src/main.rs"]);
+        let config = config(directory.path(), &["examples/*.rs", "!examples/keep.rs"]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(
+            discovered(&discovery, directory.path()),
+            ["examples/keep.rs", "src/main.rs"]
+        );
+    }
+
+    #[test]
     fn run_with_non_rust_files_excludes_them() {
         let directory = tree(&["src/main.rs", "README.md", "Cargo.toml", "LICENSE"]);
+        let config = config(directory.path(), &[]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
@@ -518,9 +750,14 @@ mod tests {
     #[test]
     fn run_with_nonexistent_path_returns_error() {
         let directory = tempfile::tempdir().expect("temporary directory should be created");
+        let config = config(directory.path(), &[]);
 
-        let error = Discovery::run(&directory.path().join("missing"), WalkErrorPolicy::Fail)
-            .expect_err("discovery should fail");
+        let error = Discovery::run(
+            &directory.path().join("missing"),
+            &config,
+            WalkErrorPolicy::Fail,
+        )
+        .expect_err("discovery should fail");
 
         assert!(
             format!("{error:#}").contains("failed to resolve"),
@@ -528,18 +765,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn run_with_pattern_matching_nothing_keeps_every_file() {
+        let directory = tree(&["src/main.rs", "src/lib.rs"]);
+        let config = config(directory.path(), &["vendor/", "*.py"]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(
+            discovered(&discovery, directory.path()),
+            ["src/lib.rs", "src/main.rs"]
+        );
+        assert!(discovery.errors().is_empty());
+    }
+
+    #[test]
+    fn run_with_pattern_outside_the_walk_root_still_anchors_at_the_workspace() {
+        let directory = tree(&["crates/app/src/main.rs", "crates/app/src/generated.rs"]);
+        let config = config(directory.path(), &["crates/app/src/generated.rs"]);
+        let target = directory.path().join("crates").join("app");
+
+        let discovery = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, &target), ["src/main.rs"]);
+    }
+
     #[cfg(unix)]
     #[test]
     fn run_with_target_reached_through_a_symlink_returns_the_given_prefix() {
         let directory = tree(&["src/main.rs"]);
+        let config = config(directory.path(), &[]);
         let link = directory.path().join("link");
         std::os::unix::fs::symlink(directory.path().join("src"), &link)
             .expect("symlink should be created");
 
-        let discovery =
-            Discovery::run(&link, WalkErrorPolicy::Fail).expect("discovery should succeed");
+        let discovery = Discovery::run(&link, &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
 
         assert_eq!(discovery.files(), vec![link.join("main.rs")]);
+    }
+
+    #[test]
+    fn run_with_unanchored_pattern_prunes_at_every_depth() {
+        let directory = tree(&[
+            "examples/demo.rs",
+            "crates/app/examples/demo.rs",
+            "src/main.rs",
+        ]);
+        let config = config(directory.path(), &["examples/"]);
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
     /// Pins that an ignore file is named as one wherever the walker found it
@@ -552,10 +832,11 @@ mod tests {
         let directory = tree(&["proj/src/main.rs"]);
         std::fs::write(directory.path().join(".gitignore"), "{a,b\n")
             .expect("gitignore should be written");
+        let config = config(directory.path(), &[]);
         let target = directory.path().join("proj");
 
-        let error =
-            Discovery::run(&target, WalkErrorPolicy::Fail).expect_err("discovery should fail");
+        let error = Discovery::run(&target, &config, WalkErrorPolicy::Fail)
+            .expect_err("discovery should fail");
 
         let error = format!("{error:#}");
         assert!(
@@ -576,8 +857,9 @@ mod tests {
             "{a,b\n",
         )
         .expect("gitignore should be written");
+        let config = config(directory.path(), &[]);
 
-        let error = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let error = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect_err("discovery should fail");
 
         let error = format!("{error:#}");
@@ -603,9 +885,14 @@ mod tests {
             "{a,b\n",
         )
         .expect("gitignore should be written");
+        let config = config(directory.path(), &[]);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::ReportAndContinue)
-            .expect("discovery should succeed");
+        let discovery = Discovery::run(
+            directory.path(),
+            &config,
+            WalkErrorPolicy::ReportAndContinue,
+        )
+        .expect("discovery should succeed");
 
         assert_eq!(
             discovered(&discovery, directory.path()),
@@ -619,8 +906,9 @@ mod tests {
         let directory = tree(&["src/main.rs"]);
         std::fs::write(directory.path().join(".gitignore"), "{a,b\n")
             .expect("gitignore should be written");
+        let config = config(directory.path(), &[]);
 
-        let error = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let error = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect_err("discovery should fail");
 
         assert!(
@@ -633,10 +921,11 @@ mod tests {
     #[test]
     fn run_with_unreadable_directory_and_fail_policy_returns_error() {
         let directory = tree(&["src/main.rs", "locked/inner.rs"]);
+        let config = config(directory.path(), &[]);
         let locked = directory.path().join("locked");
         let _unreadable = make_unreadable(&locked);
 
-        let error = Discovery::run(directory.path(), WalkErrorPolicy::Fail)
+        let error = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
             .expect_err("discovery should fail");
 
         let error = format!("{error:#}");
@@ -658,14 +947,35 @@ mod tests {
     #[test]
     fn run_with_unreadable_directory_and_keep_going_records_the_error() {
         let directory = tree(&["src/main.rs", "locked/inner.rs"]);
+        let config = config(directory.path(), &[]);
         let locked = directory.path().join("locked");
         let _unreadable = make_unreadable(&locked);
 
-        let discovery = Discovery::run(directory.path(), WalkErrorPolicy::ReportAndContinue)
-            .expect("discovery should succeed");
+        let discovery = Discovery::run(
+            directory.path(),
+            &config,
+            WalkErrorPolicy::ReportAndContinue,
+        )
+        .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
         assert_eq!(discovery.errors().len(), 1);
+    }
+
+    #[test]
+    fn run_with_workspace_configuration_excludes_the_configured_pattern() {
+        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
+        std::fs::write(
+            directory.path().join("Cargo.toml"),
+            format!("{EMPTY_WORKSPACE}\n[workspace.metadata.whisker]\nignore = [\"generated/\"]\n"),
+        )
+        .expect("manifest should be written");
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
     #[test]
