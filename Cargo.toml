@@ -1,5 +1,13 @@
 [workspace]
-members = ["crates/*", "lints/anyhow_missing_context", "lints/bool_param", "lints/derive_order", "lints/if_let_with_else", "lints/no_matches_macro", "lints/wildcard_match_arm"]
+members = [
+  "crates/*",
+  "lints/anyhow_missing_context",
+  "lints/bool_param",
+  "lints/derive_order",
+  "lints/if_let_with_else",
+  "lints/no_matches_macro",
+  "lints/wildcard_match_arm",
+]
 exclude = ["examples/*", "lints/*"]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
@@ -18,10 +26,7 @@ repository = "https://github.com/aonyx-ai/whisker.git"
 # fixture material for the lint suite, and none of it belongs to this
 # workspace's crate graph, so rust-analyzer has nothing to say about it.
 [workspace.metadata.whisker]
-ignore = [
-  "/examples/",
-  "crates/whisker-rust/tests/fixtures/",
-]
+ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 
 [workspace.lints.clippy]
 missing_errors_doc = "warn"
