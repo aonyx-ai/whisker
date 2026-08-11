@@ -2882,6 +2882,7 @@ name = "whisker-rust"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "anyhow_missing_context",
  "proptest",
  "ra_ap_hir",
  "ra_ap_ide_db",
@@ -2894,6 +2895,7 @@ dependencies = [
  "whisker-codegen",
  "whisker-core",
  "whisker-types",
+ "wildcard_match_arm",
 ]
 
 [[package]]

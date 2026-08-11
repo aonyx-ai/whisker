@@ -7,8 +7,7 @@ use ra_ap_ide_db::base_db::SourceDatabase as _;
 use ra_ap_ide_db::{ChangeWithProcMacros, RootDatabase};
 use ra_ap_load_cargo::{LoadCargoConfig, ProcMacroServerChoice};
 use ra_ap_project_model::{CargoConfig, ProjectManifest, ProjectWorkspace};
-use ra_ap_syntax::AstNode;
-use ra_ap_syntax::ast;
+use ra_ap_syntax::{AstNode, NodeOrToken, SyntaxNode, TextRange, TextSize, ast};
 use ra_ap_vfs::{AbsPathBuf, FileExcluded, FileId, Vfs, VfsPath};
 use whisker_types::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationMap, DecorationProvider,
@@ -207,11 +206,25 @@ impl DecorationProvider for RustDecorationProvider {
 
     /// Attaches type decorations to the tree's nodes, or declines the file
     ///
-    /// The provider covers a file only when four conditions hold. The VFS
-    /// must know the file. The toolchain must not exclude it. A crate
-    /// module must reach it. The tree's source must equal the text the
-    /// database holds. Each failed condition maps to a [`CoverageGap`]
-    /// variant.
+    /// Four conditions must hold before a single decoration is produced,
+    /// and their order matters. The file must be interned by the VFS, or
+    /// rust-analyzer has never heard of it. It must not be excluded, or
+    /// every question the database can be asked about it panics: the VFS
+    /// keeps an excluded file's identity and neither its contents nor a
+    /// source root, so the check has to come before the database is touched
+    /// at all, not merely before its text is read. It must belong to a
+    /// module, because `parse_guess_edition` papers over a missing module by
+    /// guessing the current edition and then resolves nothing. And the text
+    /// the pipeline parsed must equal the text the database holds, because
+    /// the byte ranges carried by every target index into rust-analyzer's
+    /// parse of that text.
+    ///
+    /// Only the first two conditions are guards. The module check protects
+    /// nothing, because establishing the module reads whatever sibling
+    /// modules the crate declares; a file whose text the load dropped would
+    /// already have brought the process down by then, which is why
+    /// [`give_text_to_files_that_have_none`] repairs the database at load
+    /// time, so the read here needs no careful ordering.
     ///
     /// # Errors
     ///
@@ -287,19 +300,16 @@ fn resolve_targets(
     let mut decorations = DecorationMap::new();
     for target in targets {
         match target {
-            Target::Function {
-                node_id,
-                start_byte,
-            } => {
-                if let Some(sig) = resolve_function(&ctx, *start_byte) {
+            Target::Function { node_id, range } => {
+                if let Some(sig) = resolve_function(&ctx, *range) {
                     decorations.insert(*node_id, sig);
                 }
             }
             Target::MatchScrutinee {
-                scrutinee_start_byte,
+                scrutinee_range,
                 scrutinee_node_id,
             } => {
-                if let Some((ty, flags)) = resolve_match_scrutinee(&ctx, *scrutinee_start_byte) {
+                if let Some((ty, flags)) = resolve_match_scrutinee(&ctx, *scrutinee_range) {
                     decorations.insert(*scrutinee_node_id, ty);
                     if let Some(flags) = flags {
                         decorations.insert(*scrutinee_node_id, flags);
@@ -307,18 +317,18 @@ fn resolve_targets(
                 }
             }
             Target::IfElse {
-                else_start_byte,
+                branch_range,
                 else_node_id,
             } => {
-                if let Some(ty) = resolve_expr_type(&ctx, *else_start_byte) {
+                if let Some(ty) = resolve_expr_type(&ctx, *branch_range) {
                     decorations.insert(*else_node_id, ty);
                 }
             }
             Target::TryExpr {
-                operand_start_byte,
+                operand_range,
                 operand_node_id,
             } => {
-                if let Some(ty) = resolve_expr_type(&ctx, *operand_start_byte) {
+                if let Some(ty) = resolve_expr_type(&ctx, *operand_range) {
                     decorations.insert(*operand_node_id, ty);
                 }
             }
@@ -327,37 +337,65 @@ fn resolve_targets(
     decorations
 }
 
+/// A node the provider asks rust-analyzer to resolve
+///
+/// Each variant pairs the byte range rust-analyzer inspects with the
+/// tree-sitter node ID that receives the decoration. These can differ: the
+/// provider types an `else` branch from its block but decorates the
+/// enclosing `else_clause`.
+///
+/// A full range, not a start offset, selects the node in rust-analyzer's
+/// tree. A start offset lands on one token, and the smallest expression
+/// around that token is often wrong. In `foo().bar()`, the start offset
+/// names the path `foo`, not the call.
 enum Target {
     Function {
         node_id: usize,
-        start_byte: usize,
+        range: TextRange,
     },
     MatchScrutinee {
-        scrutinee_start_byte: usize,
+        scrutinee_range: TextRange,
         scrutinee_node_id: usize,
     },
     IfElse {
-        else_start_byte: usize,
+        branch_range: TextRange,
         else_node_id: usize,
     },
     TryExpr {
-        operand_start_byte: usize,
+        operand_range: TextRange,
         operand_node_id: usize,
     },
+}
+
+/// Converts a tree-sitter byte range into a rust-analyzer [`TextRange`]
+///
+/// Rust-analyzer stores text offsets as 32 bits. When an offset does not
+/// fit, the function returns [`None`]. The caller then skips the target,
+/// because a truncated offset would name some other expression.
+fn text_range_of(node: &DecoratedNode<'_>) -> Option<TextRange> {
+    let range = node.raw().byte_range();
+    let start = u32::try_from(range.start).ok()?;
+    let end = u32::try_from(range.end).ok()?;
+
+    Some(TextRange::new(TextSize::from(start), TextSize::from(end)))
 }
 
 fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
     match node.kind() {
         "function_item" => {
-            targets.push(Target::Function {
-                node_id: node.id(),
-                start_byte: node.raw().start_byte(),
-            });
+            if let Some(range) = text_range_of(node) {
+                targets.push(Target::Function {
+                    node_id: node.id(),
+                    range,
+                });
+            }
         }
         "match_expression" => {
-            if let Some(scrutinee) = node.child_by_field_name("value") {
+            if let Some(scrutinee) = node.child_by_field_name("value")
+                && let Some(scrutinee_range) = text_range_of(&scrutinee)
+            {
                 targets.push(Target::MatchScrutinee {
-                    scrutinee_start_byte: scrutinee.raw().start_byte(),
+                    scrutinee_range,
                     scrutinee_node_id: scrutinee.id(),
                 });
             }
@@ -365,16 +403,20 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
         "if_expression" => {
             if let Some(alt) = node.child_by_field_name("alternative") {
                 let block = alt.named_child(0).unwrap_or(alt.clone());
-                targets.push(Target::IfElse {
-                    else_start_byte: block.raw().start_byte(),
-                    else_node_id: alt.id(),
-                });
+                if let Some(branch_range) = text_range_of(&block) {
+                    targets.push(Target::IfElse {
+                        branch_range,
+                        else_node_id: alt.id(),
+                    });
+                }
             }
         }
         "try_expression" => {
-            if let Some(operand) = node.named_child(0) {
+            if let Some(operand) = node.named_child(0)
+                && let Some(operand_range) = text_range_of(&operand)
+            {
                 targets.push(Target::TryExpr {
-                    operand_start_byte: operand.raw().start_byte(),
+                    operand_range,
                     operand_node_id: operand.id(),
                 });
             }
@@ -400,29 +442,42 @@ impl DecorateCtx<'_, '_> {
     }
 }
 
-fn find_enclosing_fn(
-    ctx: &DecorateCtx<'_, '_>,
-    offset: ra_ap_syntax::TextSize,
-) -> Option<ra_ap_hir::Function> {
-    let fn_node = ctx
-        .syntax
-        .token_at_offset(offset)
-        .right_biased()?
-        .parent_ancestors()
+/// Returns the smallest node in rust-analyzer's tree that covers `range`
+///
+/// Tree-sitter's parse and rust-analyzer's parse agree on byte offsets but
+/// not on tree shape, so the function locates a node by its span. Callers
+/// climb from the covering node to the smallest [`ast::Expr`] or
+/// [`ast::Fn`] that encloses the whole span.
+///
+/// The function returns [`None`] for an empty range or a range outside the
+/// tree. Tree-sitter synthesizes zero-width nodes during error recovery,
+/// and a zero-width span "covers" some unrelated neighbor.
+fn covering_node(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<SyntaxNode> {
+    if range.is_empty() || !ctx.syntax.text_range().contains_range(range) {
+        return None;
+    }
+
+    match ctx.syntax.covering_element(range) {
+        NodeOrToken::Node(node) => Some(node),
+        NodeOrToken::Token(token) => token.parent(),
+    }
+}
+
+fn find_enclosing_fn(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<ra_ap_hir::Function> {
+    let fn_node = covering_node(ctx, range)?
+        .ancestors()
         .find_map(ast::Fn::cast)?;
     ctx.sema.to_def(&fn_node)
 }
 
-fn find_expr_at(ctx: &DecorateCtx<'_, '_>, offset: ra_ap_syntax::TextSize) -> Option<ast::Expr> {
-    ctx.syntax
-        .token_at_offset(offset)
-        .right_biased()
-        .and_then(|t| t.parent_ancestors().find_map(ast::Expr::cast))
+fn find_expr_covering(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<ast::Expr> {
+    covering_node(ctx, range)?
+        .ancestors()
+        .find_map(ast::Expr::cast)
 }
 
-fn resolve_function(ctx: &DecorateCtx<'_, '_>, start_byte: usize) -> Option<FnSignature> {
-    let offset = ra_ap_syntax::TextSize::from(start_byte as u32);
-    let func = find_enclosing_fn(ctx, offset)?;
+fn resolve_function(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<FnSignature> {
+    let func = find_enclosing_fn(ctx, range)?;
 
     let ret_type = func.ret_type(ctx.sema.db);
     let display = ctx.display_type(&ret_type, &func);
@@ -444,16 +499,15 @@ fn resolve_function(ctx: &DecorateCtx<'_, '_>, start_byte: usize) -> Option<FnSi
 
 fn resolve_match_scrutinee(
     ctx: &DecorateCtx<'_, '_>,
-    scrutinee_start_byte: usize,
+    scrutinee_range: TextRange,
 ) -> Option<(ResolvedType, Option<AdtFlags>)> {
-    let offset = ra_ap_syntax::TextSize::from(scrutinee_start_byte as u32);
-    let expr_node = find_expr_at(ctx, offset)?;
+    let expr_node = find_expr_covering(ctx, scrutinee_range)?;
     let ty_info = ctx.sema.type_of_expr(&expr_node)?;
 
     let ty = ty_info.original;
     let is_enum = ty.as_adt().is_some_and(|adt| matches!(adt, Adt::Enum(_)));
 
-    let func = find_enclosing_fn(ctx, offset);
+    let func = find_enclosing_fn(ctx, scrutinee_range);
     let display = match &func {
         Some(f) => ctx.display_type(&ty, f),
         None => format!("{ty:?}"),
@@ -474,13 +528,12 @@ fn resolve_match_scrutinee(
     Some((resolved, flags))
 }
 
-fn resolve_expr_type(ctx: &DecorateCtx<'_, '_>, start_byte: usize) -> Option<ResolvedType> {
-    let offset = ra_ap_syntax::TextSize::from(start_byte as u32);
-    let expr = find_expr_at(ctx, offset)?;
+fn resolve_expr_type(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<ResolvedType> {
+    let expr = find_expr_covering(ctx, range)?;
     let ty_info = ctx.sema.type_of_expr(&expr)?;
 
     let ty = ty_info.original;
-    let func = find_enclosing_fn(ctx, offset);
+    let func = find_enclosing_fn(ctx, range);
     let display = match &func {
         Some(f) => ctx.display_type(&ty, f),
         None => format!("{ty:?}"),
