@@ -10,11 +10,12 @@ use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
-use whisker_types::{DecorationProvider, Diagnostic, Language, LintPass};
+use whisker_types::{DecorationProvider, Diagnostic, LintPass};
 
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::ErrorRecovery;
 use self::failure_threshold::FailureThreshold;
+use crate::discovery::Discovery;
 
 /// Run whisker lints against a project
 #[derive(Debug, Args)]
@@ -74,11 +75,13 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         false => ErrorRecovery::Abort,
     };
 
-    let files = discover_files(&path)?;
+    anyhow::ensure!(path.exists(), "{} does not exist", path.display());
 
-    if files.is_empty() {
-        return Ok(());
-    }
+    let discovery = Discovery::run(&path).context("failed to discover source files")?;
+
+    let mut outcome = CheckOutcome::Success;
+
+    let files = discovery.files();
 
     let mut pipeline =
         Pipeline::new(&whisker_rust::language()).context("failed to initialize pipeline")?;
@@ -89,9 +92,8 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     let mut all_diagnostics = Vec::new();
     let mut sources: HashMap<Arc<Path>, String> = HashMap::new();
-    let mut outcome = CheckOutcome::Success;
 
-    for file in &files {
+    for file in files {
         let source = match std::fs::read_to_string(file) {
             Ok(source) => source,
             Err(e) => {
@@ -130,31 +132,4 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         CheckOutcome::Failure => std::process::exit(1),
         CheckOutcome::Success => Ok(()),
     }
-}
-
-fn discover_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
-    anyhow::ensure!(path.exists(), "{} does not exist", path.display());
-
-    if path.is_file() {
-        return Ok(vec![path.clone()]);
-    }
-
-    let mut files = Vec::new();
-
-    for entry in walkdir::WalkDir::new(path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let Some(ext) = entry.path().extension() else {
-            continue;
-        };
-        if Language::from_extension(&ext.to_string_lossy()).is_some() {
-            files.push(entry.into_path());
-        }
-    }
-
-    Ok(files)
 }

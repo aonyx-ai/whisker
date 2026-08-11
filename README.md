@@ -20,6 +20,19 @@ Whisker is in early development. Check back soon.
 whisker check .
 ```
 
+Whisker walks the target directory the way `git` and `ripgrep` do. It skips
+hidden files and directories, and it skips anything that `.gitignore`,
+`.ignore`, `.git/info/exclude`, or your global gitignore excludes. These
+rules apply even outside a git checkout, because an ignore file in an
+exported or vendored tree still describes what that tree generates. Whisker
+always checks a path you name on the command line, even when an ignore rule
+matches that path. Ignore rules still apply to files below a named
+directory.
+
+A file that whisker cannot read or analyze ends the run with an error.
+Pass `--keep-going` to report each failure, continue, and still exit
+non-zero.
+
 ## License
 
 Licensed under either of

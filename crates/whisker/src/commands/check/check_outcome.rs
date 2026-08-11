@@ -19,7 +19,6 @@ impl CheckOutcome {
     ///
     /// [`FailureThreshold::promote`] does not change the result, because
     /// promotion only raises diagnostics that already meet the threshold.
-    // r[impl cli.diagnostics.exit-code]
     pub(crate) fn from_diagnostics(
         diagnostics: &[Diagnostic],
         threshold: FailureThreshold,
@@ -168,7 +167,6 @@ mod tests {
         assert_eq!(outcome, CheckOutcome::Failure);
     }
 
-    // r[verify cli.check.deny-warnings]
     #[test]
     fn from_diagnostics_with_warning_and_errors_returns_success() {
         let diagnostics = [test_diagnostic(Severity::Warn)];
@@ -178,7 +176,6 @@ mod tests {
         assert_eq!(outcome, CheckOutcome::Success);
     }
 
-    // r[verify cli.check.deny-warnings]
     #[test]
     fn from_diagnostics_with_warning_and_warnings_returns_failure() {
         let diagnostics = [test_diagnostic(Severity::Warn)];

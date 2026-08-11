@@ -4,7 +4,6 @@ use whisker_types::{Diagnostic, Severity};
 ///
 /// The default is [`FailureThreshold::Errors`]. The `--deny-warnings` flag
 /// selects [`FailureThreshold::Warnings`].
-// r[impl cli.check.deny-warnings]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub(crate) enum FailureThreshold {
     /// Only [`Severity::Error`] diagnostics fail the run
