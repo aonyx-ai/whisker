@@ -3,9 +3,6 @@
   "manifest": {
     "schema-version": "1.10.0",
     "install": {
-      "cargo-binstall": {
-        "pkg-path": "cargo-binstall"
-      },
       "cargo-deny": {
         "pkg-path": "cargo-deny"
       },
@@ -15,8 +12,7 @@
       "clang": {
         "pkg-path": "clang",
         "systems": [
-          "aarch64-darwin",
-          "x86_64-darwin"
+          "aarch64-darwin"
         ]
       },
       "gcc": {
@@ -38,8 +34,7 @@
       "libiconv": {
         "pkg-path": "libiconv",
         "systems": [
-          "aarch64-darwin",
-          "x86_64-darwin"
+          "aarch64-darwin"
         ],
         "outputs": "all"
       },
@@ -83,128 +78,12 @@
       }
     },
     "hook": {
-      "on-activate": "# On GitHub Actions, we need to unset the LD_AUDIT variable to avoid an \"cannot\n# allocate memory in static TLS block\" error when loading Rust. See this issue:\n# https://github.com/flox/flox/issues/1341\nif [ -n \"$GITHUB_ACTIONS\" ]; then\n  unset LD_AUDIT\nfi\n\n# Install the nightly toolchain and components specified in rust-toolchain.toml.\n# Rustup handles this idempotently — it's a no-op if already installed.\nrustup show > /dev/null 2>&1\n\n# Install dylint tools needed for building and testing lint libraries.\ncargo install --quiet cargo-dylint dylint-link 2> /dev/null\n\n# Install Tracey for spec coverage tracking.\ncargo binstall --no-confirm --quiet tracey 2> /dev/null\n"
+      "on-activate": "# On GitHub Actions, we need to unset the LD_AUDIT variable to avoid an \"cannot\n# allocate memory in static TLS block\" error when loading Rust. See this issue:\n# https://github.com/flox/flox/issues/1341\nif [ -n \"$GITHUB_ACTIONS\" ]; then\n  unset LD_AUDIT\nfi\n\n# Install the nightly toolchain and components specified in rust-toolchain.toml.\n# Rustup handles this idempotently — it's a no-op if already installed.\nrustup show > /dev/null 2>&1\n"
     },
     "profile": {},
     "options": {}
   },
   "packages": [
-    {
-      "attr_path": "cargo-binstall",
-      "broken": false,
-      "derivation": "/nix/store/byx9b1indbss1hpfws1rhqrfllm2sj6q-cargo-binstall-1.17.7.drv",
-      "description": "Tool for installing rust binaries as an alternative to building from source",
-      "install_id": "cargo-binstall",
-      "license": "GPL-3.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "name": "cargo-binstall-1.17.7",
-      "pname": "cargo-binstall",
-      "rev": "5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "rev_count": 963917,
-      "rev_date": "2026-03-16T07:26:50Z",
-      "scrape_date": "2026-03-17T04:42:03.416410Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.17.7",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/7mfgy28ifqdxhdwrgrya162flg101h3m-cargo-binstall-1.17.7"
-      },
-      "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "cargo-binstall",
-      "broken": false,
-      "derivation": "/nix/store/x7a5i3lygcsbzdziwl3n982m165mlrhm-cargo-binstall-1.17.7.drv",
-      "description": "Tool for installing rust binaries as an alternative to building from source",
-      "install_id": "cargo-binstall",
-      "license": "GPL-3.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "name": "cargo-binstall-1.17.7",
-      "pname": "cargo-binstall",
-      "rev": "5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "rev_count": 963917,
-      "rev_date": "2026-03-16T07:26:50Z",
-      "scrape_date": "2026-03-17T05:14:38.480867Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.17.7",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/p5aapv53kywc7p2mdk9sfx6wa7agn9mm-cargo-binstall-1.17.7"
-      },
-      "system": "aarch64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "cargo-binstall",
-      "broken": false,
-      "derivation": "/nix/store/ix4hl0jfx707yna77fls1d661qv49bc5-cargo-binstall-1.17.7.drv",
-      "description": "Tool for installing rust binaries as an alternative to building from source",
-      "install_id": "cargo-binstall",
-      "license": "GPL-3.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "name": "cargo-binstall-1.17.7",
-      "pname": "cargo-binstall",
-      "rev": "5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "rev_count": 963917,
-      "rev_date": "2026-03-16T07:26:50Z",
-      "scrape_date": "2026-03-17T05:45:10.076448Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.17.7",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/8ngmbsqwfnrmi62n5nnpp1dykw6c4mv2-cargo-binstall-1.17.7"
-      },
-      "system": "x86_64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "cargo-binstall",
-      "broken": false,
-      "derivation": "/nix/store/wqqzd8w93fngp4iffcjl0csr1lm3fl9f-cargo-binstall-1.17.7.drv",
-      "description": "Tool for installing rust binaries as an alternative to building from source",
-      "install_id": "cargo-binstall",
-      "license": "GPL-3.0-only",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "name": "cargo-binstall-1.17.7",
-      "pname": "cargo-binstall",
-      "rev": "5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "rev_count": 963917,
-      "rev_date": "2026-03-16T07:26:50Z",
-      "scrape_date": "2026-03-17T06:21:13.950283Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "1.17.7",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/2an5rxx7pjzxbzzxj42qvv0cwp63dzzl-cargo-binstall-1.17.7"
-      },
-      "system": "x86_64-linux",
-      "group": "toplevel",
-      "priority": 5
-    },
     {
       "attr_path": "cargo-deny",
       "broken": false,
@@ -466,35 +345,6 @@
         "out": "/nix/store/vl936sd1vj8s008akm3gibkgyqk30qhz-clang-wrapper-21.1.8"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "clang",
-      "broken": false,
-      "derivation": "/nix/store/1ijsp3c7zpybrm067slddm2ljmywlcfq-clang-wrapper-21.1.8.drv",
-      "description": "C language family frontend for LLVM (wrapper script)",
-      "install_id": "clang",
-      "license": "[ NCSA, Apache-2.0, LLVM-exception ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "name": "clang-wrapper-21.1.8",
-      "pname": "clang",
-      "rev": "5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "rev_count": 963917,
-      "rev_date": "2026-03-16T07:26:50Z",
-      "scrape_date": "2026-03-17T05:45:10.252084Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "21.1.8",
-      "outputs_to_install": [
-        "out"
-      ],
-      "outputs": {
-        "out": "/nix/store/q1843vmrs211i2xb1x16220jq1s3m1nz-clang-wrapper-21.1.8"
-      },
-      "system": "x86_64-darwin",
       "group": "toplevel",
       "priority": 5
     },
@@ -851,37 +701,6 @@
         "out": "/nix/store/ik1b3z19bgk8lagf461zq222kxrpdynb-libiconv-109.100.2"
       },
       "system": "aarch64-darwin",
-      "group": "toplevel",
-      "priority": 5
-    },
-    {
-      "attr_path": "libiconv",
-      "broken": false,
-      "derivation": "/nix/store/x35fcc4bv448v3g7ggf0nwca29wwrmdk-libiconv-109.100.2.drv",
-      "description": "Iconv(3) implementation",
-      "install_id": "libiconv",
-      "license": "[ BSD-2-Clause, BSD-3-Clause, APSL-1.0 ]",
-      "locked_url": "https://github.com/flox/nixpkgs?rev=5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "name": "libiconv-109.100.2",
-      "pname": "libiconv",
-      "rev": "5b2c2d84341b2afb5647081c1386a80d7a8d8605",
-      "rev_count": 963917,
-      "rev_date": "2026-03-16T07:26:50Z",
-      "scrape_date": "2026-03-17T05:45:28.479018Z",
-      "stabilities": [
-        "unstable"
-      ],
-      "unfree": false,
-      "version": "109.100.2",
-      "outputs_to_install": [
-        "out",
-        "out"
-      ],
-      "outputs": {
-        "dev": "/nix/store/5bwhjr63kxw3vbjs3qi03nw43xl4cvy0-libiconv-109.100.2-dev",
-        "out": "/nix/store/m6k3gjsdqrnjyrakkv7005lpf33zxj9f-libiconv-109.100.2"
-      },
-      "system": "x86_64-darwin",
       "group": "toplevel",
       "priority": 5
     },
