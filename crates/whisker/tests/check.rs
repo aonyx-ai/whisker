@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use assert_cmd::prelude::*;
@@ -49,15 +50,42 @@ fn package(source: &str) -> TempDir {
     directory
 }
 
-/// Creates a package that holds one readable source and one non-UTF-8 file
+/// Creates a package whose `src` holds Rust files no module declares
 ///
-/// The non-UTF-8 file is a sibling, not the crate root, so the package
-/// still loads and the read failure is the one under test.
-fn package_with_unreadable_source() -> TempDir {
+/// An orphan is a file the walk finds but no crate reaches, which is the
+/// shape the coverage errors describe. The orphans live in a temporary
+/// package because a checked-in orphan would make `whisker check .` fail
+/// for everyone.
+fn package_with_orphans(names: &[&str]) -> TempDir {
     let directory = package(CLEAN_SOURCE);
 
-    std::fs::write(directory.path().join("src").join("broken.rs"), NOT_UTF8)
+    for name in names {
+        std::fs::write(
+            directory.path().join("src").join(format!("{name}.rs")),
+            CLEAN_SOURCE,
+        )
+        .expect("orphan source should be written");
+    }
+
+    directory
+}
+
+/// Creates a package whose `src` holds two sources that are not UTF-8
+///
+/// The crate root beside them is valid UTF-8 and trips no lints, so only
+/// the two siblings fail. Two failing files let the error count separate
+/// the two `--keep-going` modes. Discovery sorts, so a stopped run always
+/// names `broken_first.rs`.
+fn package_with_unreadable_sources() -> TempDir {
+    let directory = package(CLEAN_SOURCE);
+
+    for name in ["broken_first", "broken_second"] {
+        std::fs::write(
+            directory.path().join("src").join(format!("{name}.rs")),
+            NOT_UTF8,
+        )
         .expect("unreadable source should be written");
+    }
 
     directory
 }
@@ -66,6 +94,68 @@ fn whisker() -> Command {
     Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
+/// Returns the fixture workspace that whisker-rust's own tests analyze
+///
+/// The fixture is a real Cargo package with a real crate graph, so whisker
+/// can decorate the files under its `src` directory.
+fn sample_project() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../whisker-rust/tests/fixtures/sample_project")
+}
+
+/// Writes a Cargo project holding one analyzable file and one unreadable one
+///
+/// The fixture carries its own manifest because whisker loads the workspace
+/// around the path it is given. `CARGO_TARGET_TMPDIR` is a scratch
+/// directory, and nothing guarantees that a Cargo project sits above it.
+///
+/// `src/lib.rs` trips `lint.wildcard-match-arm` and produces a diagnostic.
+/// Whisker cannot read `src/not_utf8.rs`. Discovery sorts, so `src/lib.rs`
+/// comes first, and a run without `--keep-going` collects the diagnostic
+/// before `src/not_utf8.rs` stops the walk.
+///
+/// Each caller passes its own `name`, so two tests that run at once never
+/// write the same directory.
+fn mixed_project(name: &str) -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::create_dir_all(root.join("src")).expect("should create the fixture directories");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\n\n[package]\nname = \"mixed_project\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .expect("should write the fixture manifest");
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub enum Color {\n    Red,\n    Green,\n}\n\npub fn match_on_enum(color: Color) {\n    match color {\n        Color::Red => {}\n        _ => {}\n    }\n}\n",
+    )
+    .expect("should write the fixture crate root");
+    std::fs::write(root.join("src/not_utf8.rs"), [0xff, 0xfe, 0x00])
+        .expect("should write the fixture file that is not UTF-8");
+
+    root
+}
+
+/// Counts the failing files whisker reported on stderr
+///
+/// The count separates the two `--keep-going` modes: an aborted run reports
+/// one failing file, a run that continues reports every one.
+fn error_count(stderr: &str) -> usize {
+    stderr.matches("error: ").count()
+}
+
+/// Counts how many times whisker printed the remedy for an unreachable file
+///
+/// Whisker prints the remedy once per run, not once per file; the count
+/// pins that limit.
+fn unreachable_help_count(stderr: &str) -> usize {
+    stderr
+        .matches("help: reference the file from a source the toolchain already loads")
+        .count()
+}
+
+/// Pins that `whisker check` succeeds on this crate's own source
+///
+/// The test fails if anyone reintroduces source the decoration provider
+/// cannot reach.
 #[test]
 fn check_current_directory_succeeds() {
     whisker().arg("check").assert().success();
@@ -99,6 +189,47 @@ fn check_nonexistent_path_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("does not exist"));
+}
+
+/// Pins that without `--keep-going` an uncoverable file ends the run, and
+/// that the remedy still prints
+///
+/// The run collects the remedy during the walk; only the code after the
+/// walk prints it.
+#[test]
+fn check_orphan_directory_reports_no_coverage() {
+    let package = package_with_orphans(&["stray"]);
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no decoration provider covers this file",
+        ))
+        .stderr(predicate::str::contains("stray.rs"))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 1))
+        .stderr(predicate::function(|stderr: &str| {
+            unreachable_help_count(stderr) == 1
+        }));
+}
+
+#[test]
+fn check_orphan_file_reports_no_coverage() {
+    let package = package_with_orphans(&["stray"]);
+
+    whisker()
+        .args(["check", "src/stray.rs"])
+        .current_dir(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no decoration provider covers this file",
+        ))
+        .stderr(predicate::str::contains(
+            "nothing the toolchain loaded reaches it",
+        ));
 }
 
 #[test]
@@ -256,6 +387,22 @@ fn check_package_with_an_unreadable_directory_fails() {
         .stderr(predicate::str::contains("failed to read a directory entry"));
 }
 
+/// Pins that a package the provider can fully reach produces lint output,
+/// not coverage errors
+///
+/// Without this the coverage tests could all pass against a provider that
+/// covered nothing at all, since every assertion they make is about failure.
+#[test]
+fn check_real_crate_produces_diagnostics_not_coverage_errors() {
+    whisker()
+        .current_dir(sample_project())
+        .args(["check", "src"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("no decoration provider covers this file").not())
+        .stderr(predicate::str::contains("warning[lint.wildcard-match-arm]"));
+}
+
 #[test]
 fn check_single_file_succeeds() {
     let package = package(CLEAN_SOURCE);
@@ -280,12 +427,15 @@ fn check_with_deny_warnings_fails_on_warnings() {
         .stderr(predicate::str::contains("error[lint.bool-param]"));
 }
 
-/// The non-UTF-8 source produces a read failure and no diagnostic, so only
-/// that failure can make the exit code non-zero. The recovery path alone
-/// prints the lowercase `error:` line the assertions accept.
+/// Pins the exit code to the failure recorded while walking the files, not
+/// just to the diagnostics that came out of the walk
+///
+/// The crate root is clean, so only the recorded failures can make the exit
+/// code non-zero. An error count of two shows the walk reported both
+/// unreadable files.
 #[test]
 fn check_with_keep_going_and_unreadable_file_fails() {
-    let package = package_with_unreadable_source();
+    let package = package_with_unreadable_sources();
 
     whisker()
         .args(["check", "--keep-going"])
@@ -295,8 +445,30 @@ fn check_with_keep_going_and_unreadable_file_fails() {
         .stderr(predicate::str::contains(
             "stream did not contain valid UTF-8",
         ))
-        .stderr(predicate::str::contains("error: "))
-        .stderr(predicate::str::contains("Error:").not());
+        .stderr(predicate::str::contains("broken_first.rs"))
+        .stderr(predicate::str::contains("broken_second.rs"))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 2));
+}
+
+/// Pins that `--keep-going` reports every uncoverable file, not just the first
+///
+/// Two errors mean the walk continued past the first orphan. The run still
+/// prints the remedy once.
+#[test]
+fn check_with_keep_going_reports_every_orphan_file() {
+    let package = package_with_orphans(&["first_stray", "second_stray"]);
+
+    whisker()
+        .args(["check", "--keep-going"])
+        .arg(package.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("first_stray.rs"))
+        .stderr(predicate::str::contains("second_stray.rs"))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 2))
+        .stderr(predicate::function(|stderr: &str| {
+            unreachable_help_count(stderr) == 1
+        }));
 }
 
 #[test]
@@ -311,22 +483,25 @@ fn check_with_keep_going_succeeds() {
         .stderr(predicate::str::is_empty());
 }
 
-/// Without `--keep-going`, the same package ends the run. The error names
-/// the failing file; anyhow renders the cause as a separate line.
+/// Pins that without `--keep-going` the walk stops at the first unreadable
+/// file
+///
+/// The run reports only one of the two unreadable siblings, and the error
+/// names the file so the failure stays attributable.
 #[test]
 fn check_with_unreadable_file_and_no_keep_going_fails() {
-    let package = package_with_unreadable_source();
+    let package = package_with_unreadable_sources();
 
     whisker()
         .arg("check")
         .arg(package.path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("Error:"))
-        .stderr(predicate::str::contains("broken.rs"))
+        .stderr(predicate::str::contains("broken_first.rs"))
         .stderr(predicate::str::contains(
             "stream did not contain valid UTF-8",
-        ));
+        ))
+        .stderr(predicate::function(|stderr: &str| error_count(stderr) == 1));
 }
 
 #[test]
@@ -339,4 +514,21 @@ fn check_without_deny_warnings_reports_warnings_and_succeeds() {
         .assert()
         .success()
         .stderr(predicate::str::contains("warning[lint.bool-param]"));
+}
+
+/// Pins that a stopped run keeps the diagnostics from earlier files
+///
+/// A run without `--keep-going` stops at the first unreadable file. The
+/// diagnostics collected before that point still reach the user.
+#[test]
+fn check_without_keep_going_keeps_diagnostics_from_earlier_files() {
+    let root = mixed_project("check_without_keep_going");
+
+    whisker()
+        .current_dir(&root)
+        .args(["check", "src"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error: src/not_utf8.rs"))
+        .stderr(predicate::str::contains("warning[lint.wildcard-match-arm]"));
 }

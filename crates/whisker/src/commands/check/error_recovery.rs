@@ -2,43 +2,57 @@ use std::path::Path;
 
 use super::check_outcome::CheckOutcome;
 
+/// Whether the walk continues after a file fails
+///
+/// A per-file failure never propagates out of the walk. The run keeps the
+/// diagnostics it already collected and only decides whether to visit the
+/// remaining files.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub(crate) enum Walk {
+    /// The walk moves on to the next file
+    Continue,
+    /// The walk stops, and the run reports what it already collected
+    Stop,
+}
+
 /// What `whisker check` does with a file it cannot read or analyze
 ///
-/// Read failures and analysis failures both go through
-/// [`ErrorRecovery::record`], so one place decides whether a per-file
-/// failure ends the run. The `--keep-going` flag selects
-/// [`ErrorRecovery::Continue`].
+/// A file can fail in two ways: the bytes are not valid UTF-8, or the
+/// pipeline rejects the source. Both paths route through this type, so one
+/// place decides how a per-file failure affects the run.
+///
+/// Both modes report the failure and set the outcome to
+/// [`CheckOutcome::Failure`]. A file that fails produces no diagnostics, so
+/// nothing else would keep the exit code non-zero. The modes differ only in
+/// whether the walk visits the remaining files.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub(crate) enum ErrorRecovery {
-    /// The first failing file ends the run with its error
+    /// The first failing file ends the walk
     Abort,
-    /// Whisker reports each failing file, continues, and still fails the run
+    /// The run reports the failing file and the walk continues
     Continue,
 }
 
 impl ErrorRecovery {
-    /// Records a failure for one file
+    /// Reports a failure encountered while processing a single file
     ///
-    /// Under [`ErrorRecovery::Continue`], the error goes to stderr and
-    /// `outcome` becomes [`CheckOutcome::Failure`].
+    /// The method writes the error to stderr and sets `outcome` to
+    /// [`CheckOutcome::Failure`], which the command turns into a non-zero
+    /// exit code after the walk.
     ///
-    /// # Errors
-    ///
-    /// Under [`ErrorRecovery::Abort`], returns `error` with the file name
-    /// added, so the caller can end the run with it.
+    /// Returns whether the caller should keep walking.
     pub(crate) fn record(
         self,
         outcome: &mut CheckOutcome,
         file: &Path,
         error: anyhow::Error,
-    ) -> anyhow::Result<()> {
+    ) -> Walk {
+        eprintln!("error: {}: {error:#}", file.display());
+        *outcome = CheckOutcome::Failure;
+
         match self {
-            Self::Abort => Err(error.context(format!("check {}", file.display()))),
-            Self::Continue => {
-                eprintln!("error: {}: {error:#}", file.display());
-                *outcome = CheckOutcome::Failure;
-                Ok(())
-            }
+            Self::Abort => Walk::Stop,
+            Self::Continue => Walk::Continue,
         }
     }
 }
@@ -52,64 +66,68 @@ mod tests {
     }
 
     #[test]
-    fn trait_send() {
-        fn assert_send<T: Send>() {}
-        assert_send::<ErrorRecovery>();
-    }
-
-    #[test]
-    fn trait_sync() {
-        fn assert_sync<T: Sync>() {}
-        assert_sync::<ErrorRecovery>();
-    }
-
-    #[test]
-    fn trait_unpin() {
-        fn assert_unpin<T: Unpin>() {}
-        assert_unpin::<ErrorRecovery>();
-    }
-
-    #[test]
-    fn record_with_abort_leaves_the_outcome_untouched() {
+    fn record_with_abort_fails_the_outcome() {
         let mut outcome = CheckOutcome::Success;
 
-        let _error = ErrorRecovery::Abort
-            .record(&mut outcome, Path::new("bad.rs"), test_error())
-            .expect_err("abort should fail the run");
+        ErrorRecovery::Abort.record(&mut outcome, Path::new("bad.rs"), test_error());
 
-        assert_eq!(outcome, CheckOutcome::Success);
+        assert_eq!(outcome, CheckOutcome::Failure);
     }
 
     #[test]
-    fn record_with_abort_names_the_failing_file() {
+    fn record_with_abort_stops_the_walk() {
         let mut outcome = CheckOutcome::Success;
 
-        let error = ErrorRecovery::Abort
-            .record(&mut outcome, Path::new("bad.rs"), test_error())
-            .expect_err("abort should fail the run");
+        let walk = ErrorRecovery::Abort.record(&mut outcome, Path::new("bad.rs"), test_error());
 
-        assert_eq!(format!("{error:#}"), "check bad.rs: something broke");
+        assert_eq!(walk, Walk::Stop);
+    }
+
+    #[test]
+    fn record_with_continue_fails_the_outcome() {
+        let mut outcome = CheckOutcome::Success;
+
+        ErrorRecovery::Continue.record(&mut outcome, Path::new("bad.rs"), test_error());
+
+        assert_eq!(outcome, CheckOutcome::Failure);
     }
 
     #[test]
     fn record_with_continue_keeps_an_earlier_failure() {
         let mut outcome = CheckOutcome::Failure;
 
-        ErrorRecovery::Continue
-            .record(&mut outcome, Path::new("bad.rs"), test_error())
-            .expect("continue should not fail the run");
+        ErrorRecovery::Continue.record(&mut outcome, Path::new("bad.rs"), test_error());
 
         assert_eq!(outcome, CheckOutcome::Failure);
     }
 
     #[test]
-    fn record_with_continue_marks_the_outcome_failed() {
+    fn record_with_continue_keeps_walking() {
         let mut outcome = CheckOutcome::Success;
 
-        ErrorRecovery::Continue
-            .record(&mut outcome, Path::new("bad.rs"), test_error())
-            .expect("continue should not fail the run");
+        let walk = ErrorRecovery::Continue.record(&mut outcome, Path::new("bad.rs"), test_error());
 
-        assert_eq!(outcome, CheckOutcome::Failure);
+        assert_eq!(walk, Walk::Continue);
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<ErrorRecovery>();
+        assert_send::<Walk>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<ErrorRecovery>();
+        assert_sync::<Walk>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<ErrorRecovery>();
+        assert_unpin::<Walk>();
     }
 }
