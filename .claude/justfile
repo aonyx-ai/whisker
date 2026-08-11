@@ -1,0 +1,92 @@
+# `set dotenv-command` requires just 1.54.0 or newer. Older versions reject it as
+# an unknown setting, which reads as a syntax error rather than a stale toolchain.
+set dotenv-command := "op inject --in-file .github_access_token"
+set positional-arguments
+
+[private]
+default:
+    @just --list
+
+# Ensure the repository is cloned over HTTPS
+#
+# The configuration set up by the following recipes only works if the
+# repository's remote uses HTTPS. This recipe checks the remote URL and fails if
+# it is not an HTTPS URL.
+[doc("Ensure the repository is cloned over HTTPS")]
+[private]
+require-https:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    url="$(git remote get-url origin)"
+
+    case "$url" in
+      https://github.com/*) ;;
+      *) printf 'error: origin is %s\n' "$url" >&2
+         printf 'hint: this expects a dedicated HTTPS clone, not your main checkout\n' >&2
+         exit 1 ;;
+    esac
+
+# Set up GitHub authentication
+#
+# This recipe sets up GitHub authentication for the current repository by
+# configuring a local Git credential helper that uses an access token stored in
+# the `AONYX_GITHUB_TOKEN` environment variable. This allows you to authenticate
+# with GitHub without having to unlock 1Password every time.
+#
+# The helper reads the environment on every call and bakes in no token, so a
+# rotation in 1Password takes effect at the next `just launch`. This recipe only
+# needs re-running in a fresh clone.
+[doc("Set up GitHub authentication")]
+setup: require-https
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Configure Git to use a custom credential helper that reads the token from
+    # the environment variable
+    key='credential.https://github.com.helper'
+    git config --local --unset-all "$key" || true
+    git config --local --add "$key" ""
+    git config --local --add "$key" \
+      '!f() { [ -n "${AONYX_GITHUB_TOKEN:-}" ] || { printf "error: AONYX_GITHUB_TOKEN is not set; start the session with just launch\n" >&2; exit 1; }; printf "username=%s\n" "x-access-token"; printf "password=%s\n" "$AONYX_GITHUB_TOKEN"; }; f'
+
+    # Disable commit signing
+    git config --local commit.gpgsign false
+    git config --local tag.gpgsign false
+
+# Launch a Claude Code session with scoped GitHub Access
+#
+# This recipe launches a Claude Code session that uses HTTPS and a scoped API
+# key to access GitHub. This makes it possible to automate Claude sessions and
+# drive them remotely without having to unlock 1Password to sign commits or push
+# to GitHub.
+#
+# The access token is read from the `.github_access_token` file, which is loaded
+# as a dotenv file. This makes it possible to read the token from 1Password when
+# the just recipe is run, and then use it to authenticate with GitHub without
+# having to unlock 1Password each time.
+#
+# ```env
+# AONYX_GITHUB_TOKEN="{{ op://Agents/aonyx-github-token/token }}"
+# ```
+[doc("Launch a Claude Code session with scoped GitHub Access")]
+launch *args: require-https
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ -z "${AONYX_GITHUB_TOKEN:-}" ]; then
+      printf 'error: AONYX_GITHUB_TOKEN is not set\n' >&2
+      printf 'hint: .github_access_token must assign it an op:// reference\n' >&2
+      exit 1
+    fi
+
+    # Never prompt the user for credentials
+    export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false
+
+    # Scope gh to the token, and hide the admin credential in the keyring so it
+    # cannot be recovered by unsetting GH_TOKEN
+    export GH_TOKEN="$AONYX_GITHUB_TOKEN"
+    export GH_CONFIG_DIR="{{ justfile_directory() }}/.gh"
+    mkdir -p "$GH_CONFIG_DIR"
+
+    flox activate -- claude "$@"

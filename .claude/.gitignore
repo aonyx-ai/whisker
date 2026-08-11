@@ -1,0 +1,10 @@
+# Ignore the (optional) GitHub token we use to enable remote control for Claude
+.github_access_token
+
+# Ignore the scoped settings for the GitHub CLI
+.gh/
+
+# Ignore local state Claude Code writes into this directory
+.cc-writes/
+settings.local.json
+worktrees/
