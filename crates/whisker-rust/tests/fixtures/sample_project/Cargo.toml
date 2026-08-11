@@ -7,3 +7,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+# `syn` declares `Error` in a private `error` module and re-exports it at the
+# crate root, so `Error`'s definition path and its public path differ.
+syn = "3"
