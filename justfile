@@ -68,4 +68,5 @@ prettier fix="false" extension="*":
 
 # Run the tests
 test-rust:
-    cargo test --all-features
+    cargo nextest run --all-features
+    cargo test --doc --all-features

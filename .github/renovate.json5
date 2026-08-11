@@ -1,4 +1,11 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["github>aonyx-ai/renovate-config"],
+  packageRules: [
+    {
+      matchPackageNames: ["rust"],
+      matchDepTypes: ["toolchain"],
+      schedule: ["on the first day of the month"],
+    },
+  ],
 }
