@@ -1,0 +1,8 @@
+# Whisker reads this file when `whisker check` runs against this repository.
+# The patterns below anchor at the repository root, not at `.config`.
+# Both paths hold code that breaks whisker's own lints on purpose. Neither is
+# part of the Cargo build, so rust-analyzer never sees them.
+ignore = [
+  "/examples/",
+  "crates/whisker-rust/tests/fixtures/",
+]

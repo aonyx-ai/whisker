@@ -254,12 +254,6 @@ mod tests {
     use super::*;
     use crate::config::IgnorePattern;
 
-    /// A virtual workspace manifest with no members
-    ///
-    /// The tests that use a manifest read only its metadata table, so
-    /// members are unnecessary.
-    const EMPTY_WORKSPACE: &str = "[workspace]\nresolver = \"3\"\nmembers = []\n";
-
     /// A directory whose permissions are restored when this value is dropped
     ///
     /// A temporary directory left at mode `000` cannot be removed. This
@@ -414,13 +408,13 @@ mod tests {
         assert_eq!(path, Path::new("./src/main.rs"));
     }
 
-    /// Pins the exclusions whisker's own manifest declares
+    /// Pins the exclusions whisker's own configuration file declares
     ///
     /// The fixture projects exist to violate lint rules, so a pattern that
     /// stops matching would fill an otherwise clean run with their
     /// diagnostics.
     #[test]
-    fn run_over_whiskers_own_workspace_excludes_its_fixture_projects() {
+    fn run_over_whiskers_own_repository_excludes_its_fixture_projects() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
         let config = WhiskerConfig::load(&root).expect("whisker's own configuration should load");
 
@@ -482,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn run_with_anchored_pattern_prunes_only_at_the_workspace_root() {
+    fn run_with_anchored_pattern_prunes_only_at_the_project_root() {
         let directory = tree(&[
             "examples/demo.rs",
             "crates/app/examples/demo.rs",
@@ -781,7 +775,7 @@ mod tests {
     }
 
     #[test]
-    fn run_with_pattern_outside_the_walk_root_still_anchors_at_the_workspace() {
+    fn run_with_pattern_outside_the_walk_root_still_anchors_at_the_project() {
         let directory = tree(&["crates/app/src/main.rs", "crates/app/src/generated.rs"]);
         let config = config(directory.path(), &["crates/app/src/generated.rs"]);
         let target = directory.path().join("crates").join("app");
@@ -790,6 +784,26 @@ mod tests {
             .expect("discovery should succeed");
 
         assert_eq!(discovered(&discovery, &target), ["src/main.rs"]);
+    }
+
+    /// Pins that whisker applies a pattern it read from a file on disk
+    ///
+    /// The other pattern tests build the configuration in memory, so this
+    /// one covers the path from file to walk.
+    #[test]
+    fn run_with_project_configuration_excludes_the_configured_pattern() {
+        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
+        std::fs::write(
+            directory.path().join(".whisker.toml"),
+            "ignore = [\"generated/\"]\n",
+        )
+        .expect("configuration should be written");
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
+            .expect("discovery should succeed");
+
+        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
     #[cfg(unix)]
@@ -960,22 +974,6 @@ mod tests {
 
         assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
         assert_eq!(discovery.errors().len(), 1);
-    }
-
-    #[test]
-    fn run_with_workspace_configuration_excludes_the_configured_pattern() {
-        let directory = tree(&["src/main.rs", "generated/schema.rs"]);
-        std::fs::write(
-            directory.path().join("Cargo.toml"),
-            format!("{EMPTY_WORKSPACE}\n[workspace.metadata.whisker]\nignore = [\"generated/\"]\n"),
-        )
-        .expect("manifest should be written");
-        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
-
-        let discovery = Discovery::run(directory.path(), &config, WalkErrorPolicy::Fail)
-            .expect("discovery should succeed");
-
-        assert_eq!(discovered(&discovery, directory.path()), ["src/main.rs"]);
     }
 
     #[test]

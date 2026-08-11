@@ -23,7 +23,7 @@ if_let_with_else = { path = "../../lints/if_let_with_else" }
 ignore.workspace = true
 no_matches_macro = { path = "../../lints/no_matches_macro" }
 serde.workspace = true
-serde_json.workspace = true
+toml.workspace = true
 whisker-core = { path = "../whisker-core" }
 whisker-reporting = { path = "../whisker-reporting" }
 whisker-rust = { path = "../whisker-rust" }
