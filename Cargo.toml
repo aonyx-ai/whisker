@@ -27,6 +27,14 @@ ignore = [
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 
+# Build dependencies with optimizations even in debug builds. The test suite
+# spends most of its time inside rust-analyzer rather than inside whisker, so
+# an unoptimized `ra_ap_*` dominates every run that loads a project. Measured
+# on the 23 CLI tests: 85.6s unoptimized against 36.4s here, for 26 extra
+# seconds of compilation.
+[profile.dev.package."*"]
+opt-level = 2
+
 [workspace.dependencies]
 anyhow = "1"
 codespan-reporting = "0.13"

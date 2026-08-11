@@ -67,5 +67,10 @@ prettier fix="false" extension="*":
     prettier {{ if fix == "true" { "--write" } else { "--list-different" } }} --ignore-unknown "**/*.{{ extension }}"
 
 # Run the tests
+#
+# Nextest gives each test its own process, so the slow integration suites
+# overlap instead of running one binary after another. It cannot run doctests,
+# so those follow separately.
 test-rust:
-    cargo test --all-features
+    cargo nextest run --all-features
+    cargo test --doc --all-features
