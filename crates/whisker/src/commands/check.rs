@@ -15,7 +15,7 @@ use whisker_types::{DecorationProvider, Diagnostic, LintPass};
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::ErrorRecovery;
 use self::failure_threshold::FailureThreshold;
-use crate::discovery::Discovery;
+use crate::discovery::{Discovery, WalkErrorPolicy};
 
 /// Run whisker lints against a project
 #[derive(Debug, Args)]
@@ -77,11 +77,29 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     anyhow::ensure!(path.exists(), "{} does not exist", path.display());
 
-    let discovery = Discovery::run(&path).context("failed to discover source files")?;
+    let on_error = match keep_going {
+        true => WalkErrorPolicy::ReportAndContinue,
+        false => WalkErrorPolicy::Fail,
+    };
+
+    let discovery = Discovery::run(&path, on_error).context("failed to discover source files")?;
 
     let mut outcome = CheckOutcome::Success;
 
+    for error in discovery.errors() {
+        eprintln!("error: {error:#}");
+        outcome = CheckOutcome::Failure;
+    }
+
     let files = discovery.files();
+
+    anyhow::ensure!(
+        !files.is_empty(),
+        "whisker analyzed no files under {}: either nothing there is written in a language \
+         whisker has a grammar for, or the ignore files and configured patterns excluded all of \
+         it",
+        path.display()
+    );
 
     let mut pipeline =
         Pipeline::new(&whisker_rust::language()).context("failed to initialize pipeline")?;
