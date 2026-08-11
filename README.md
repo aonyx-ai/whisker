@@ -43,20 +43,26 @@ wrong grammar finds nothing and would report the file clean.
 
 ### Configuration
 
-Whisker reads its configuration from the `[workspace.metadata.whisker]` table
-of the target workspace manifest:
+Whisker reads its configuration from `.config/whisker.toml` or
+`.whisker.toml`:
 
 ```toml
-[workspace.metadata.whisker]
 ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 ```
 
+Either name works. A directory that holds both is an error, because whisker
+cannot tell which one you meant. The search starts at the path you check and
+climbs to the repository root. `whisker check src/` still finds the
+configuration at the top of your repository.
+
 `ignore` holds gitignore-syntax patterns. Use it for test fixtures, vendored
-sources, and other code that git tracks on purpose. The patterns behave as
-they would in a `.gitignore` at the workspace root: `crates/app/generated/`
-names one directory relative to that root, `examples/` matches at any depth,
-and `/examples/` anchors to the root. Whisker rejects keys it does not
-recognize, so a typo is an error and not a silent no-op.
+sources, and other code that git tracks on purpose. The patterns anchor at
+the project directory: the directory that holds `.whisker.toml`, or the one
+that holds `.config`. They behave as they would in a `.gitignore` written
+there. `crates/app/generated/` names one directory relative to that root,
+`examples/` matches at any depth, and `/examples/` matches only at the root.
+Whisker rejects keys it does not recognize, so a typo is an error and not a
+silent no-op.
 
 ## License
 

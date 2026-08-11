@@ -6,9 +6,10 @@
 /// exclusion. As in gitignore, `!` cannot re-include a file whose parent
 /// directory is excluded, because the walk never enters that directory.
 ///
-/// Patterns match against the Cargo workspace root, not against the run's
-/// starting directory. A bare `examples/` matches at any depth beneath the
-/// root, and `/examples/` matches only at the root.
+/// Patterns match against the project directory that holds the
+/// configuration file, not against the run's starting directory. A bare
+/// `examples/` matches at any depth beneath that directory, and
+/// `/examples/` matches only at the top of it.
 ///
 /// # Examples
 ///

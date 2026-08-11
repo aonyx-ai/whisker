@@ -262,10 +262,10 @@ fn check_package_whose_sources_a_gitignore_excludes_fails() {
 fn check_package_whose_sources_the_configuration_excludes_fails() {
     let package = package(CLEAN_SOURCE);
     std::fs::write(
-        package.path().join("Cargo.toml"),
-        format!("{MANIFEST}\n[workspace]\n\n[workspace.metadata.whisker]\nignore = [\"src/\"]\n"),
+        package.path().join(".whisker.toml"),
+        "ignore = [\"src/\"]\n",
     )
-    .expect("manifest should be written");
+    .expect("configuration should be written");
 
     whisker()
         .arg("check")
