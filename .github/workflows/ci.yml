@@ -66,8 +66,6 @@ jobs:
       - name: Remove Flox installer (if it exists)
         run: rm -f flox.x86_64-linux.deb
 
-      # Keyed on the lock file and the toolchain, not on `rustc`: the runner
-      # preinstalls a stable toolchain that no build here uses.
       - name: Cache Cargo downloads and build output
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

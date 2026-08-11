@@ -67,8 +67,5 @@ prettier fix="false" extension="*":
     prettier {{ if fix == "true" { "--write" } else { "--list-different" } }} --ignore-unknown "**/*.{{ extension }}"
 
 # Run the tests
-#
-# Nextest cannot run doctests, so those follow separately.
 test-rust:
-    cargo nextest run --all-features
-    cargo test --doc --all-features
+    cargo test --all-features

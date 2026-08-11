@@ -27,8 +27,7 @@ ignore = [
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 
-# The tests run rust-analyzer far more than they compile it. Optimizing
-# dependencies took the CLI suite from 85.6s to 36.4s.
+# The tests run rust-analyzer far more than they compile it.
 [profile.dev.package."*"]
 opt-level = 2
 
