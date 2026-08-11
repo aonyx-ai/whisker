@@ -35,6 +35,13 @@ impl DecoratedTree {
         &mut self.decorations
     }
 
+    /// Merges provider decorations into this tree
+    ///
+    /// See [`DecorationMap::merge`] for the conflict behavior.
+    pub fn merge_decorations(&mut self, decorations: DecorationMap) {
+        self.decorations.merge(decorations);
+    }
+
     /// Returns the root node wrapped as a [`DecoratedNode`]
     pub fn root_node(&self) -> DecoratedNode<'_> {
         DecoratedNode::new(
@@ -95,6 +102,41 @@ mod tests {
     fn trait_unpin() {
         fn assert_unpin<T: Unpin>() {}
         assert_unpin::<DecoratedTree>();
+    }
+
+    #[test]
+    fn merge_decorations_makes_decorations_visible_on_nodes() {
+        let source = "fn main() {}";
+        let tree = parse_tree(source);
+        let mut decorated = DecoratedTree::new(tree, source.into(), PathBuf::from("test.rs"));
+        let root_id = decorated.root_node().id();
+        let mut decorations = DecorationMap::new();
+        decorations.insert(root_id, 7u32);
+
+        decorated.merge_decorations(decorations);
+
+        assert_eq!(decorated.root_node().decoration::<u32>(), Some(&7));
+    }
+
+    #[test]
+    fn merge_decorations_twice_keeps_first_of_a_type() {
+        let source = "fn main() {}";
+        let tree = parse_tree(source);
+        let mut decorated = DecoratedTree::new(tree, source.into(), PathBuf::from("test.rs"));
+        let root_id = decorated.root_node().id();
+        let mut first = DecorationMap::new();
+        first.insert(root_id, 1u32);
+        let mut second = DecorationMap::new();
+        second.insert(root_id, 2u32);
+
+        decorated.merge_decorations(first);
+        decorated.merge_decorations(second);
+
+        assert_eq!(decorated.root_node().decoration::<u32>(), Some(&1));
+        assert_eq!(
+            decorated.root_node().decorations_of_type::<u32>(),
+            vec![&1, &2]
+        );
     }
 
     #[test]
