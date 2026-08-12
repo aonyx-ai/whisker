@@ -12,6 +12,14 @@ use syn::{DeriveInput, parse_macro_input};
 /// rather than at each call site means a rule cannot read a repeated
 /// decoration as though it were singular.
 ///
+/// `Decoration` is an unsafe trait: its key must name exactly one type
+/// definition, because the decoration map recovers erased values by key
+/// comparison. The derive discharges that obligation by building the key
+/// from the defining module's path, the type's name, and a hash of the
+/// definition, and by rejecting generic types, whose single key would
+/// have to cover one layout per instantiation. Prefer the derive over a
+/// manual implementation for exactly this reason.
+///
 /// # Examples
 ///
 /// ```

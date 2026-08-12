@@ -1,3 +1,5 @@
+use whisker_macros::Decoration;
+
 /// ADT-specific flags for enum types
 ///
 /// Attached alongside [`ResolvedType`] when the type is an enum.
@@ -5,7 +7,8 @@
 /// decisions like whether a wildcard match arm is acceptable.
 ///
 /// [`ResolvedType`]: crate::decorations::ResolvedType
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Decoration)]
+#[decoration(cardinality = "one")]
 pub struct AdtFlags {
     non_exhaustive_external: bool,
 }

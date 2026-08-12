@@ -1,3 +1,5 @@
+use whisker_macros::Decoration;
+
 /// Resolved type information attached to a tree-sitter node
 ///
 /// Decoration providers populate this on match scrutinees, `else`
@@ -14,7 +16,8 @@
 /// assert_eq!(ty.display(), "MyEnum");
 /// assert!(ty.is_enum());
 /// ```
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decoration)]
+#[decoration(cardinality = "one")]
 pub struct ResolvedType {
     display: String,
     is_enum: bool,

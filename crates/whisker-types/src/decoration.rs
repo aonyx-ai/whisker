@@ -1,6 +1,4 @@
-use std::any::Any;
-
-use crate::DecoratedNode;
+use crate::{DecoratedNode, DecorationKey};
 
 /// A semantic annotation that a provider can attach to syntax nodes
 ///
@@ -16,7 +14,8 @@ use crate::DecoratedNode;
 /// where the provider records a list, and the mismatch is a compile error
 /// rather than a silently dropped decoration.
 ///
-/// Derive this rather than writing it by hand:
+/// Derive this rather than writing it by hand; the derive discharges the
+/// safety obligation mechanically:
 ///
 /// ```ignore
 /// #[derive(Decoration)]
@@ -24,14 +23,28 @@ use crate::DecoratedNode;
 /// pub struct ResolvedType { /* … */ }
 /// ```
 ///
+/// # Safety
+///
+/// [`KEY`] must name exactly one type definition: no other implementation
+/// anywhere in the process, including one compiled into a custom lint
+/// plugin from the same source, may use an equal key for a different type.
+/// The decoration map erases values on insertion and recovers the concrete
+/// type by key comparison alone, so two types sharing a key would let one
+/// read the other's memory as its own. The derive macro satisfies the
+/// contract by building the key from the type's module path, its name, and
+/// a hash of its definition, and by rejecting generic types, whose single
+/// key would have to cover many layouts.
+///
 /// # Examples
 ///
 /// ```
-/// use whisker_types::{DecoratedNode, Decoration};
+/// use whisker_types::{DecoratedNode, Decoration, DecorationKey};
 ///
 /// struct Signature(String);
 ///
-/// impl Decoration for Signature {
+/// unsafe impl Decoration for Signature {
+///     const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Signature"));
+///
 ///     type Ref<'a> = Option<&'a Self>;
 ///
 ///     fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
@@ -41,8 +54,19 @@ use crate::DecoratedNode;
 /// ```
 ///
 /// [`DecorationProvider`]: crate::DecorationProvider
+/// [`KEY`]: Decoration::KEY
 /// [`Ref`]: Decoration::Ref
-pub trait Decoration: Any + Send + Sync + Sized {
+pub unsafe trait Decoration: Send + Sync + Sized + 'static {
+    /// The name that identifies this type in the decoration map
+    ///
+    /// The map compares keys where single-image code would compare
+    /// [`TypeId`]s, because a custom lint plugin and the whisker binary
+    /// compile the same decoration types into different ids. See the
+    /// trait-level safety contract for what a key must guarantee.
+    ///
+    /// [`TypeId`]: std::any::TypeId
+    const KEY: DecorationKey;
+
     /// What a lookup of this decoration yields
     ///
     /// Use `Option<&'a Self>` for a decoration recorded at most once per node
@@ -64,7 +88,9 @@ mod tests {
 
     struct Single(u32);
 
-    impl Decoration for Single {
+    unsafe impl Decoration for Single {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Single"));
+
         type Ref<'a> = Option<&'a Self>;
 
         fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
@@ -74,7 +100,9 @@ mod tests {
 
     struct Repeated(u32);
 
-    impl Decoration for Repeated {
+    unsafe impl Decoration for Repeated {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Repeated"));
+
         type Ref<'a> = Vec<&'a Self>;
 
         fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {

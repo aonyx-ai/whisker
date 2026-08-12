@@ -359,9 +359,14 @@ mod tests {
 
     #[cfg(feature = "provider")]
     mod provider {
+        use whisker_macros::Decoration;
         use whisker_types::{Coverage, CoverageGap, DecorationMap, DecorationProvider};
 
         use super::*;
+
+        #[derive(Eq, PartialEq, Debug, Decoration)]
+        #[decoration(cardinality = "one")]
+        struct Tag(u32);
 
         #[test]
         fn decorate_with_empty_provider_leaves_existing_decorations_intact() {
@@ -369,7 +374,7 @@ mod tests {
             let mut tree = parse_rust("fn main() {}");
             let root_id = tree.root_node().id();
             let mut staged = DecorationMap::new();
-            staged.insert(root_id, 7u32);
+            staged.insert(root_id, Tag(7));
             tree.merge_decorations(staged);
 
             let coverage = provider.decorate(&tree).expect("should succeed");
@@ -379,7 +384,7 @@ mod tests {
                 Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
                 Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
             }
-            assert_eq!(tree.root_node().decoration::<u32>(), Some(&7));
+            assert_eq!(tree.root_node().decoration::<Tag>(), Some(&Tag(7)));
         }
 
         #[test]

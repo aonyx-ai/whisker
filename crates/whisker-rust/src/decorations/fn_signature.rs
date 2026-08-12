@@ -1,3 +1,5 @@
+use whisker_macros::Decoration;
+
 use crate::decorations::{ErrorType, ResolvedType, ReturnMode};
 
 /// Function signature information
@@ -6,7 +8,8 @@ use crate::decorations::{ErrorType, ResolvedType, ReturnMode};
 /// without re-querying the semantic model. Every resolved function gets a
 /// signature, even an empty one. An absent decoration would look like a
 /// function the provider never reached, and those are different facts.
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decoration)]
+#[decoration(cardinality = "one")]
 pub struct FnSignature {
     return_type: Option<ResolvedType>,
     error_type: Option<ErrorType>,

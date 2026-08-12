@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -103,12 +102,12 @@ impl<'a> DecoratedNode<'a> {
     }
 
     /// Retrieves the first decoration of type `T` from this node
-    pub fn decoration<T: Any + Send + Sync>(&self) -> Option<&'a T> {
+    pub fn decoration<T: Decoration>(&self) -> Option<&'a T> {
         self.decorations.get::<T>(self.node.id())
     }
 
     /// Retrieves all decorations of type `T` from this node
-    pub fn decorations_of_type<T: Any + Send + Sync>(&self) -> Vec<&'a T> {
+    pub fn decorations_of_type<T: Decoration>(&self) -> Vec<&'a T> {
         self.decorations.get_all::<T>(self.node.id())
     }
 
@@ -159,6 +158,46 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::DecorationKey;
+
+    #[derive(Eq, PartialEq, Debug)]
+    struct TestDeco(u32);
+
+    unsafe impl Decoration for TestDeco {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::TestDeco"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
+
+    #[derive(Eq, PartialEq, Debug)]
+    struct Missing;
+
+    unsafe impl Decoration for Missing {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Missing"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
+
+    #[derive(Eq, PartialEq, Debug)]
+    struct Value(u64);
+
+    unsafe impl Decoration for Value {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Value"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
 
     fn parse_tree(source: &str) -> tree_sitter::Tree {
         let mut parser = tree_sitter::Parser::new();
@@ -235,9 +274,6 @@ mod tests {
 
     #[test]
     fn decoration_returns_attached_value() {
-        #[derive(Debug)]
-        struct TestDeco(u32);
-
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let mut decorations = DecorationMap::new();
@@ -254,9 +290,6 @@ mod tests {
 
     #[test]
     fn decoration_returns_none_when_missing() {
-        #[derive(Debug)]
-        struct Missing;
-
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
@@ -344,7 +377,7 @@ mod tests {
                 let source = "fn main() {}";
                 let tree = parse_tree(source);
                 let mut decorations = DecorationMap::new();
-                decorations.insert(tree.root_node().id(), value);
+                decorations.insert(tree.root_node().id(), Value(value));
 
                 let file: Arc<Path> = PathBuf::from("test.rs").into();
                 let root = DecoratedNode::new(
@@ -354,7 +387,7 @@ mod tests {
                     &decorations,
                 );
 
-                prop_assert_eq!(root.decoration::<u64>(), Some(&value));
+                prop_assert_eq!(root.decoration::<Value>(), Some(&Value(value)));
             }
         }
     }
