@@ -94,13 +94,25 @@ pub const TYPES_FINGERPRINT: &CStr = c_str(concat!(env!("WHISKER_TYPES_FINGERPRI
 
 /// Converts a NUL-terminated string literal into a [`&CStr`] at compile time
 ///
+/// Language crates use this for their own handshake constants, the way
+/// [`LANGUAGE_FINGERPRINT`] in whisker-rust does.
+///
 /// # Panics
 ///
 /// Panics at compile time if `text` contains an interior NUL byte or does
 /// not end with one.
 ///
+/// # Examples
+///
+/// ```
+/// use whisker_types::plugin::c_str;
+///
+/// const GREETING: &std::ffi::CStr = c_str("hello\0");
+/// ```
+///
 /// [`&CStr`]: std::ffi::CStr
-const fn c_str(text: &'static str) -> &'static CStr {
+/// [`LANGUAGE_FINGERPRINT`]: PluginDeclaration::language_fingerprint
+pub const fn c_str(text: &'static str) -> &'static CStr {
     match CStr::from_bytes_with_nul(text.as_bytes()) {
         Ok(text) => text,
         Err(_) => panic!("the string must end with exactly one NUL byte"),

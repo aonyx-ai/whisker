@@ -1,5 +1,7 @@
 mod adapter;
 pub mod decorations;
+mod export_lints;
+pub mod plugin;
 #[cfg(feature = "provider")]
 mod provider;
 
