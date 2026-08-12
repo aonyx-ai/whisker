@@ -10,6 +10,7 @@ mod diagnostic;
 mod language;
 mod lint_pass;
 mod location;
+pub mod plugin;
 mod provider_name;
 mod rule_id;
 mod severity;
