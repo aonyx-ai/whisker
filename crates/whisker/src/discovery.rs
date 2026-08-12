@@ -311,7 +311,7 @@ mod tests {
             .map(|pattern| IgnorePattern::new(*pattern))
             .collect();
 
-        WhiskerConfig::new(root, patterns)
+        WhiskerConfig::new(root, patterns, Vec::new())
     }
 
     /// Returns the discovered files as slash-separated paths relative to `root`

@@ -38,7 +38,7 @@ mod declaration;
 mod registrar;
 
 pub use declaration::PluginDeclaration;
-pub use registrar::LintRegistrar;
+pub use registrar::{LintPassFactory, LintRegistrar};
 
 /// The version of the plugin declaration protocol itself
 ///

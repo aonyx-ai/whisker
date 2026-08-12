@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod custom_lints;
 mod discovery;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

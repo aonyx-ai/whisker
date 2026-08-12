@@ -36,6 +36,10 @@ codespan-reporting = "0.13"
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.
 ignore = "0.4"
+# Loads custom lint plugins. The loader trusts a library only after the
+# handshake in whisker-types::plugin proves it was built by the same rustc
+# from the same whisker source.
+libloading = "0.8"
 proptest = "1"
 ra_ap_hir = "0.0.348"
 ra_ap_ide_db = "0.0.348"

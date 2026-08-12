@@ -4,19 +4,22 @@ use anyhow::Context as _;
 use serde::Deserialize;
 
 mod ignore_pattern;
+mod lint_path;
 
 pub use ignore_pattern::IgnorePattern;
+pub use lint_path::LintPath;
 
 /// Whisker's configuration for a single target project
 ///
 /// Whisker reads a TOML file that any project can write, whatever language
 /// it is in. The file holds the [`IgnorePattern`]s that exclude files from
-/// discovery. Those patterns anchor at the project directory, which
-/// [`WhiskerConfig::root`] returns.
+/// discovery and the [`LintPath`]s of the project's custom lints. Both
+/// anchor at the project directory, which [`WhiskerConfig::root`] returns.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct WhiskerConfig {
     root: PathBuf,
     ignore: Vec<IgnorePattern>,
+    lints: Vec<LintPath>,
 }
 
 impl WhiskerConfig {
@@ -28,10 +31,15 @@ impl WhiskerConfig {
     /// let config = WhiskerConfig::new(
     ///     PathBuf::from("/src/project"),
     ///     vec![IgnorePattern::new("examples/")],
+    ///     Vec::new(),
     /// );
     /// ```
-    pub fn new(root: PathBuf, ignore: Vec<IgnorePattern>) -> Self {
-        Self { root, ignore }
+    pub fn new(root: PathBuf, ignore: Vec<IgnorePattern>, lints: Vec<LintPath>) -> Self {
+        Self {
+            root,
+            ignore,
+            lints,
+        }
     }
 
     /// Loads the configuration that governs `path`
@@ -60,18 +68,22 @@ impl WhiskerConfig {
         let start = search_directory(path)?;
 
         let Some(FoundConfig { root, file }) = find_config(&start)? else {
-            return Ok(Self::new(start, Vec::new()));
+            return Ok(Self::new(start, Vec::new(), Vec::new()));
         };
 
         let text = std::fs::read_to_string(&file)
             .with_context(|| format!("failed to read {}", file.display()))?;
 
-        let ConfigTable { ignore } =
+        let ConfigTable { ignore, lints } =
             toml::from_str(&text).with_context(|| format!("failed to read {}", file.display()))?;
 
         let ignore = ignore.into_iter().map(IgnorePattern::new).collect();
+        let lints = lints
+            .into_iter()
+            .map(|LintEntry { path }| LintPath::new(path))
+            .collect();
 
-        Ok(Self::new(root, ignore))
+        Ok(Self::new(root, ignore, lints))
     }
 
     /// Returns the project directory that anchors the ignore patterns
@@ -103,18 +115,47 @@ impl WhiskerConfig {
     pub fn ignore(&self) -> &[IgnorePattern] {
         &self.ignore
     }
+
+    /// Returns the paths of the project's custom lint crates
+    ///
+    /// Relative paths anchor at [`WhiskerConfig::root`]; resolve them with
+    /// [`LintPath::resolve`].
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let config = WhiskerConfig::load(Path::new("."))?;
+    ///
+    /// assert!(config.lints().is_empty());
+    /// ```
+    pub fn lints(&self) -> &[LintPath] {
+        &self.lints
+    }
 }
 
 /// The configuration file as written on disk
 ///
-/// [`WhiskerConfig::load`] turns the strings here into [`IgnorePattern`]s.
-/// Whisker rejects a key it does not recognize, because a key it silently
-/// drops looks exactly like one that works.
+/// [`WhiskerConfig::load`] turns the strings here into [`IgnorePattern`]s
+/// and [`LintPath`]s. Whisker rejects a key it does not recognize, because
+/// a key it silently drops looks exactly like one that works.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigTable {
     #[serde(default)]
     ignore: Vec<String>,
+
+    #[serde(default)]
+    lints: Vec<LintEntry>,
+}
+
+/// One `[[lints]]` entry as written on disk
+///
+/// An entry is a table rather than a bare string, so options like a build
+/// profile can join `path` later without another shape change.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LintEntry {
+    path: String,
 }
 
 /// A configuration file whisker found, and the directory it anchors to
@@ -335,6 +376,54 @@ mod tests {
     }
 
     #[test]
+    fn load_with_lint_entries_returns_them_in_order() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            "[[lints]]\npath = \"lints/no_todo\"\n\n[[lints]]\npath = \"lints/prefer_expect\"\n",
+        );
+
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        assert_eq!(
+            config.lints(),
+            vec![
+                LintPath::new("lints/no_todo"),
+                LintPath::new("lints/prefer_expect")
+            ]
+        );
+    }
+
+    #[test]
+    fn load_with_lint_entry_missing_path_returns_error() {
+        let directory = repository();
+        write_dotfile(directory.path(), "[[lints]]\nname = \"no_todo\"\n");
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains(".whisker.toml"),
+            "error should name the offending file: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_lint_entry_unknown_key_returns_error() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            "[[lints]]\npath = \"lints/no_todo\"\nprofile = \"release\"\n",
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("profile"),
+            "error should name the key whisker does not recognize: {error:#}"
+        );
+    }
+
+    #[test]
     fn load_with_malformed_ignore_value_returns_error() {
         let directory = repository();
         write_dotfile(directory.path(), "ignore = \"examples/\"\n");
@@ -374,6 +463,17 @@ mod tests {
 
         assert_eq!(config.root(), resolved(&directory));
         assert!(config.ignore().is_empty());
+        assert!(config.lints().is_empty());
+    }
+
+    #[test]
+    fn load_without_lint_entries_returns_no_lints() {
+        let directory = repository();
+        write_dotfile(directory.path(), "ignore = []\n");
+
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        assert!(config.lints().is_empty());
     }
 
     #[test]
