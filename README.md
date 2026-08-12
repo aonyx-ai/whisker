@@ -64,6 +64,39 @@ there. `crates/app/generated/` names one directory relative to that root,
 Whisker rejects keys it does not recognize, so a typo is an error and not a
 silent no-op.
 
+### Custom lints
+
+A project can bring its own rules. Each `lints` entry names a directory
+holding a lint crate; relative paths anchor at the project directory, the
+same way `ignore` patterns do:
+
+```toml
+[[lints]]
+path = "lints/no_todo"
+```
+
+`whisker check` compiles each entry with your `cargo`, loads the built
+library, and runs its lints alongside the built-ins. The first build takes
+as long as any Rust compilation; afterwards cargo's cache makes it cheap.
+
+A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
+its rules to `export_lints!`. The complete crate in
+[`examples/custom_lint`][example] is the template: a `Cargo.toml` declaring
+the crate type and the whisker dependencies, one rule, and its tests.
+
+Rust has no stable ABI, so whisker only loads a plugin built by the same
+rustc from the same whisker source as the binary itself, and refuses
+anything else with an error that says what to rebuild. In practice: pin the
+plugin's whisker dependencies to the revision your whisker was built from,
+and build both with the same toolchain.
+
+That check covers whisker's own source and the compiler, not the rest of
+the graph your plugin's lockfile resolves. Commit that lockfile and keep it
+in step with the whisker you build against, the way
+[`examples/custom_lint`][example] does.
+
+[example]: examples/custom_lint
+
 ## License
 
 Licensed under either of

@@ -74,3 +74,10 @@ prettier fix="false" extension="*":
 test-rust:
     cargo nextest run --all-features
     cargo test --doc --all-features
+
+# Run the example plugin's tests, which sit outside the workspace
+#
+# The package is its own workspace, so nextest would not find the profile
+# CI selects without being pointed at this repository's configuration.
+test-example-lint:
+    cd examples/custom_lint && cargo nextest run --config-file ../../.config/nextest.toml

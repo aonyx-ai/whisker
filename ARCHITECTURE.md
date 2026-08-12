@@ -92,6 +92,41 @@ missing — the provider could not resolve the type, or no provider ran —
 the rule stays silent rather than guessing. Whisker would rather miss a
 finding in code it cannot analyze than report one it cannot justify.
 
+## Custom lints
+
+A target project can configure lint crates of its own, and `whisker
+check` compiles each one at check time, loads the built dynamic library,
+and runs the exported rules alongside the built-ins. A custom lint is
+written exactly like a built-in — the same generated trait, the same
+decorations, the same test harness — and enters through
+`export_lints!` instead of the CLI's pass list.
+
+Rust has no stable ABI, so a loaded library is only coherent with the
+whisker binary when the same rustc compiled both from the same whisker
+source. Whisker establishes that before trusting anything: the plugin's
+declaration carries the compiler's identity and build-time fingerprints
+of the whisker crates whose types cross the boundary, and the loader
+refuses the library at the first mismatch.
+
+The failure mode this guards against is not a crash but silence — a
+plugin built against drifted source would mostly _seem_ to work, and
+rules fail open — so the handshake turns an invisible wrong answer into
+a visible refusal. For the same reason, decorations are recovered by a
+name-based key rather than `TypeId`, which is not stable across
+separately compiled crate graphs.
+
+The fingerprints reach whisker's own sources, not the graph a plugin's
+lockfile resolves for itself. `tree_sitter::Node` crosses the boundary
+as a `#[repr(transparent)]` wrapper around a `#[repr(C)]` struct of the
+C library, so a version difference there moves no field, but it does
+give each image its own copy of that library. Whisker documents that
+residual risk rather than pinning every version a plugin resolves.
+
+Whisker once shipped its rules as compiled plugins through Dylint and
+deliberately retired that (#193). Custom lints re-enter the idea on
+whisker's own terms: the boundary is the narrow `LintPass` trait rather
+than rustc's internals, and compatibility is checked instead of assumed.
+
 ## Workspace layout
 
 The platform lives in `crates/`, each lint in `lints/`.
