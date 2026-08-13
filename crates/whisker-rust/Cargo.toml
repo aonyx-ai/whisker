@@ -12,13 +12,13 @@ publish = false
 [features]
 default = ["provider"]
 provider = [
-    "dep:anyhow",
-    "dep:ra_ap_hir",
-    "dep:ra_ap_ide_db",
-    "dep:ra_ap_load-cargo",
-    "dep:ra_ap_project_model",
-    "dep:ra_ap_syntax",
-    "dep:ra_ap_vfs",
+  "dep:anyhow",
+  "dep:ra_ap_hir",
+  "dep:ra_ap_ide_db",
+  "dep:ra_ap_load-cargo",
+  "dep:ra_ap_project_model",
+  "dep:ra_ap_syntax",
+  "dep:ra_ap_vfs",
 ]
 
 [dependencies]
