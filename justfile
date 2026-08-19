@@ -34,9 +34,10 @@ format-json fix="false": (prettier fix "{json,json5}")
 # Format Markdown files
 format-markdown fix="false": (prettier fix "md")
 
-# Format Rust files
+# Format Rust files, including the example plugin outside the workspace
 format-rust fix="false":
     cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }}
+    cd examples/custom_lint && cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }}
 
 # Format TOML files
 format-toml fix="false":
@@ -53,9 +54,10 @@ lint-github-actions:
 lint-markdown:
     markdownlint --ignore-path .gitignore "**/*.md"
 
-# Lint Rust files
+# Lint Rust files, including the example plugin outside the workspace
 lint-rust:
     cargo clippy --all-targets --all-features -- -D warnings
+    cd examples/custom_lint && cargo clippy --all-targets --all-features -- -D warnings
 
 # Lint TOML files
 lint-toml:
