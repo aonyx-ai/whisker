@@ -28,23 +28,48 @@ impl AbiIdentity {
     }
 }
 
-/// Accepts a plugin only when its identity matches the host's exactly
+/// Accepts a plugin's declaration protocol version
+///
+/// This is the first check of the handshake and the only one a plugin of
+/// any vintage can be held to, because the version sits at offset zero of
+/// a `#[repr(C)]` struct whose remaining fields a mismatching plugin may
+/// have laid out differently. The caller reads it through a raw pointer
+/// and calls this before taking a reference to the declaration.
+///
+/// The version takes a bare integer rather than an [`AbiIdentity`] for
+/// that reason: at the point of this check, the rest of the plugin's
+/// identity has not been read yet.
+///
+/// # Errors
+///
+/// Returns [`HandshakeMismatch::AbiVersion`] if the versions differ.
+pub fn validate_abi_version(host: &AbiIdentity, plugin: u32) -> Result<(), HandshakeMismatch> {
+    if host.abi_version != plugin {
+        return Err(HandshakeMismatch::AbiVersion {
+            host: host.abi_version,
+            plugin,
+        });
+    }
+
+    Ok(())
+}
+
+/// Accepts a plugin only when the rest of its identity matches the host's
 ///
 /// The checks run in the order the declaration's fields become
 /// trustworthy, and the first mismatch wins, so the reported error is the
-/// one whose remedy applies.
+/// one whose remedy applies. The protocol version is not among them:
+/// [`validate_abi_version`] settles it before the fields this function
+/// compares may be read at all, so repeating it here would be a check
+/// whose failure no caller can reach.
 ///
 /// # Errors
 ///
 /// Returns the first [`HandshakeMismatch`] between the two identities.
-pub fn validate(host: &AbiIdentity, plugin: &AbiIdentity) -> Result<(), HandshakeMismatch> {
-    if host.abi_version != plugin.abi_version {
-        return Err(HandshakeMismatch::AbiVersion {
-            host: host.abi_version,
-            plugin: plugin.abi_version,
-        });
-    }
-
+pub fn validate_identity(
+    host: &AbiIdentity,
+    plugin: &AbiIdentity,
+) -> Result<(), HandshakeMismatch> {
     if host.rustc_version != plugin.rustc_version {
         return Err(HandshakeMismatch::RustcVersion {
             host: host.rustc_version.clone(),
@@ -152,39 +177,37 @@ mod tests {
     }
 
     #[test]
-    fn validate_matching_identities_succeeds() {
-        validate(&identity(), &identity()).expect("should match");
-    }
-
-    #[test]
-    fn validate_reports_a_differing_abi_version_first() {
-        let mut plugin = identity();
-        plugin.abi_version = 2;
-        plugin.rustc_version = "rustc 2.0.0".into();
-
-        let error = validate(&identity(), &plugin).expect_err("should mismatch");
+    fn validate_abi_version_with_a_differing_version_returns_a_mismatch() {
+        let error = validate_abi_version(&identity(), 2).expect_err("should mismatch");
 
         assert_eq!(error, HandshakeMismatch::AbiVersion { host: 1, plugin: 2 });
         assert!(error.to_string().contains("rebuild the plugin"));
     }
 
     #[test]
-    fn validate_reports_a_differing_language_fingerprint() {
+    fn validate_abi_version_with_the_host_version_succeeds() {
+        let host = identity();
+
+        validate_abi_version(&host, host.abi_version).expect("should match");
+    }
+
+    #[test]
+    fn validate_identity_with_a_differing_language_fingerprint_returns_a_mismatch() {
         let mut plugin = identity();
         plugin.language_fingerprint = "00000000000000cc".into();
 
-        let error = validate(&identity(), &plugin).expect_err("should mismatch");
+        let error = validate_identity(&identity(), &plugin).expect_err("should mismatch");
 
         assert_eq!(error, HandshakeMismatch::LanguageFingerprint);
         assert!(error.to_string().contains("whisker-rust"));
     }
 
     #[test]
-    fn validate_reports_a_differing_rustc_version() {
+    fn validate_identity_with_a_differing_rustc_version_returns_a_mismatch() {
         let mut plugin = identity();
         plugin.rustc_version = "rustc 1.93.0-nightly (1111111 2026-09-01)".into();
 
-        let error = validate(&identity(), &plugin).expect_err("should mismatch");
+        let error = validate_identity(&identity(), &plugin).expect_err("should mismatch");
 
         let message = error.to_string();
         assert!(message.contains("1.92.0"), "should name both: {message}");
@@ -193,13 +216,18 @@ mod tests {
     }
 
     #[test]
-    fn validate_reports_a_differing_types_fingerprint() {
+    fn validate_identity_with_a_differing_types_fingerprint_returns_a_mismatch() {
         let mut plugin = identity();
         plugin.types_fingerprint = "00000000000000cc".into();
 
-        let error = validate(&identity(), &plugin).expect_err("should mismatch");
+        let error = validate_identity(&identity(), &plugin).expect_err("should mismatch");
 
         assert_eq!(error, HandshakeMismatch::TypesFingerprint);
         assert!(error.to_string().contains("whisker-types"));
+    }
+
+    #[test]
+    fn validate_identity_with_matching_identities_succeeds() {
+        validate_identity(&identity(), &identity()).expect("should match");
     }
 }

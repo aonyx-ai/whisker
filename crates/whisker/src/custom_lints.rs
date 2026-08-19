@@ -176,13 +176,7 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPa
     let declaration: *const PluginDeclaration = *declaration;
 
     let plugin_abi_version = unsafe { abi_version(declaration) };
-    if plugin_abi_version != host.abi_version {
-        return Err(handshake::HandshakeMismatch::AbiVersion {
-            host: host.abi_version,
-            plugin: plugin_abi_version,
-        }
-        .into());
-    }
+    handshake::validate_abi_version(host, plugin_abi_version)?;
 
     let declaration = unsafe { &*declaration };
 
@@ -192,7 +186,7 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPa
         types_fingerprint: read_declaration_string(declaration.types_fingerprint)?,
         language_fingerprint: read_declaration_string(declaration.language_fingerprint)?,
     };
-    handshake::validate(host, &plugin)?;
+    handshake::validate_identity(host, &plugin)?;
 
     let mut registrar = Collecting {
         factories: Vec::new(),
@@ -259,6 +253,7 @@ impl LintRegistrar for Collecting {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CString;
     use std::path::PathBuf;
 
     use super::*;
@@ -375,6 +370,37 @@ mod tests {
         let lints = CustomLints::load(&config).expect("should load");
 
         assert!(lints.instantiate().is_empty());
+    }
+
+    #[test]
+    fn read_declaration_string_with_a_null_pointer_returns_error() {
+        let error = read_declaration_string(std::ptr::null()).expect_err("should fail");
+
+        assert!(
+            error.to_string().contains("malformed"),
+            "unexpected: {error:#}"
+        );
+    }
+
+    #[test]
+    fn read_declaration_string_with_invalid_utf8_returns_error() {
+        let text = CString::new([0xff, 0xfe]).expect("should hold no interior NUL");
+
+        let error = read_declaration_string(text.as_ptr()).expect_err("should fail");
+
+        assert!(
+            error.to_string().contains("malformed"),
+            "unexpected: {error:#}"
+        );
+    }
+
+    #[test]
+    fn read_declaration_string_with_valid_text_returns_it() {
+        let text = CString::new("rustc 1.92.0-nightly").expect("should hold no interior NUL");
+
+        let read = read_declaration_string(text.as_ptr()).expect("should read");
+
+        assert_eq!(read, "rustc 1.92.0-nightly");
     }
 
     #[test]
