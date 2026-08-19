@@ -82,7 +82,10 @@ as long as any Rust compilation; afterwards cargo's cache makes it cheap.
 A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
 its rules to `export_lints!`. The complete crate in
 [`examples/custom_lint`][example] is the template: a `Cargo.toml` declaring
-the crate type and the whisker dependencies, one rule, and its tests.
+the crate type and the whisker dependencies, two rules, and their tests.
+One rule reads the parsed tree alone; the other reads the semantic
+decorations whisker resolved, which a plugin does exactly as a built-in
+lint does.
 
 Rust has no stable ABI, so whisker only loads a plugin built by the same
 rustc from the same whisker source as the binary itself, and refuses

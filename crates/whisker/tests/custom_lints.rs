@@ -8,8 +8,15 @@ use tempfile::TempDir;
 use whisker_rust::plugin::LANGUAGE_FINGERPRINT;
 use whisker_types::plugin::{ABI_VERSION, RUSTC_VERSION, TYPES_FINGERPRINT};
 
-/// Source that trips the example lint and none of the built-ins
+/// Source that trips the example's syntactic lint and none of the built-ins
 const TODO_SOURCE: &str = "pub fn later() {\n    todo!()\n}\n";
+
+/// Source whose fallibility only a resolved signature can see
+///
+/// The alias hides the `Result` from anything reading the syntax, so the
+/// example's decoration-reading lint fires here and a syntactic one could
+/// not.
+const ALIASED_RESULT_SOURCE: &str = "pub type Fallible = std::result::Result<(), std::io::Error>;\n\npub fn save() -> Fallible {\n    Ok(())\n}\n";
 
 /// A manifest for a standalone package with no dependencies
 const MANIFEST: &str = "[package]\nname = \"target\"\nversion = \"0.1.0\"\nedition = \"2024\"\n";
@@ -238,6 +245,27 @@ pub static whisker_plugin_declaration: PluginDeclaration = PluginDeclaration {{
 "#
         ),
     )
+}
+
+/// Pins that a plugin reads the decorations the host attached
+///
+/// The lint fires on a fact the syntax does not carry: the function's
+/// return type is an alias, so only the signature the provider resolved
+/// names a `Result` at all. A plugin that could not read the host's
+/// decorations would report nothing here and pass silently, which is the
+/// failure this test exists to catch.
+#[test]
+fn check_with_custom_lint_reading_a_decoration_reports_its_diagnostic() {
+    let target = package(ALIASED_RESULT_SOURCE);
+    configure_lint(target.path(), &example_lint());
+
+    whisker()
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[custom.anyhow-error]"))
+        .stderr(predicate::str::contains("return anyhow::Error"));
 }
 
 /// Pins the whole path: configure, compile, handshake, lint, report
