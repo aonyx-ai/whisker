@@ -9,7 +9,7 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
-use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
+use whisker_rust::RustDecorationProvider;
 use whisker_types::{DecorationProvider, Diagnostic, LintPass, UncoveredFile};
 
 use self::check_outcome::CheckOutcome;
@@ -41,25 +41,13 @@ pub struct CheckArgs {
 
 /// Builds the lint passes the CLI runs
 ///
-/// Every built-in rule ships as its own crate, and this list links them
-/// in. A rule the list leaves out does not run, no matter how complete its
-/// own tests are. The project's custom lints join through the factories
-/// they registered when the run began.
+/// Whisker links no rules of its own. Every rule is a plugin the project
+/// names in its configuration, which whisker builds and loads at the start
+/// of a run, so a rule that is not configured does not run however
+/// complete its own tests are. Nothing is enabled by default, and the
+/// configuration is the whole answer to what a check does.
 fn create_lint_passes(custom_lints: &CustomLints) -> Vec<Box<dyn LintPass>> {
-    let mut passes: Vec<Box<dyn LintPass>> = vec![
-        Box::new(RustLintPassAdapter::new(
-            anyhow_missing_context::AnyhowMissingContext,
-        )),
-        Box::new(RustLintPassAdapter::new(bool_param::BoolParam)),
-        Box::new(RustLintPassAdapter::new(derive_order::DeriveOrder)),
-        Box::new(RustLintPassAdapter::new(if_let_with_else::IfLetWithElse)),
-        Box::new(RustLintPassAdapter::new(no_matches_macro::NoMatchesMacro)),
-        Box::new(RustLintPassAdapter::new(
-            wildcard_match_arm::WildcardMatchArm,
-        )),
-    ];
-    passes.extend(custom_lints.instantiate());
-    passes
+    custom_lints.instantiate()
 }
 
 /// The distinct remedies for the files this run could not analyze

@@ -82,6 +82,9 @@ impl RustLintPass for BoolParam {
     }
 }
 
+#[cfg(feature = "plugin")]
+whisker_rust::export_lints![BoolParam];
+
 #[cfg(test)]
 mod tests {
     use whisker_testing::{assert_diagnostic, assert_no_diagnostics, execute, parse};

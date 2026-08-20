@@ -132,6 +132,9 @@ fn is_context_call(operand: &DecoratedNode<'_>) -> bool {
     name == "context" || name == "with_context"
 }
 
+#[cfg(feature = "plugin")]
+whisker_rust::export_lints![AnyhowMissingContext];
+
 #[cfg(test)]
 mod tests {
     use whisker_rust::decorations::{ErrorType, FnSignature, ResolvedType, ReturnMode, TypePath};

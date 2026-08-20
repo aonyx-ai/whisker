@@ -29,6 +29,9 @@ impl RustLintPass for NoMatchesMacro {
     }
 }
 
+#[cfg(feature = "plugin")]
+whisker_rust::export_lints![NoMatchesMacro];
+
 #[cfg(test)]
 mod tests {
     use whisker_rust::RustLintPassAdapter;

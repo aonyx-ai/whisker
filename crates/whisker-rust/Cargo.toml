@@ -39,10 +39,10 @@ whisker-types.workspace = true
 # cycle. Cargo permits that for dev-dependencies. The cycle lets the
 # integration tests assert on diagnostics that real lints draw from real
 # decorations, not on the decorations alone.
-anyhow_missing_context = { path = "../../lints/anyhow_missing_context" }
+anyhow_missing_context = { path = "../../lints/anyhow_missing_context", default-features = false }
 proptest.workspace = true
 whisker-core.workspace = true
-wildcard_match_arm = { path = "../../lints/wildcard_match_arm" }
+wildcard_match_arm = { path = "../../lints/wildcard_match_arm", default-features = false }
 
 [build-dependencies]
 whisker-codegen.workspace = true

@@ -73,6 +73,9 @@ fn is_wildcard_pattern(match_pattern: &DecoratedNode<'_>) -> bool {
     false
 }
 
+#[cfg(feature = "plugin")]
+whisker_rust::export_lints![WildcardMatchArm];
+
 #[cfg(test)]
 mod tests {
     use whisker_rust::RustLintPassAdapter;

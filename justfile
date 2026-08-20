@@ -75,6 +75,31 @@ test-rust:
     cargo nextest run --all-features
     cargo test --doc --all-features
 
+# Run every rule's own tests
+#
+# A rule is a cargo package outside this workspace, so the workspace test run
+# never reaches one. Each is its own workspace, so nextest needs pointing at
+# this repository's profile the way the example plugin does.
+test-lints:
+    #!/usr/bin/env -S bash -euo pipefail
+    for lint in lints/*/; do
+        echo "==> ${lint}"
+        (cd "${lint}" && cargo nextest run --config-file ../../.config/nextest.toml)
+    done
+
+# Check each rule's own sources with whisker
+#
+# A check of this repository cannot cover a rule: the package sits outside the
+# workspace the toolchain loads, so no provider reaches it. Each package is
+# checked against itself instead.
+check-lints:
+    #!/usr/bin/env -S bash -euo pipefail
+    cargo build --release -p whisker
+    for lint in lints/*/; do
+        echo "==> ${lint}"
+        ./target/release/whisker check "${lint}"
+    done
+
 # Run the example plugin's tests, which sit outside the workspace
 #
 # The package is its own workspace, so nextest would not find the profile

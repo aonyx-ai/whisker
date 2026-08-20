@@ -76,7 +76,8 @@ path = "lints/no_todo"
 ```
 
 `whisker check` compiles each entry with your `cargo`, loads the built
-library, and runs its lints alongside the built-ins. The first build takes
+library, and runs its lints. Whisker ships no rules of its own, so the
+rules a project configures are exactly the rules it runs. The first build takes
 as long as any Rust compilation; afterwards cargo's cache makes it cheap.
 
 A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
