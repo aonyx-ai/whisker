@@ -1,5 +1,13 @@
 [workspace]
-members = ["crates/*", "lints/anyhow_missing_context", "lints/bool_param", "lints/derive_order", "lints/if_let_with_else", "lints/no_matches_macro", "lints/wildcard_match_arm"]
+members = [
+  "crates/*",
+  "lints/anyhow_missing_context",
+  "lints/bool_param",
+  "lints/derive_order",
+  "lints/if_let_with_else",
+  "lints/no_matches_macro",
+  "lints/wildcard_match_arm",
+]
 exclude = ["examples/*", "lints/*"]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.

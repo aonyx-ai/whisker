@@ -1,8 +1,10 @@
 mod adapter;
 pub mod decorations;
+#[cfg(feature = "provider")]
 mod provider;
 
 pub use adapter::RustLintPassAdapter;
+#[cfg(feature = "provider")]
 pub use provider::RustDecorationProvider;
 
 include!(concat!(env!("OUT_DIR"), "/rust_lint_pass.rs"));
@@ -16,10 +18,7 @@ pub fn language() -> tree_sitter::Language {
 mod tests {
     use std::path::PathBuf;
 
-    use whisker_types::{
-        Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationMap, DecorationProvider,
-        Diagnostic, RuleId, Severity,
-    };
+    use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, RuleId, Severity};
 
     use super::*;
 
@@ -28,24 +27,6 @@ mod tests {
         parser.set_language(&language()).unwrap();
         let tree = parser.parse(source, None).unwrap();
         DecoratedTree::new(tree, source.to_string(), PathBuf::from("test.rs"))
-    }
-
-    #[test]
-    fn trait_send_provider() {
-        fn assert_send<T: Send>() {}
-        assert_send::<RustDecorationProvider>();
-    }
-
-    #[test]
-    fn trait_sync_provider() {
-        fn assert_sync<T: Sync>() {}
-        assert_sync::<RustDecorationProvider>();
-    }
-
-    #[test]
-    fn trait_unpin_provider() {
-        fn assert_unpin<T: Unpin>() {}
-        assert_unpin::<RustDecorationProvider>();
     }
 
     #[test]
@@ -62,48 +43,6 @@ mod tests {
         parser.set_language(&language()).unwrap();
         let tree = parser.parse("fn main() {}", None).unwrap();
         assert_eq!(tree.root_node().kind(), "source_file");
-    }
-
-    #[test]
-    fn decorate_with_empty_provider_leaves_existing_decorations_intact() {
-        let provider = RustDecorationProvider::empty();
-        let mut tree = parse_rust("fn main() {}");
-        let root_id = tree.root_node().id();
-        let mut staged = DecorationMap::new();
-        staged.insert(root_id, 7u32);
-        tree.merge_decorations(staged);
-
-        let coverage = provider.decorate(&tree).expect("should succeed");
-
-        match coverage {
-            Coverage::Covered(_) => panic!("an empty VFS cannot cover any file"),
-            Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
-            Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
-        }
-        assert_eq!(tree.root_node().decoration::<u32>(), Some(&7));
-    }
-
-    #[test]
-    fn decorate_with_empty_provider_reports_outside_workspace() {
-        let provider = RustDecorationProvider::empty();
-        let tree = parse_rust("");
-
-        let coverage = provider.decorate(&tree).expect("should succeed");
-
-        match coverage {
-            Coverage::Covered(_) => panic!("an empty VFS cannot cover any file"),
-            Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
-            Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
-        }
-    }
-
-    #[test]
-    fn name_returns_rust() {
-        let provider = RustDecorationProvider::empty();
-
-        let name = provider.name();
-
-        assert_eq!(name.as_str(), "rust");
     }
 
     #[test]
@@ -415,6 +354,73 @@ mod tests {
                 walk_and_dispatch(&root, &mut pass);
                 prop_assert_eq!(pass.0, count);
             }
+        }
+    }
+
+    #[cfg(feature = "provider")]
+    mod provider {
+        use whisker_types::{Coverage, CoverageGap, DecorationMap, DecorationProvider};
+
+        use super::*;
+
+        #[test]
+        fn decorate_with_empty_provider_leaves_existing_decorations_intact() {
+            let provider = RustDecorationProvider::empty();
+            let mut tree = parse_rust("fn main() {}");
+            let root_id = tree.root_node().id();
+            let mut staged = DecorationMap::new();
+            staged.insert(root_id, 7u32);
+            tree.merge_decorations(staged);
+
+            let coverage = provider.decorate(&tree).expect("should succeed");
+
+            match coverage {
+                Coverage::Covered(_) => panic!("an empty VFS cannot cover any file"),
+                Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
+                Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+            }
+            assert_eq!(tree.root_node().decoration::<u32>(), Some(&7));
+        }
+
+        #[test]
+        fn decorate_with_empty_provider_reports_outside_workspace() {
+            let provider = RustDecorationProvider::empty();
+            let tree = parse_rust("");
+
+            let coverage = provider.decorate(&tree).expect("should succeed");
+
+            match coverage {
+                Coverage::Covered(_) => panic!("an empty VFS cannot cover any file"),
+                Coverage::NotCovered(CoverageGap::OutsideRoot { .. }) => {}
+                Coverage::NotCovered(gap) => panic!("unexpected gap: {gap}"),
+            }
+        }
+
+        #[test]
+        fn name_returns_rust() {
+            let provider = RustDecorationProvider::empty();
+
+            let name = provider.name();
+
+            assert_eq!(name.as_str(), "rust");
+        }
+
+        #[test]
+        fn trait_send() {
+            fn assert_send<T: Send>() {}
+            assert_send::<RustDecorationProvider>();
+        }
+
+        #[test]
+        fn trait_sync() {
+            fn assert_sync<T: Sync>() {}
+            assert_sync::<RustDecorationProvider>();
+        }
+
+        #[test]
+        fn trait_unpin() {
+            fn assert_unpin<T: Unpin>() {}
+            assert_unpin::<RustDecorationProvider>();
         }
     }
 }
