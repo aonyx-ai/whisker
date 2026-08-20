@@ -26,8 +26,8 @@ macro_rules! export_lints {
             $crate::plugin::PluginDeclaration {
                 abi_version: $crate::plugin::ABI_VERSION,
                 rustc_version: $crate::plugin::RUSTC_VERSION.as_ptr(),
-                types_fingerprint: $crate::plugin::TYPES_FINGERPRINT.as_ptr(),
-                language_fingerprint: $crate::plugin::LANGUAGE_FINGERPRINT.as_ptr(),
+                types_fingerprint: $crate::plugin::TYPES_FINGERPRINT,
+                language_fingerprint: $crate::plugin::LANGUAGE_FINGERPRINT,
                 register: __whisker_register,
             };
 
@@ -97,10 +97,10 @@ mod tests {
         let rustc_version = unsafe { CStr::from_ptr(whisker_plugin_declaration.rustc_version) };
         assert_eq!(rustc_version, plugin::RUSTC_VERSION);
 
-        let types = unsafe { CStr::from_ptr(whisker_plugin_declaration.types_fingerprint) };
+        let types = whisker_plugin_declaration.types_fingerprint;
         assert_eq!(types, plugin::TYPES_FINGERPRINT);
 
-        let language = unsafe { CStr::from_ptr(whisker_plugin_declaration.language_fingerprint) };
+        let language = whisker_plugin_declaration.language_fingerprint;
         assert_eq!(language, plugin::LANGUAGE_FINGERPRINT);
     }
 

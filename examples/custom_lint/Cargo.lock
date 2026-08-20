@@ -295,7 +295,6 @@ dependencies = [
  "anyhow",
  "rustc_version",
  "tree-sitter",
- "whisker-codegen",
 ]
 
 [[package]]

@@ -1,3 +1,5 @@
+use std::mem::offset_of;
+
 use crate::{Location, RuleId, Severity, Span, Suggestion};
 
 /// A diagnostic emitted by a lint rule
@@ -112,6 +114,21 @@ impl Diagnostic {
         &self.suggestions
     }
 }
+
+/// The offsets of every field, in declaration order
+///
+/// The plugin handshake hashes these so a plugin that places a field
+/// somewhere else is refused rather than trusted. They live beside the
+/// struct, because a field added there has to be added here too.
+pub(crate) const FIELD_OFFSETS: &[usize] = &[
+    offset_of!(Diagnostic, rule_id),
+    offset_of!(Diagnostic, severity),
+    offset_of!(Diagnostic, message),
+    offset_of!(Diagnostic, span),
+    offset_of!(Diagnostic, origins),
+    offset_of!(Diagnostic, related),
+    offset_of!(Diagnostic, suggestions),
+];
 
 #[cfg(test)]
 mod tests {

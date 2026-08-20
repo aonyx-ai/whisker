@@ -1,3 +1,4 @@
+use std::mem::offset_of;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -152,6 +153,18 @@ impl std::fmt::Debug for DecoratedNode<'_> {
             .finish()
     }
 }
+
+/// The offsets of every field, in declaration order
+///
+/// The plugin handshake hashes these so a plugin that places a field
+/// somewhere else is refused rather than trusted. They live beside the
+/// struct, because a field added there has to be added here too.
+pub(crate) const FIELD_OFFSETS: &[usize] = &[
+    offset_of!(DecoratedNode<'static>, node),
+    offset_of!(DecoratedNode<'static>, source),
+    offset_of!(DecoratedNode<'static>, file),
+    offset_of!(DecoratedNode<'static>, decorations),
+];
 
 #[cfg(test)]
 mod tests {

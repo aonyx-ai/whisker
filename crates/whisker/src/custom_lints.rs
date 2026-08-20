@@ -191,8 +191,8 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPa
     let plugin = AbiIdentity {
         abi_version: plugin_abi_version,
         rustc_version: read_declaration_string(declaration.rustc_version)?,
-        types_fingerprint: read_declaration_string(declaration.types_fingerprint)?,
-        language_fingerprint: read_declaration_string(declaration.language_fingerprint)?,
+        types_fingerprint: declaration.types_fingerprint,
+        language_fingerprint: declaration.language_fingerprint,
     };
     handshake::validate(host, &plugin)?;
 

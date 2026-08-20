@@ -12,8 +12,8 @@
 //!
 //! 1. [`PluginDeclaration::abi_version`] sits first in a `#[repr(C)]`
 //!    struct, so it reads correctly whatever else changed.
-//! 2. The version and fingerprint fields are C strings, readable across
-//!    any pair of rustc versions.
+//! 2. The rustc version is a C string and the two fingerprints are plain
+//!    integers, all readable across any pair of rustc versions.
 //! 3. Only when every one of them matches the host's own constants may
 //!    [`PluginDeclaration::register`] be called, because a plain Rust
 //!    function pointer is only meaningful once the two images are known to
@@ -23,8 +23,12 @@
 //! values a plugin allocated (diagnostics, boxed passes), which is sound
 //! because both images default to the system allocator.
 //!
-//! The handshake reaches the whisker source both sides compiled, not the
-//! dependency graph each side resolved. A plugin's lockfile picks its own
+//! The handshake reaches how both sides lay out the boundary, not the
+//! source they compiled and not the dependency graph each side resolved.
+//! Layout is what unsoundness turns on, and it is far narrower than source
+//! text: a doc comment or a private helper moves nothing, so a plugin
+//! stays loadable across most of whisker's own churn. A plugin's lockfile
+//! picks its own
 //! `tree-sitter`, whose `Node` is a `#[repr(transparent)]` wrapper around
 //! a `#[repr(C)]` struct of the C library, so a patch-level difference
 //! moves no field. It does give each image its own copy of that C
@@ -34,27 +38,38 @@
 
 use std::ffi::CStr;
 
+use crate::{
+    Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationKey, DecorationMap, Diagnostic,
+    Language, Location, ProviderName, RuleId, Severity, Span, Suggestion, UncoveredFile,
+};
+
 mod declaration;
+mod fingerprint;
 mod registrar;
 
 pub use declaration::PluginDeclaration;
+pub use fingerprint::{Shape, fingerprint, seeded_fingerprint};
 pub use registrar::{LintPassFactory, LintRegistrar};
 
 /// The version of the plugin declaration protocol itself
 ///
 /// This guards the shape of [`PluginDeclaration`] and the meaning of its
-/// fields, not the ABI of the lint passes; the version and fingerprint
-/// strings guard those. Bump it whenever the declaration struct or the
-/// registration contract changes.
+/// fields, and the method order of the two traits that cross the boundary,
+/// which no fingerprint can read back. The rustc version and the two
+/// fingerprints guard everything else. Bump it whenever the declaration
+/// struct, the registration contract, [`LintPass`], or [`LintRegistrar`]
+/// changes.
+///
+/// [`LintPass`]: crate::LintPass
 ///
 /// # Examples
 ///
 /// ```
 /// use whisker_types::plugin::ABI_VERSION;
 ///
-/// assert_eq!(ABI_VERSION, 1);
+/// assert_eq!(ABI_VERSION, 2);
 /// ```
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 /// The full identity of the rustc that compiled this crate
 ///
@@ -73,24 +88,51 @@ pub const ABI_VERSION: u32 = 1;
 /// ```
 pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\0"));
 
-/// A fingerprint of the whisker-types source this crate was compiled from
+/// A fingerprint of how this crate lays out the plugin boundary
 ///
 /// The crate version cannot detect drift, because whisker's crates are
-/// unpublished and hold one version between releases. The build script
-/// hashes every source file instead, so a plugin built against a different
-/// revision of whisker-types is refused rather than trusted to share
-/// layouts it may not share.
+/// unpublished and hold one version between releases. Hashing the source
+/// text detects far too much of it: a doc comment or a private helper
+/// would refuse every plugin in the tree until each was rebuilt, which is
+/// the whole cost of shipping rules as plugins. This hashes what the two
+/// images must actually agree on instead — the size, alignment, and field
+/// offsets of every type that crosses the boundary.
+///
+/// What it does not cover is the shape of [`LintPass`] and
+/// [`LintRegistrar`] themselves. A trait object's vtable orders its
+/// methods by declaration, and no const can read that back, so adding,
+/// removing, or reordering a method on either trait is a change to the
+/// protocol and belongs in [`ABI_VERSION`]. The `abi_version_covers_the
+/// _boundary_traits` test in this module fails when either trait's method
+/// list moves, so the bump is not left to memory.
+///
+/// [`LintPass`]: crate::LintPass
 ///
 /// # Examples
 ///
 /// ```
 /// use whisker_types::plugin::TYPES_FINGERPRINT;
 ///
-/// let fingerprint = TYPES_FINGERPRINT.to_str().expect("should be UTF-8");
-///
-/// assert_eq!(fingerprint.len(), 16);
+/// assert_ne!(TYPES_FINGERPRINT, 0);
 /// ```
-pub const TYPES_FINGERPRINT: &CStr = c_str(concat!(env!("WHISKER_TYPES_FINGERPRINT"), "\0"));
+pub const TYPES_FINGERPRINT: u64 = fingerprint(&[
+    Shape::of_fields::<Diagnostic>(crate::diagnostic::FIELD_OFFSETS),
+    Shape::of_fields::<Span>(crate::span::FIELD_OFFSETS),
+    Shape::of_fields::<Suggestion>(crate::suggestion::FIELD_OFFSETS),
+    Shape::of_fields::<Location>(crate::location::FIELD_OFFSETS),
+    Shape::of_fields::<DecoratedNode<'static>>(crate::decorated_node::FIELD_OFFSETS),
+    Shape::of::<DecoratedTree>(),
+    Shape::of::<DecorationKey>(),
+    Shape::of::<DecorationMap>(),
+    Shape::of::<RuleId>(),
+    Shape::of::<Severity>(),
+    Shape::of::<Language>(),
+    Shape::of::<ProviderName>(),
+    Shape::of::<Coverage>(),
+    Shape::of::<CoverageGap>(),
+    Shape::of::<UncoveredFile>(),
+    Shape::of::<LintPassFactory>(),
+]);
 
 /// Converts a NUL-terminated string literal into a [`&CStr`] at compile time
 ///
@@ -130,11 +172,61 @@ mod tests {
         assert!(version.starts_with("rustc"), "unexpected: {version}");
     }
 
-    #[test]
-    fn types_fingerprint_is_a_64_bit_hex_string() {
-        let fingerprint = TYPES_FINGERPRINT.to_str().expect("should be UTF-8");
+    /// Returns each method signature a trait declares, in declaration order
+    ///
+    /// The scan takes the lines inside the trait's block that open a
+    /// method and squeezes their whitespace, so a doc comment or a
+    /// reflowed line changes nothing while an added, removed, reordered,
+    /// or re-signed method does.
+    fn method_signatures(source: &str, declaration: &str) -> Vec<String> {
+        let body = source
+            .split_once(declaration)
+            .expect("the trait should be declared in this source")
+            .1;
+        let body = body
+            .split_once("\n}")
+            .expect("the trait block should be closed")
+            .0;
 
-        assert_eq!(fingerprint.len(), 16);
-        assert!(fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
+        body.lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("fn "))
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect()
+    }
+
+    #[test]
+    fn abi_version_covers_the_boundary_traits() {
+        let lint_pass = method_signatures(
+            include_str!("lint_pass.rs"),
+            "pub trait LintPass: Send + Sync {",
+        );
+        let registrar = method_signatures(
+            include_str!("plugin/registrar.rs"),
+            "pub trait LintRegistrar {",
+        );
+
+        assert_eq!(
+            (lint_pass, registrar),
+            (
+                vec![
+                    "fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic>;"
+                        .to_owned()
+                ],
+                vec!["fn register(&mut self, factory: LintPassFactory);".to_owned()],
+            ),
+            "a boundary trait's methods moved, which reorders its vtable; \
+             bump ABI_VERSION and update this test together",
+        );
+    }
+
+    #[test]
+    fn types_fingerprint_covers_every_boundary_type() {
+        let one = fingerprint(&[Shape::of::<Diagnostic>()]);
+
+        let all = TYPES_FINGERPRINT;
+
+        assert_ne!(all, one);
+        assert_ne!(all, 0);
     }
 }

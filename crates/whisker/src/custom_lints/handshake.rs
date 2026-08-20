@@ -12,8 +12,8 @@ use whisker_rust::plugin;
 pub struct AbiIdentity {
     pub abi_version: u32,
     pub rustc_version: String,
-    pub types_fingerprint: String,
-    pub language_fingerprint: String,
+    pub types_fingerprint: u64,
+    pub language_fingerprint: u64,
 }
 
 impl AbiIdentity {
@@ -22,8 +22,8 @@ impl AbiIdentity {
         Self {
             abi_version: plugin::ABI_VERSION,
             rustc_version: plugin::RUSTC_VERSION.to_string_lossy().into_owned(),
-            types_fingerprint: plugin::TYPES_FINGERPRINT.to_string_lossy().into_owned(),
-            language_fingerprint: plugin::LANGUAGE_FINGERPRINT.to_string_lossy().into_owned(),
+            types_fingerprint: plugin::TYPES_FINGERPRINT,
+            language_fingerprint: plugin::LANGUAGE_FINGERPRINT,
         }
     }
 }
@@ -117,8 +117,8 @@ mod tests {
         AbiIdentity {
             abi_version: 1,
             rustc_version: "rustc 1.92.0-nightly (0000000 2026-08-11)".into(),
-            types_fingerprint: "00000000000000aa".into(),
-            language_fingerprint: "00000000000000bb".into(),
+            types_fingerprint: 0xaa,
+            language_fingerprint: 0xbb,
         }
     }
 
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn validate_reports_a_differing_language_fingerprint() {
         let mut plugin = identity();
-        plugin.language_fingerprint = "00000000000000cc".into();
+        plugin.language_fingerprint = 0xcc;
 
         let error = validate(&identity(), &plugin).expect_err("should mismatch");
 
@@ -195,7 +195,7 @@ mod tests {
     #[test]
     fn validate_reports_a_differing_types_fingerprint() {
         let mut plugin = identity();
-        plugin.types_fingerprint = "00000000000000cc".into();
+        plugin.types_fingerprint = 0xcc;
 
         let error = validate(&identity(), &plugin).expect_err("should mismatch");
 

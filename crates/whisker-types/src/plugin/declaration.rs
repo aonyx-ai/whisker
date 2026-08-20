@@ -12,10 +12,11 @@ use crate::plugin::LintRegistrar;
 ///
 /// - [`abi_version`] is a bare integer at offset zero of a `#[repr(C)]`
 ///   struct, readable whatever else changed.
-/// - The version and fingerprint fields are pointers to NUL-terminated
-///   strings in the plugin's immutable data, readable across rustc
-///   versions. They are raw pointers rather than `&CStr`, because a
-///   reference's layout is only promised within one compiler.
+/// - [`rustc_version`] is a pointer to a NUL-terminated string in the
+///   plugin's immutable data, readable across rustc versions. It is a raw
+///   pointer rather than a `&CStr`, because a reference's layout is only
+///   promised within one compiler. The two fingerprints are plain `u64`,
+///   which needs no such promise.
 /// - [`register`] is a plain Rust function pointer. Calling it hands
 ///   `&mut dyn` trait objects across the boundary, which is only sound
 ///   once every prior field proved that both images agree on the ABI.
@@ -24,11 +25,12 @@ use crate::plugin::LintRegistrar;
 /// this struct is a wire format: the exporting macro constructs it in a
 /// `const` context and the loader consumes it field by field.
 ///
-/// `Send` and `Sync` are implemented by hand, because the string fields
-/// make the type `!Sync` by default; they are sound because every field
-/// points at immutable `'static` data in the plugin image.
+/// `Send` and `Sync` are implemented by hand, because the version pointer
+/// makes the type `!Sync` by default; they are sound because it points at
+/// immutable `'static` data in the plugin image.
 ///
 /// [`abi_version`]: PluginDeclaration::abi_version
+/// [`rustc_version`]: PluginDeclaration::rustc_version
 /// [`register`]: PluginDeclaration::register
 #[repr(C)]
 pub struct PluginDeclaration {
@@ -45,7 +47,7 @@ pub struct PluginDeclaration {
     /// The plugin's copy of [`TYPES_FINGERPRINT`]
     ///
     /// [`TYPES_FINGERPRINT`]: crate::plugin::TYPES_FINGERPRINT
-    pub types_fingerprint: *const c_char,
+    pub types_fingerprint: u64,
 
     /// The plugin's fingerprint of the language crate it was built against
     ///
@@ -54,7 +56,7 @@ pub struct PluginDeclaration {
     /// plugin whose dispatch was generated from a different grammar would
     /// not crash, but its checks would quietly never fire; the handshake
     /// turns that into a refusal.
-    pub language_fingerprint: *const c_char,
+    pub language_fingerprint: u64,
 
     /// Registers the plugin's lint passes with the host
     ///
