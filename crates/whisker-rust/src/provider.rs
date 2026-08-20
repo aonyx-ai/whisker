@@ -3,7 +3,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
-use ra_ap_hir::{Adt, Enum, Function, HasAttrs, HirDisplay, Module, Semantics, Type, attach_db};
+use ra_ap_hir::{
+    Adt, Enum, Function, HasAttrs, HirDisplay, Module, ModuleDef, PathResolution, Semantics, Type,
+    attach_db,
+};
 use ra_ap_ide_db::base_db::SourceDatabase as _;
 use ra_ap_ide_db::famous_defs::FamousDefs;
 use ra_ap_ide_db::{ChangeWithProcMacros, RootDatabase};
@@ -16,7 +19,9 @@ use whisker_types::{
     ProviderName,
 };
 
-use crate::decorations::{AdtFlags, ErrorType, FnSignature, ResolvedType, ReturnMode, TypePath};
+use crate::decorations::{
+    AdtFlags, ErrorType, FnSignature, ImportSource, ResolvedType, ReturnMode, TypePath,
+};
 
 /// Decoration provider for Rust using rust-analyzer
 ///
@@ -345,6 +350,11 @@ fn resolve_targets(
                     decorations.insert(*operand_node_id, ty);
                 }
             }
+            Target::Import { node_id, range } => {
+                if let Some(source) = resolve_import(&ctx, *range) {
+                    decorations.insert(*node_id, source);
+                }
+            }
         }
     }
     decorations
@@ -377,6 +387,10 @@ enum Target {
     TryExpr {
         operand_range: TextRange,
         operand_node_id: usize,
+    },
+    Import {
+        node_id: usize,
+        range: TextRange,
     },
 }
 
@@ -439,6 +453,14 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
                 targets.push(Target::TryExpr {
                     operand_range,
                     operand_node_id: operand.id(),
+                });
+            }
+        }
+        "use_declaration" => {
+            if let Some(range) = text_range_of(node) {
+                targets.push(Target::Import {
+                    node_id: node.id(),
+                    range,
                 });
             }
         }
@@ -674,6 +696,75 @@ fn resolve_expr_type(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<Reso
     )
 }
 
+/// Returns what the qualifier of a `use` declaration names
+///
+/// The target range covers the whole declaration, so the covering node in
+/// rust-analyzer's tree is the [`ast::Use`] itself, and the qualifier comes
+/// from its use tree. A declaration with no qualifier, such as `use serde;`,
+/// yields [`None`] and so gets no decoration.
+///
+/// A qualifier rust-analyzer resolves to nothing becomes
+/// [`ImportSource::Unresolved`]. A rule can then separate a failed lookup
+/// from a file this provider never covered.
+fn resolve_import(ctx: &DecorateCtx<'_, '_>, range: TextRange) -> Option<ImportSource> {
+    let use_item = covering_node(ctx.syntax, range)?
+        .ancestors()
+        .find_map(ast::Use::cast)?;
+    let qualifier = import_qualifier(&use_item.use_tree()?)?;
+
+    match ctx.sema.resolve_path(&qualifier) {
+        Some(resolution) => Some(import_source_of(resolution)),
+        None => Some(ImportSource::Unresolved),
+    }
+}
+
+/// Returns the path a use tree reaches through to name what it imports
+///
+/// A tree that ends in a list or a star, as `use a::B::{C, D}` and
+/// `use a::B::*` do, holds the qualifier as its own path. Any other tree
+/// holds the imported name as the last segment, so the qualifier is the
+/// path without it.
+fn import_qualifier(tree: &ast::UseTree) -> Option<ast::Path> {
+    let path = tree.path()?;
+    let path_is_the_qualifier = tree.use_tree_list().is_some() || tree.star_token().is_some();
+
+    match path_is_the_qualifier {
+        true => Some(path),
+        false => path.qualifier(),
+    }
+}
+
+/// Classifies the item a resolved qualifier names
+///
+/// A module and an enum each get their own answer. An import out of an
+/// enum names variants; an import out of a module does not. Everything
+/// else is [`ImportSource::Other`].
+fn import_source_of(resolution: PathResolution<'_>) -> ImportSource {
+    match resolution {
+        PathResolution::Def(def) => match def {
+            ModuleDef::Module(_) => ImportSource::Module,
+            ModuleDef::Adt(Adt::Enum(_)) => ImportSource::Enum,
+            ModuleDef::Adt(Adt::Struct(_))
+            | ModuleDef::Adt(Adt::Union(_))
+            | ModuleDef::Function(_)
+            | ModuleDef::EnumVariant(_)
+            | ModuleDef::Const(_)
+            | ModuleDef::Static(_)
+            | ModuleDef::Trait(_)
+            | ModuleDef::TypeAlias(_)
+            | ModuleDef::BuiltinType(_)
+            | ModuleDef::Macro(_) => ImportSource::Other,
+        },
+        PathResolution::Local(_)
+        | PathResolution::TypeParam(_)
+        | PathResolution::ConstParam(_)
+        | PathResolution::SelfType(_)
+        | PathResolution::BuiltinAttr(_)
+        | PathResolution::ToolModule(_)
+        | PathResolution::DeriveHelper(_) => ImportSource::Other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -786,6 +877,65 @@ mod tests {
         let covering = covering_node(&syntax, range_at(past_the_end, 1));
 
         assert!(covering.is_none());
+    }
+
+    /// Returns the text of the qualifier in `source`'s first `use` item
+    ///
+    /// Yields [`None`] when that item reaches through no qualifier.
+    fn qualifier_of(source: &str) -> Option<String> {
+        let file = SourceFile::parse(source, Edition::CURRENT).tree();
+        let use_item = file
+            .syntax()
+            .descendants()
+            .find_map(ast::Use::cast)
+            .expect("the source should hold a `use` item");
+        let tree = use_item.use_tree().expect("a `use` item has a tree");
+
+        import_qualifier(&tree).map(|path| path.syntax().text().to_string())
+    }
+
+    #[test]
+    fn import_qualifier_with_a_list_returns_the_whole_path() {
+        let qualifier = qualifier_of("use a::B::{C, D};");
+
+        assert_eq!(qualifier.as_deref(), Some("a::B"));
+    }
+
+    #[test]
+    fn import_qualifier_with_a_plain_path_drops_the_last_segment() {
+        let qualifier = qualifier_of("use a::B::C;");
+
+        assert_eq!(qualifier.as_deref(), Some("a::B"));
+    }
+
+    #[test]
+    fn import_qualifier_with_a_rename_drops_the_last_segment() {
+        let qualifier = qualifier_of("use a::B::C as D;");
+
+        assert_eq!(qualifier.as_deref(), Some("a::B"));
+    }
+
+    #[test]
+    fn import_qualifier_with_a_star_returns_the_whole_path() {
+        let qualifier = qualifier_of("use a::B::*;");
+
+        assert_eq!(qualifier.as_deref(), Some("a::B"));
+    }
+
+    /// A list with no path in front of it has no single qualifier
+    #[test]
+    fn import_qualifier_with_no_path_returns_none() {
+        let qualifier = qualifier_of("use {a::b, c::d};");
+
+        assert!(qualifier.is_none());
+    }
+
+    /// A `use` that names one segment reaches through nothing
+    #[test]
+    fn import_qualifier_with_one_segment_returns_none() {
+        let qualifier = qualifier_of("use serde;");
+
+        assert!(qualifier.is_none());
     }
 
     #[cfg(unix)]

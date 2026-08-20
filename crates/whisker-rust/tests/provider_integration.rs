@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow_missing_context::AnyhowMissingContext;
-use whisker_rust::decorations::{AdtFlags, FnSignature, ResolvedType, ReturnMode, TypePathRef};
+use function_scoped_import::FunctionScopedImport;
+use whisker_rust::decorations::{
+    AdtFlags, FnSignature, ImportSource, ResolvedType, ReturnMode, TypePathRef,
+};
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
 use whisker_types::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, LintPass,
@@ -50,6 +53,30 @@ fn not_utf8_project() -> PathBuf {
     .expect("should write the fixture module that is not UTF-8");
     std::fs::write(root.join("src/notes.md"), b"notes \xff\xfe\n")
         .expect("should write the fixture include_str target that is not UTF-8");
+
+    root
+}
+
+/// Writes a Cargo project whose `use` paths rustc rejects
+///
+/// Rustc refuses a struct as an import prefix, and it refuses an unknown
+/// crate, so neither import can sit in a fixture that compiles. This
+/// function generates them instead. Rust-analyzer names the struct and
+/// resolves the unknown crate to nothing, and the provider must report
+/// both outcomes rather than fall silent.
+fn rejected_imports_project() -> PathBuf {
+    let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("rejected_imports_project");
+    std::fs::create_dir_all(root.join("src")).expect("should create the fixture directories");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\n\n[package]\nname = \"rejected_imports_project\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+    )
+    .expect("should write the fixture manifest");
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub struct Loader;\n\nimpl Loader {\n    pub fn load() -> u8 {\n        0\n    }\n}\n\npub fn import_an_associated_function() -> u8 {\n    use Loader::load;\n\n    load()\n}\n\npub fn import_from_an_unknown_crate() -> u8 {\n    use nowhere::thing;\n\n    thing()\n}\n",
+    )
+    .expect("should write the fixture crate root");
 
     root
 }
@@ -121,6 +148,19 @@ fn find_first_node_of_kind<'a>(node: &DecoratedNode<'a>, kind: &str) -> Option<D
         }
     }
     None
+}
+
+/// Returns the [`ImportSource`] on the first `use` inside the named function
+fn import_source_in(tree: &DecoratedTree, function: &str) -> ImportSource {
+    let root = tree.root_node();
+    let func =
+        find_function_by_name(&root, function).unwrap_or_else(|| panic!("should find {function}"));
+    let import = find_first_node_of_kind(&func, "use_declaration")
+        .unwrap_or_else(|| panic!("{function} should hold a `use`"));
+
+    *import
+        .decoration::<ImportSource>()
+        .unwrap_or_else(|| panic!("the `use` in {function} should have an ImportSource"))
 }
 
 /// Returns the operand of the first `?` expression inside `node`
@@ -218,6 +258,32 @@ fn decorate_with_code_under_cfg_test_resolves_types() {
         .decoration::<ResolvedType>()
         .expect("a scrutinee under cfg(test) should have ResolvedType");
     assert!(ty.is_enum(), "Color should be an enum");
+}
+
+/// A qualifier reports `Other` when it names another item, and
+/// `Unresolved` when it names nothing
+#[test]
+fn decorate_with_imports_rustc_rejects_reports_other_and_unresolved() {
+    let root = rejected_imports_project();
+    let provider = RustDecorationProvider::load(&root).expect("should load the fixture");
+    let file_path = root.join("src/lib.rs");
+    let source = std::fs::read_to_string(&file_path).expect("should read the fixture crate root");
+    let mut tree = parse_source(source, file_path);
+
+    let coverage = provider.decorate(&tree).expect("decorate should succeed");
+
+    match coverage {
+        Coverage::Covered(decorations) => tree.merge_decorations(decorations),
+        Coverage::NotCovered(gap) => panic!("the crate root should be covered, got: {gap}"),
+    }
+    assert_eq!(
+        import_source_in(&tree, "import_an_associated_function"),
+        ImportSource::Other
+    );
+    assert_eq!(
+        import_source_in(&tree, "import_from_an_unknown_crate"),
+        ImportSource::Unresolved
+    );
 }
 
 #[test]
@@ -443,6 +509,50 @@ fn fn_signature_on_user_defined_result_is_not_a_result() {
         ret.display()
     );
     assert!(sig.error_type().is_none());
+}
+
+/// A list import and a glob import out of an enum both report the enum
+///
+/// Both shapes hold the qualifier as the use tree's own path, so one
+/// lookup serves them.
+#[test]
+fn import_source_on_an_enum_qualifier_is_enum() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+
+    assert_eq!(
+        import_source_in(&tree, "import_enum_variants"),
+        ImportSource::Enum
+    );
+    assert_eq!(
+        import_source_in(&tree, "import_enum_variants_by_glob"),
+        ImportSource::Enum
+    );
+}
+
+#[test]
+fn import_source_on_a_module_qualifier_is_module() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+
+    assert_eq!(
+        import_source_in(&tree, "import_from_module"),
+        ImportSource::Module
+    );
+}
+
+/// A module whose name starts with a capital is still a module
+///
+/// The name looks like a type, and only the resolution says otherwise.
+#[test]
+fn import_source_on_an_uppercase_module_is_module() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+
+    assert_eq!(
+        import_source_in(&tree, "import_from_uppercase_module"),
+        ImportSource::Module
+    );
 }
 
 #[test]
@@ -958,6 +1068,25 @@ fn anyhow_missing_context_over_the_whole_file_reports_only_anyhow_bodies() {
             "std::fs::read_to_string(&self.path)?",
             "read()?",
         ]
+    );
+}
+
+/// Every place the `function_scoped_import` rule fires in the fixture
+///
+/// Among imports inside function bodies, the rule spares only those whose
+/// qualifier resolves to an enum.
+#[test]
+fn function_scoped_import_over_the_whole_file_spares_only_variant_imports() {
+    let provider = load_provider();
+    let tree = parse_and_decorate_fixture(provider);
+    let mut passes: Vec<Box<dyn LintPass>> =
+        vec![Box::new(RustLintPassAdapter::new(FunctionScopedImport))];
+
+    let diagnostics = whisker_core::walk(&tree, &mut passes);
+
+    assert_eq!(
+        flagged_in_file(&tree, &diagnostics),
+        vec!["use std::collections::HashMap;", "use Shapes::draw;"]
     );
 }
 

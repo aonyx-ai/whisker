@@ -20,6 +20,9 @@ path = "lints/derive_order"
 path = "lints/explicit_destructuring"
 
 [[lints]]
+path = "lints/function_scoped_import"
+
+[[lints]]
 path = "lints/if_let_with_else"
 
 [[lints]]
