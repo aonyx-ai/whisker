@@ -150,7 +150,7 @@ mod tests {
         impl RustLintPass for AlwaysWarn {
             fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 vec![Diagnostic::new(
-                    RuleId("test.warn"),
+                    RuleId::new("test.warn"),
                     Severity::Warn,
                     "found function".into(),
                     node.span(),
@@ -166,7 +166,7 @@ mod tests {
         let diagnostics = dispatch(&mut pass, &fn_item);
 
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].rule_id(), RuleId("test.warn"));
+        assert_eq!(diagnostics[0].rule_id(), RuleId::new("test.warn"));
     }
 
     #[test]

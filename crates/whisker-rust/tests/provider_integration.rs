@@ -701,7 +701,7 @@ fn flagged_within_with_a_span_past_the_function_end_returns_nothing() {
     let func = find_function_by_name(&root, "match_on_enum").expect("should find match_on_enum");
     let Range { start, end } = func.raw().byte_range();
     let diagnostics = vec![Diagnostic::new(
-        RuleId("lint.test"),
+        RuleId::new("lint.test"),
         Severity::Warn,
         "a span that leaves the function".to_string(),
         Span::new(tree.file().to_path_buf(), start, end + 1),

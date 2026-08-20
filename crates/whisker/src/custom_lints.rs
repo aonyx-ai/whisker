@@ -153,9 +153,9 @@ fn build(directory: &Path) -> anyhow::Result<PathBuf> {
 /// differently shaped declaration, and a reference to that is already
 /// undefined behavior.
 ///
-/// The loaded library is deliberately leaked. The registered factories and
-/// every `RuleId(&'static str)` a plugin lint mints point into the
-/// library's image, so unloading it would leave dangling references
+/// The loader deliberately leaks the library. The registered factories and
+/// the `&'static str` inside every [`RuleId`] a plugin lint mints point into
+/// the library's image, so unloading it would leave dangling references
 /// behind values that outlive this function. The leak is bounded by the
 /// number of configured plugins in a short-lived process.
 ///
@@ -163,6 +163,8 @@ fn build(directory: &Path) -> anyhow::Result<PathBuf> {
 ///
 /// Returns an error if the library cannot be opened, exports no plugin
 /// declaration, fails the ABI handshake, or registers no lints.
+///
+/// [`RuleId`]: whisker_types::RuleId
 fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
     let library = unsafe { Library::new(library) }
         .with_context(|| format!("failed to open {}", library.display()))?;

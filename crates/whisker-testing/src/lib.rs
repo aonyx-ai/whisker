@@ -274,7 +274,7 @@ mod tests {
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 if node.kind() == "function_item" {
                     vec![Diagnostic::new(
-                        RuleId("test.fn"),
+                        RuleId::new("test.fn"),
                         Severity::Warn,
                         "found fn".into(),
                         node.span(),
@@ -305,7 +305,7 @@ mod tests {
     #[should_panic(expected = "expected no diagnostics")]
     fn assert_no_diagnostics_with_non_empty_slice_panics() {
         let diag = Diagnostic::new(
-            RuleId("test"),
+            RuleId::new("test"),
             Severity::Warn,
             "msg".into(),
             whisker_types::Span::new(std::path::PathBuf::from("f.rs"), 0, 1),

@@ -2,7 +2,7 @@ use whisker_rust::RustLintPass;
 use whisker_rust::decorations::{FnSignature, ResolvedType, TypePathRef};
 use whisker_types::{DecoratedNode, Diagnostic, LintPass, RuleId, Severity};
 
-const RULE_ID: RuleId = RuleId("lint.anyhow-missing-context");
+const RULE_ID: RuleId = RuleId::new("lint.anyhow-missing-context");
 
 /// The definition path of `anyhow::Error`
 ///

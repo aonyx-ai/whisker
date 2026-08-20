@@ -88,7 +88,7 @@ mod tests {
             fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 self.found = true;
                 vec![Diagnostic::new(
-                    RuleId("test.fn"),
+                    RuleId::new("test.fn"),
                     Severity::Warn,
                     "found".into(),
                     node.span(),
@@ -103,7 +103,7 @@ mod tests {
         let diagnostics = adapter.check_node(&fn_node);
 
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].rule_id(), RuleId("test.fn"));
+        assert_eq!(diagnostics[0].rule_id(), RuleId::new("test.fn"));
     }
 
     #[test]
@@ -124,7 +124,7 @@ mod tests {
         impl RustLintPass for WarnOnFn {
             fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 vec![Diagnostic::new(
-                    RuleId("test.warn"),
+                    RuleId::new("test.warn"),
                     Severity::Warn,
                     "function found".into(),
                     node.span(),

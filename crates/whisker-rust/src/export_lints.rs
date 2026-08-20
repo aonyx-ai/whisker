@@ -58,7 +58,7 @@ mod tests {
     impl RustLintPass for FlagEveryFunction {
         fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
             vec![Diagnostic::new(
-                RuleId("test.flag-every-function"),
+                RuleId::new("test.flag-every-function"),
                 Severity::Warn,
                 "found a function".into(),
                 node.span(),
@@ -121,6 +121,9 @@ mod tests {
         let diagnostics = pass.check_node(&function);
 
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].rule_id(), RuleId("test.flag-every-function"));
+        assert_eq!(
+            diagnostics[0].rule_id(),
+            RuleId::new("test.flag-every-function")
+        );
     }
 }

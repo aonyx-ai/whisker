@@ -55,7 +55,7 @@ mod tests {
 
     fn test_diagnostic(severity: Severity) -> Diagnostic {
         Diagnostic::new(
-            RuleId("lint.test"),
+            RuleId::new("lint.test"),
             severity,
             "test message".into(),
             Span::new(PathBuf::from("test.rs"), 0, 10),
@@ -163,7 +163,7 @@ mod tests {
 
         let promoted = FailureThreshold::Warnings.promote(diagnostic);
 
-        assert_eq!(promoted.rule_id(), RuleId("lint.test"));
+        assert_eq!(promoted.rule_id(), RuleId::new("lint.test"));
         assert_eq!(promoted.message(), "test message");
         assert_eq!(promoted.span().start(), 0);
         assert_eq!(promoted.span().end(), 10);
