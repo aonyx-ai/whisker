@@ -24,3 +24,6 @@ path = "lints/if_let_with_else"
 
 [[lints]]
 path = "lints/no_matches_macro"
+
+[[lints]]
+path = "lints/no_todo_comments"
