@@ -43,7 +43,7 @@ struct SubtypeRef {
 /// ```
 /// let json = r#"[{"type": "source_file", "named": true}]"#;
 /// let code = whisker_codegen::generate_visitor(json, "Rust").unwrap();
-/// assert!(code.contains("trait RustLintPass"));
+/// assert!(code.contains("trait RustLintPass: Send + Sync"));
 /// assert!(code.contains("fn check_source_file"));
 /// ```
 pub fn generate_visitor(
@@ -73,7 +73,11 @@ pub fn generate_visitor(
          /// Generated from the {language} tree-sitter grammar's `node-types.json`.\n\
          /// Each method corresponds to a named node type in the grammar and\n\
          /// defaults to returning no diagnostics.\n\
-         pub trait {trait_name} {{\n"
+         ///\n\
+         /// `Send + Sync` comes from `LintPass`, which every pass reaches the\n\
+         /// pipeline as. Requiring it here reports a pass that cannot cross\n\
+         /// threads at the pass, rather than where it is wrapped.\n\
+         pub trait {trait_name}: Send + Sync {{\n"
     ));
 
     for node in &concrete_nodes {
@@ -223,7 +227,7 @@ mod tests {
     fn generate_visitor_with_minimal_json_produces_trait() {
         let code = generate_visitor(MINIMAL_JSON, "Rust").expect("should parse");
 
-        assert!(code.contains("pub trait RustLintPass {"));
+        assert!(code.contains("pub trait RustLintPass: Send + Sync {"));
         assert!(code.contains("fn check_source_file("));
         assert!(code.contains("fn check_function_item("));
     }
@@ -324,7 +328,7 @@ mod tests {
     fn generate_visitor_with_different_language_changes_name() {
         let code = generate_visitor(MINIMAL_JSON, "Python").expect("should parse");
 
-        assert!(code.contains("pub trait PythonLintPass {"));
+        assert!(code.contains("pub trait PythonLintPass: Send + Sync {"));
         assert!(!code.contains("RustLintPass"));
     }
 

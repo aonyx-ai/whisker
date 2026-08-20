@@ -34,7 +34,7 @@ impl<P: RustLintPass> RustLintPassAdapter<P> {
     }
 }
 
-impl<P: RustLintPass + Send + Sync> LintPass for RustLintPassAdapter<P> {
+impl<P: RustLintPass> LintPass for RustLintPassAdapter<P> {
     fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         dispatch(&mut self.inner, node)
     }
