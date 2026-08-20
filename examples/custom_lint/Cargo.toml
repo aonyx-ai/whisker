@@ -1,0 +1,30 @@
+# A custom lint plugin: whisker compiles this package at check time and
+# loads the produced dynamic library, so the crate type must be cdylib.
+# The whisker dependencies must match the revision the whisker binary was
+# built from; a project outside this repository uses git dependencies
+# pinned to that revision instead of path dependencies. The lockfile beside
+# this manifest is part of that: whisker's handshake compares its own
+# source, not the versions a plugin resolves for what whisker itself
+# depends on. The provider feature stays off, because a lint needs the
+# trait and the decoration types, not the rust-analyzer stack behind the
+# decoration provider.
+#
+# The empty workspace table keeps this package standalone inside the
+# whisker repository; a plugin in your own project does not need it.
+[workspace]
+
+[package]
+name = "custom_lint"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+whisker-rust = { path = "../../crates/whisker-rust", default-features = false }
+whisker-types = { path = "../../crates/whisker-types" }
+
+[dev-dependencies]
+whisker-testing = { path = "../../crates/whisker-testing" }
