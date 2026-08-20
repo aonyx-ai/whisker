@@ -15,8 +15,14 @@ use crate::LintPass;
 /// [`register`]: LintRegistrar::register
 pub trait LintRegistrar {
     /// Registers one lint pass factory
-    fn register(&mut self, factory: fn() -> Box<dyn LintPass>);
+    fn register(&mut self, factory: LintPassFactory);
 }
+
+/// Constructs one fresh lint pass
+///
+/// See [`LintRegistrar`] for why plugins hand over construction rather
+/// than passes.
+pub type LintPassFactory = fn() -> Box<dyn LintPass>;
 
 #[cfg(test)]
 mod tests {

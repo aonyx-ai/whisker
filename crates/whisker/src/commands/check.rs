@@ -16,6 +16,7 @@ use self::check_outcome::CheckOutcome;
 use self::error_recovery::{ErrorRecovery, Walk};
 use self::failure_threshold::FailureThreshold;
 use crate::config::WhiskerConfig;
+use crate::custom_lints::CustomLints;
 use crate::discovery::{Discovery, WalkErrorPolicy};
 
 /// Run whisker lints against a project
@@ -40,10 +41,12 @@ pub struct CheckArgs {
 
 /// Builds the lint passes the CLI runs
 ///
-/// Every rule ships as its own crate and is linked in here. A rule that is
-/// not in this list does not run, however complete its own tests are.
-fn create_lint_passes() -> Vec<Box<dyn LintPass>> {
-    vec![
+/// Every built-in rule ships as its own crate, and this list links them
+/// in. A rule the list leaves out does not run, no matter how complete its
+/// own tests are. The project's custom lints join through the factories
+/// they registered when the run began.
+fn create_lint_passes(custom_lints: &CustomLints) -> Vec<Box<dyn LintPass>> {
+    let mut passes: Vec<Box<dyn LintPass>> = vec![
         Box::new(RustLintPassAdapter::new(
             anyhow_missing_context::AnyhowMissingContext,
         )),
@@ -54,7 +57,9 @@ fn create_lint_passes() -> Vec<Box<dyn LintPass>> {
         Box::new(RustLintPassAdapter::new(
             wildcard_match_arm::WildcardMatchArm,
         )),
-    ]
+    ];
+    passes.extend(custom_lints.instantiate());
+    passes
 }
 
 /// The distinct remedies for the files this run could not analyze
@@ -119,6 +124,9 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
     let config = WhiskerConfig::load(&path).context("failed to load the whisker configuration")?;
 
+    let custom_lints =
+        CustomLints::load(&config).context("failed to load the project's custom lints")?;
+
     let on_error = match keep_going {
         true => WalkErrorPolicy::ReportAndContinue,
         false => WalkErrorPolicy::Fail,
@@ -164,7 +172,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
             },
         };
 
-        let mut passes = create_lint_passes();
+        let mut passes = create_lint_passes(&custom_lints);
 
         match pipeline.run_on_source(&source, file, &providers, &mut passes) {
             Ok(diagnostics) => {

@@ -1,0 +1,397 @@
+use std::collections::HashSet;
+use std::ffi::{CStr, OsString, c_char};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+use anyhow::Context as _;
+use libloading::Library;
+use whisker_types::LintPass;
+use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
+
+use self::handshake::AbiIdentity;
+use crate::config::WhiskerConfig;
+
+mod artifact;
+mod handshake;
+
+/// The lint passes loaded from the project's configured custom lint crates
+///
+/// Loading happens once per run, before the file walk: whisker compiles
+/// each configured path with the user's cargo, opens the dynamic library
+/// that build produced, and checks its declaration against this binary's
+/// own ABI identity before anything in it runs. What survives is a set of
+/// factories, because passes are stateful and the check command constructs
+/// a fresh set for every file.
+///
+/// A load failure is fatal rather than recoverable: configuration that
+/// silently does nothing looks exactly like configuration that works, and
+/// `--keep-going` governs per-file walk errors, not a broken setup.
+pub struct CustomLints {
+    factories: Vec<LintPassFactory>,
+}
+
+impl CustomLints {
+    /// Compiles, loads, and validates every configured custom lint crate
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a configured path does not name a cargo
+    /// package, is configured twice, fails to build, does not export a
+    /// plugin declaration, fails the ABI handshake, or registers no
+    /// lints.
+    pub fn load(config: &WhiskerConfig) -> anyhow::Result<Self> {
+        let host = AbiIdentity::host();
+        let mut factories = Vec::new();
+
+        for directory in configured_directories(config)? {
+            let loaded = load_directory(&directory, &host).with_context(|| {
+                format!("failed to load the custom lints at {}", directory.display())
+            })?;
+            factories.extend(loaded);
+        }
+
+        Ok(Self { factories })
+    }
+
+    /// Constructs one fresh pass per loaded custom lint
+    pub fn instantiate(&self) -> Vec<Box<dyn LintPass>> {
+        self.factories.iter().map(|factory| factory()).collect()
+    }
+}
+
+/// Resolves and validates the configured lint paths before any build runs
+///
+/// All paths are checked up front, so a typo in the second entry surfaces
+/// before the first entry's potentially long compilation, and a path
+/// configured twice is caught however it was spelled.
+///
+/// # Errors
+///
+/// Returns an error if an entry does not exist, is not a directory, holds
+/// no `Cargo.toml`, or resolves to the same package as an earlier entry.
+fn configured_directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>> {
+    let mut directories = Vec::new();
+    let mut seen = HashSet::new();
+
+    for entry in config.lints() {
+        let directory = entry.resolve(config.root());
+
+        anyhow::ensure!(
+            directory.exists(),
+            "the configured lint path {entry} resolves to {}, which does not exist",
+            directory.display()
+        );
+        anyhow::ensure!(
+            directory.is_dir(),
+            "the configured lint path {entry} resolves to {}, which is not a directory",
+            directory.display()
+        );
+
+        let directory = std::fs::canonicalize(&directory)
+            .with_context(|| format!("failed to resolve the configured lint path {entry}"))?;
+
+        anyhow::ensure!(
+            directory.join("Cargo.toml").is_file(),
+            "the configured lint path {entry} holds no Cargo.toml; custom lints are cargo \
+             packages"
+        );
+        anyhow::ensure!(
+            seen.insert(directory.clone()),
+            "the configured lint path {entry} names a package that is already configured"
+        );
+
+        directories.push(directory);
+    }
+
+    Ok(directories)
+}
+
+/// Builds the package at `directory` and loads the lints it exports
+fn load_directory(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
+    let library = build(directory)?;
+    load_library(&library, host)
+}
+
+/// Compiles the plugin with the user's cargo and returns the built library
+///
+/// The build inherits stderr, so compiler errors and progress render to
+/// the terminal exactly as they would for a direct `cargo build`; stdout
+/// carries the JSON messages the artifact search reads. Release profile,
+/// because the plugin then runs over every file of every check.
+///
+/// # Errors
+///
+/// Returns an error if cargo cannot be run, exits unsuccessfully, or
+/// produces no dynamic library for the package.
+fn build(directory: &Path) -> anyhow::Result<PathBuf> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
+
+    let output = Command::new(cargo)
+        .args([
+            "build",
+            "--release",
+            "--message-format=json-render-diagnostics",
+        ])
+        .current_dir(directory)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .output()
+        .context("failed to run cargo build")?;
+
+    anyhow::ensure!(output.status.success(), "cargo build failed");
+
+    let stdout = String::from_utf8(output.stdout).context("cargo build wrote invalid UTF-8")?;
+
+    artifact::cdylib_artifact(&stdout, &directory.join("Cargo.toml"))
+}
+
+/// Opens the built library, performs the handshake, and collects factories
+///
+/// The loader reads the declaration's leading protocol version through a
+/// raw pointer, and only a matching version licenses a reference to the
+/// whole struct: a plugin of another protocol may export a shorter or
+/// differently shaped declaration, and a reference to that is already
+/// undefined behavior.
+///
+/// The loaded library is deliberately leaked. The registered factories and
+/// every `RuleId(&'static str)` a plugin lint mints point into the
+/// library's image, so unloading it would leave dangling references
+/// behind values that outlive this function. The leak is bounded by the
+/// number of configured plugins in a short-lived process.
+///
+/// # Errors
+///
+/// Returns an error if the library cannot be opened, exports no plugin
+/// declaration, fails the ABI handshake, or registers no lints.
+fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
+    let library = unsafe { Library::new(library) }
+        .with_context(|| format!("failed to open {}", library.display()))?;
+
+    let declaration =
+        unsafe { library.get::<*const PluginDeclaration>(b"whisker_plugin_declaration\0") }
+            .context(
+                "the library is not a whisker lint plugin; export its lints with \
+             whisker_rust::export_lints!",
+            )?;
+    let declaration: *const PluginDeclaration = *declaration;
+
+    let plugin_abi_version = unsafe { abi_version(declaration) };
+    if plugin_abi_version != host.abi_version {
+        return Err(handshake::HandshakeMismatch::AbiVersion {
+            host: host.abi_version,
+            plugin: plugin_abi_version,
+        }
+        .into());
+    }
+
+    let declaration = unsafe { &*declaration };
+
+    let plugin = AbiIdentity {
+        abi_version: plugin_abi_version,
+        rustc_version: read_declaration_string(declaration.rustc_version)?,
+        types_fingerprint: read_declaration_string(declaration.types_fingerprint)?,
+        language_fingerprint: read_declaration_string(declaration.language_fingerprint)?,
+    };
+    handshake::validate(host, &plugin)?;
+
+    let mut registrar = Collecting {
+        factories: Vec::new(),
+    };
+    (declaration.register)(&mut registrar);
+
+    anyhow::ensure!(
+        !registrar.factories.is_empty(),
+        "the plugin registered no lints; a plugin that does nothing looks exactly like one that \
+         works, so this is treated as a mistake"
+    );
+
+    std::mem::forget(library);
+
+    Ok(registrar.factories)
+}
+
+/// Reads the protocol version at the head of a plugin declaration
+///
+/// This is the one field a plugin of any vintage can be trusted to hold,
+/// because it sits at offset zero of a `#[repr(C)]` struct. Everything
+/// past it, the struct's own size included, is what a matching version
+/// establishes, so the read goes through a raw pointer rather than a
+/// reference to the whole declaration.
+///
+/// # Safety
+///
+/// `declaration` must be the address of a loaded library's
+/// `whisker_plugin_declaration` static.
+unsafe fn abi_version(declaration: *const PluginDeclaration) -> u32 {
+    unsafe { declaration.cast::<u32>().read_unaligned() }
+}
+
+/// Reads one C string field of a plugin declaration
+///
+/// # Errors
+///
+/// Returns an error if the pointer is null or the string is not UTF-8,
+/// both of which mean the declaration was not written by `export_lints!`.
+fn read_declaration_string(field: *const c_char) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        !field.is_null(),
+        "the plugin declaration is malformed; export lints with whisker_rust::export_lints!"
+    );
+
+    let text = unsafe { CStr::from_ptr(field) };
+    let text = text
+        .to_str()
+        .context("the plugin declaration is malformed; export lints with export_lints!")?;
+
+    Ok(text.to_owned())
+}
+
+/// Gathers the factories a plugin registers
+struct Collecting {
+    factories: Vec<LintPassFactory>,
+}
+
+impl LintRegistrar for Collecting {
+    fn register(&mut self, factory: LintPassFactory) {
+        self.factories.push(factory);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::config::LintPath;
+
+    fn config_with(root: &Path, lints: Vec<LintPath>) -> WhiskerConfig {
+        WhiskerConfig::new(root.to_path_buf(), Vec::new(), lints)
+    }
+
+    fn package(root: &Path, name: &str) -> PathBuf {
+        let directory = root.join(name);
+        std::fs::create_dir_all(&directory).expect("package directory should be created");
+        std::fs::write(directory.join("Cargo.toml"), "[package]\n").expect("manifest");
+        directory
+    }
+
+    #[test]
+    fn abi_version_reads_a_declaration_that_ends_after_the_version() {
+        #[repr(C)]
+        struct Truncated {
+            abi_version: u32,
+        }
+        let truncated = Truncated { abi_version: 7 };
+
+        let version = unsafe { abi_version((&raw const truncated).cast::<PluginDeclaration>()) };
+
+        assert_eq!(version, 7);
+    }
+
+    #[test]
+    fn configured_directories_rejects_a_duplicate_entry() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        package(root.path(), "no_todo");
+        let config = config_with(
+            root.path(),
+            vec![LintPath::new("no_todo"), LintPath::new("./no_todo")],
+        );
+
+        let error = configured_directories(&config).expect_err("should fail");
+
+        assert!(
+            error.to_string().contains("already configured"),
+            "unexpected: {error:#}"
+        );
+    }
+
+    #[test]
+    fn configured_directories_rejects_a_file_entry() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        std::fs::write(root.path().join("lint.rs"), "").expect("file should be written");
+        let config = config_with(root.path(), vec![LintPath::new("lint.rs")]);
+
+        let error = configured_directories(&config).expect_err("should fail");
+
+        assert!(
+            error.to_string().contains("not a directory"),
+            "unexpected: {error:#}"
+        );
+    }
+
+    #[test]
+    fn configured_directories_rejects_a_missing_entry() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        let config = config_with(root.path(), vec![LintPath::new("absent")]);
+
+        let error = configured_directories(&config).expect_err("should fail");
+
+        assert!(
+            error.to_string().contains("does not exist"),
+            "unexpected: {error:#}"
+        );
+    }
+
+    #[test]
+    fn configured_directories_rejects_an_entry_without_manifest() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        std::fs::create_dir(root.path().join("empty")).expect("directory should be created");
+        let config = config_with(root.path(), vec![LintPath::new("empty")]);
+
+        let error = configured_directories(&config).expect_err("should fail");
+
+        assert!(
+            error.to_string().contains("no Cargo.toml"),
+            "unexpected: {error:#}"
+        );
+    }
+
+    #[test]
+    fn configured_directories_resolves_entries_in_order() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        let first = package(root.path(), "first");
+        let second = package(root.path(), "second");
+        let config = config_with(
+            root.path(),
+            vec![LintPath::new("first"), LintPath::new("second")],
+        );
+
+        let directories = configured_directories(&config).expect("should resolve");
+
+        assert_eq!(
+            directories,
+            vec![
+                std::fs::canonicalize(first).expect("should resolve"),
+                std::fs::canonicalize(second).expect("should resolve"),
+            ]
+        );
+    }
+
+    #[test]
+    fn load_with_no_configured_lints_yields_no_passes() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        let config = config_with(root.path(), Vec::new());
+
+        let lints = CustomLints::load(&config).expect("should load");
+
+        assert!(lints.instantiate().is_empty());
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<CustomLints>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<CustomLints>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<CustomLints>();
+    }
+}

@@ -13,7 +13,8 @@
 use std::ffi::CStr;
 
 pub use whisker_types::plugin::{
-    ABI_VERSION, LintRegistrar, PluginDeclaration, RUSTC_VERSION, TYPES_FINGERPRINT, c_str,
+    ABI_VERSION, LintPassFactory, LintRegistrar, PluginDeclaration, RUSTC_VERSION,
+    TYPES_FINGERPRINT, c_str,
 };
 
 /// A fingerprint of the whisker-rust source this crate was compiled from
