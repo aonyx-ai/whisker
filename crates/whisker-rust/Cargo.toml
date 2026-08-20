@@ -40,6 +40,7 @@ whisker-types.workspace = true
 # integration tests assert on diagnostics that real lints draw from real
 # decorations, not on the decorations alone.
 anyhow_missing_context = { path = "../../lints/anyhow_missing_context", default-features = false }
+function_scoped_import = { path = "../../lints/function_scoped_import", default-features = false }
 proptest.workspace = true
 whisker-core.workspace = true
 wildcard_match_arm = { path = "../../lints/wildcard_match_arm", default-features = false }

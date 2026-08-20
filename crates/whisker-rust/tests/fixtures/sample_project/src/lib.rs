@@ -178,6 +178,42 @@ pub fn user_defined_result() -> myres::Result<()> {
     myres::Result::Ok(())
 }
 
+#[allow(non_snake_case)]
+pub mod Shapes {
+    pub fn draw() {}
+}
+
+pub fn import_enum_variants(color: Color) -> bool {
+    use Color::{Green, Red};
+
+    match color {
+        Red => true,
+        Green => false,
+        Color::Blue => false,
+    }
+}
+
+pub fn import_enum_variants_by_glob(color: Color) -> bool {
+    use Color::*;
+
+    match color {
+        Red => true,
+        Green | Blue => false,
+    }
+}
+
+pub fn import_from_module() -> usize {
+    use std::collections::HashMap;
+
+    HashMap::<u8, u8>::new().len()
+}
+
+pub fn import_from_uppercase_module() {
+    use Shapes::draw;
+
+    draw();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

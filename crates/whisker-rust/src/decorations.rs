@@ -7,6 +7,7 @@
 mod adt_flags;
 mod error_type;
 mod fn_signature;
+mod import_source;
 mod resolved_type;
 mod return_mode;
 mod type_path;
@@ -15,6 +16,7 @@ mod type_path_ref;
 pub use adt_flags::AdtFlags;
 pub use error_type::ErrorType;
 pub use fn_signature::FnSignature;
+pub use import_source::ImportSource;
 pub use resolved_type::ResolvedType;
 pub use return_mode::ReturnMode;
 pub use type_path::TypePath;
