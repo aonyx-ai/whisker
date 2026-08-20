@@ -21,7 +21,7 @@ impl RustLintPass for NoMatchesMacro {
         }
 
         vec![Diagnostic::new(
-            RuleId("lint.no-matches-macro"),
+            RuleId::new("lint.no-matches-macro"),
             Severity::Warn,
             "use a full `match` expression instead of `matches!`".into(),
             node.span(),

@@ -30,7 +30,7 @@ impl RustLintPass for NoTodo {
         }
 
         vec![Diagnostic::new(
-            RuleId("custom.no-todo"),
+            RuleId::new("custom.no-todo"),
             Severity::Warn,
             "finish this before it ships".into(),
             node.span(),

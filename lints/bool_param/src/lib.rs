@@ -1,7 +1,7 @@
 use whisker_rust::{RustLintPass, RustLintPassAdapter};
 use whisker_types::{DecoratedNode, Diagnostic, LintPass, RuleId, Severity};
 
-const RULE_ID: RuleId = RuleId("lint.bool-param");
+const RULE_ID: RuleId = RuleId::new("lint.bool-param");
 
 /// Flags `bool` parameters in function signatures and `bool` fields in
 /// struct definitions

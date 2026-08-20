@@ -181,7 +181,7 @@ mod tests {
 
     fn test_diagnostic() -> Diagnostic {
         Diagnostic::new(
-            RuleId("lint.test"),
+            RuleId::new("lint.test"),
             Severity::Warn,
             "test warning".into(),
             Span::new(PathBuf::from("test.rs"), 0, 12),
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn render_to_string_shows_error_severity() {
         let diag = Diagnostic::new(
-            RuleId("lint.err"),
+            RuleId::new("lint.err"),
             Severity::Error,
             "test error".into(),
             Span::new(PathBuf::from("test.rs"), 0, 12),
@@ -283,13 +283,13 @@ mod tests {
     #[test]
     fn render_to_string_renders_multiple_diagnostics() {
         let d1 = Diagnostic::new(
-            RuleId("lint.a"),
+            RuleId::new("lint.a"),
             Severity::Warn,
             "first".into(),
             Span::new(PathBuf::from("test.rs"), 0, 2),
         );
         let d2 = Diagnostic::new(
-            RuleId("lint.b"),
+            RuleId::new("lint.b"),
             Severity::Error,
             "second".into(),
             Span::new(PathBuf::from("test.rs"), 3, 7),
@@ -335,7 +335,7 @@ mod tests {
                 severity in arb_severity(),
             ) {
                 let diag = Diagnostic::new(
-                    RuleId("lint.prop"),
+                    RuleId::new("lint.prop"),
                     severity,
                     message.clone(),
                     Span::new(PathBuf::from("test.rs"), 0, 5),
@@ -352,7 +352,7 @@ mod tests {
                 severity in arb_severity(),
             ) {
                 let diag = Diagnostic::new(
-                    RuleId("lint.propcheck"),
+                    RuleId::new("lint.propcheck"),
                     severity,
                     "msg".into(),
                     Span::new(PathBuf::from("test.rs"), 0, 5),
@@ -371,7 +371,7 @@ mod tests {
                 let diagnostics: Vec<Diagnostic> = (0..count)
                     .map(|i| {
                         Diagnostic::new(
-                            RuleId("lint.multi"),
+                            RuleId::new("lint.multi"),
                             Severity::Warn,
                             format!("diag_{i}"),
                             Span::new(PathBuf::from("test.rs"), 0, 5),

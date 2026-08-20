@@ -13,7 +13,7 @@ impl RustLintPass for MatchArmWildcardFinder {
         let text = node.text();
         if text.starts_with('_') && !text.starts_with("__") {
             vec![Diagnostic::new(
-                RuleId("lint.wildcard-match-arm"),
+                RuleId::new("lint.wildcard-match-arm"),
                 Severity::Warn,
                 "wildcard match arm".into(),
                 node.span(),
@@ -53,7 +53,7 @@ impl RustLintPass for MacroInvocationFinder {
         let text = node.text();
         if text.starts_with("matches!") {
             vec![Diagnostic::new(
-                RuleId("lint.no-matches-macro"),
+                RuleId::new("lint.no-matches-macro"),
                 Severity::Warn,
                 "use of matches! macro".into(),
                 node.span(),
@@ -92,7 +92,7 @@ impl RustLintPass for BoolParamFinder {
         let text = node.text();
         if text.contains(": bool") {
             vec![Diagnostic::new(
-                RuleId("lint.bool-param"),
+                RuleId::new("lint.bool-param"),
                 Severity::Warn,
                 "bool parameter".into(),
                 node.span(),

@@ -62,7 +62,7 @@ impl Diagnostic {
     /// use whisker_types::{Diagnostic, RuleId, Severity, Span};
     ///
     /// let diagnostic = Diagnostic::new(
-    ///     RuleId("lint.bool-param"),
+    ///     RuleId::new("lint.bool-param"),
     ///     Severity::Warn,
     ///     "parameter has type `bool`".into(),
     ///     Span::new(PathBuf::from("src/lib.rs"), 0, 10),
@@ -121,7 +121,7 @@ mod tests {
 
     fn test_diagnostic() -> Diagnostic {
         Diagnostic::new(
-            RuleId("lint.test"),
+            RuleId::new("lint.test"),
             Severity::Warn,
             "test message".into(),
             Span::new(PathBuf::from("test.rs"), 0, 10),
@@ -150,7 +150,7 @@ mod tests {
     fn accessors_return_correct_values() {
         let diag = test_diagnostic();
 
-        assert_eq!(diag.rule_id(), RuleId("lint.test"));
+        assert_eq!(diag.rule_id(), RuleId::new("lint.test"));
         assert_eq!(diag.severity(), Severity::Warn);
         assert_eq!(diag.message(), "test message");
         assert_eq!(diag.span().start(), 0);
@@ -201,7 +201,7 @@ mod tests {
             .with_origin(origin)
             .with_severity(Severity::Error);
 
-        assert_eq!(diag.rule_id(), RuleId("lint.test"));
+        assert_eq!(diag.rule_id(), RuleId::new("lint.test"));
         assert_eq!(diag.message(), "test message");
         assert_eq!(diag.span().start(), 0);
         assert_eq!(diag.origins().len(), 1);
@@ -255,13 +255,13 @@ mod tests {
                 span in arb_span(),
             ) {
                 let diag = Diagnostic::new(
-                    RuleId("lint.prop"),
+                    RuleId::new("lint.prop"),
                     severity,
                     message.clone(),
                     span.clone(),
                 );
 
-                prop_assert_eq!(diag.rule_id(), RuleId("lint.prop"));
+                prop_assert_eq!(diag.rule_id(), RuleId::new("lint.prop"));
                 prop_assert_eq!(diag.severity(), severity);
                 prop_assert_eq!(diag.message(), message);
                 prop_assert_eq!(diag.span(), &span);
@@ -272,7 +272,7 @@ mod tests {
                 severity in arb_severity(),
             ) {
                 let diag = Diagnostic::new(
-                    RuleId("lint.prop"),
+                    RuleId::new("lint.prop"),
                     severity,
                     "msg".into(),
                     Span::new(PathBuf::from("f.rs"), 0, 1),

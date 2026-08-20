@@ -181,7 +181,7 @@ mod tests {
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 if node.kind() == "function_item" {
                     vec![Diagnostic::new(
-                        RuleId(self.0),
+                        RuleId::new(self.0),
                         Severity::Warn,
                         format!("{} found fn", self.0),
                         node.span(),
@@ -198,8 +198,8 @@ mod tests {
         let diagnostics = walk(&tree, &mut passes);
 
         assert_eq!(diagnostics.len(), 2);
-        assert_eq!(diagnostics[0].rule_id(), RuleId("pass.a"));
-        assert_eq!(diagnostics[1].rule_id(), RuleId("pass.b"));
+        assert_eq!(diagnostics[0].rule_id(), RuleId::new("pass.a"));
+        assert_eq!(diagnostics[1].rule_id(), RuleId::new("pass.b"));
     }
 
     #[test]
@@ -210,7 +210,7 @@ mod tests {
         impl LintPass for SpanChecker {
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 vec![Diagnostic::new(
-                    RuleId("test"),
+                    RuleId::new("test"),
                     Severity::Info,
                     "span check".into(),
                     node.span(),
@@ -256,7 +256,7 @@ mod tests {
                         node: &DecoratedNode<'_>,
                     ) -> Vec<Diagnostic> {
                         vec![Diagnostic::new(
-                            whisker_types::RuleId("test"),
+                            whisker_types::RuleId::new("test"),
                             whisker_types::Severity::Warn,
                             "hit".into(),
                             node.span(),

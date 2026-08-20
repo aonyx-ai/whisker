@@ -53,7 +53,7 @@ mod tests {
 
     fn test_diagnostic(severity: Severity) -> Diagnostic {
         Diagnostic::new(
-            RuleId("lint.test"),
+            RuleId::new("lint.test"),
             severity,
             "test message".into(),
             Span::new(PathBuf::from("test.rs"), 0, 10),

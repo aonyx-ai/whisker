@@ -197,7 +197,7 @@ mod tests {
                 return Vec::new();
             };
             vec![Diagnostic::new(
-                RuleId("test.marker"),
+                RuleId::new("test.marker"),
                 Severity::Warn,
                 marker.0.into(),
                 node.span(),
@@ -310,7 +310,7 @@ mod tests {
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 if node.kind() == "function_item" {
                     vec![Diagnostic::new(
-                        RuleId("test.always"),
+                        RuleId::new("test.always"),
                         Severity::Warn,
                         "found function".into(),
                         node.span(),
