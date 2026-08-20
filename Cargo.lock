@@ -2941,7 +2941,6 @@ dependencies = [
  "rustc_version",
  "tree-sitter",
  "tree-sitter-rust",
- "whisker-codegen",
 ]
 
 [[package]]

@@ -1,3 +1,5 @@
+use std::mem::offset_of;
+
 use crate::Span;
 
 /// A suggested source code replacement
@@ -36,6 +38,17 @@ impl Suggestion {
         &self.message
     }
 }
+
+/// The offsets of every field, in declaration order
+///
+/// The plugin handshake hashes these so a plugin that places a field
+/// somewhere else is refused rather than trusted. They live beside the
+/// struct, because a field added there has to be added here too.
+pub(crate) const FIELD_OFFSETS: &[usize] = &[
+    offset_of!(Suggestion, span),
+    offset_of!(Suggestion, replacement),
+    offset_of!(Suggestion, message),
+];
 
 #[cfg(test)]
 mod tests {

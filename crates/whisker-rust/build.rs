@@ -4,13 +4,16 @@ use std::path::Path;
 
 use whisker_codegen::Fingerprint;
 
-/// Generates the lint pass trait and fingerprints the crate for plugins
+/// Generates the lint pass trait and fingerprints it for plugins
 ///
-/// The fingerprint covers the sources and the generated code, and joins
-/// the custom lint plugin handshake as the language fingerprint. Hashing
-/// the generated trait matters: a plugin whose dispatch was generated from
-/// a different grammar would not crash, its checks would just quietly
-/// never fire, and the handshake turns that into a visible refusal.
+/// The fingerprint covers the generated code alone, and joins the custom
+/// lint plugin handshake as half of the language fingerprint. Hashing the
+/// generated trait matters: a plugin whose dispatch was generated from a
+/// different grammar would not crash, its checks would just quietly never
+/// fire, and the handshake turns that into a visible refusal. It stops
+/// there because the rest of this crate's source does not shape the
+/// boundary, and hashing it would refuse every plugin in the tree over an
+/// edit that moved nothing.
 fn main() {
     let node_types_json = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/node-types.json"));
 
@@ -21,13 +24,14 @@ fn main() {
     let dest = Path::new(&out_dir).join("rust_lint_pass.rs");
     fs::write(&dest, &code).expect("failed to write generated visitor");
 
-    println!("cargo::rerun-if-changed=src");
+    println!("cargo::rerun-if-changed=src/node-types.json");
 
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("cargo should set CARGO_MANIFEST_DIR");
     let mut fingerprint = Fingerprint::new();
-    fingerprint
-        .add_directory(&Path::new(&manifest_dir).join("src"))
-        .expect("failed to read the crate sources");
     fingerprint.add_bytes(code.as_bytes());
-    println!("cargo::rustc-env=WHISKER_RUST_FINGERPRINT={fingerprint}");
+    let dest = Path::new(&out_dir).join("visitor_fingerprint.rs");
+    fs::write(
+        &dest,
+        format!("pub const VISITOR_FINGERPRINT: u64 = 0x{fingerprint};\n"),
+    )
+    .expect("failed to write the visitor fingerprint");
 }

@@ -102,11 +102,11 @@ decorations, the same test harness — and enters through
 `export_lints!` instead of the CLI's pass list.
 
 Rust has no stable ABI, so a loaded library is only coherent with the
-whisker binary when the same rustc compiled both from the same whisker
-source. Whisker establishes that before trusting anything: the plugin's
-declaration carries the compiler's identity and build-time fingerprints
-of the whisker crates whose types cross the boundary, and the loader
-refuses the library at the first mismatch.
+whisker binary when the same rustc compiled both and both lay the
+boundary out the same way. Whisker establishes that before trusting
+anything: the plugin's declaration carries the compiler's identity and a
+fingerprint of each side of the boundary, and the loader refuses the
+library at the first mismatch.
 
 The failure mode this guards against is not a crash but silence — a
 plugin built against drifted source would mostly _seem_ to work, and
@@ -115,7 +115,19 @@ a visible refusal. For the same reason, decorations are recovered by a
 name-based key rather than `TypeId`, which is not stable across
 separately compiled crate graphs.
 
-The fingerprints reach whisker's own sources, not the graph a plugin's
+The fingerprints hash layout, not source text: the size, alignment, and
+field offsets of every type that crosses, plus the lint pass trait
+whisker-rust generates from the grammar. An earlier revision hashed the
+crates' source directories, which meant a doc comment refused every
+plugin in the tree until each was rebuilt — a cost that scales with the
+number of plugins and buys nothing, since text that moves no field
+threatens nothing. What layout cannot cover is the method order of
+`LintPass` and `LintRegistrar`, because a vtable is ordered by
+declaration and no const reads that back; those belong to the
+declaration's `ABI_VERSION`, and a test fails when either trait's method
+list moves so the bump is not left to memory.
+
+The fingerprints reach whisker's own layout, not the graph a plugin's
 lockfile resolves for itself. `tree_sitter::Node` crosses the boundary
 as a `#[repr(transparent)]` wrapper around a `#[repr(C)]` struct of the
 C library, so a version difference there moves no field, but it does

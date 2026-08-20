@@ -1,3 +1,4 @@
+use std::mem::offset_of;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -48,6 +49,17 @@ impl Span {
         self.end
     }
 }
+
+/// The offsets of every field, in declaration order
+///
+/// The plugin handshake hashes these so a plugin that places a field
+/// somewhere else is refused rather than trusted. They live beside the
+/// struct, because a field added there has to be added here too.
+pub(crate) const FIELD_OFFSETS: &[usize] = &[
+    offset_of!(Span, file),
+    offset_of!(Span, start),
+    offset_of!(Span, end),
+];
 
 #[cfg(test)]
 mod tests {
