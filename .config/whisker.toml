@@ -35,6 +35,9 @@ path = "lints/missing_trait_tests"
 path = "lints/no_commented_out_code"
 
 [[lints]]
+path = "lints/no_em_dash_aside"
+
+[[lints]]
 path = "lints/no_inline_comments"
 
 [[lints]]
