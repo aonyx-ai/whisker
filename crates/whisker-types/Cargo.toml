@@ -13,5 +13,9 @@ tree-sitter.workspace = true
 proptest.workspace = true
 tree-sitter-rust.workspace = true
 
+[build-dependencies]
+rustc_version.workspace = true
+whisker-codegen.workspace = true
+
 [lints]
 workspace = true
