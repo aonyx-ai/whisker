@@ -1,23 +1,109 @@
-use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::fmt;
+use std::ptr::NonNull;
+
+use crate::{Decoration, DecorationKey};
 
 /// Storage for per-node decorations on a syntax tree
 ///
-/// Decorations are semantic annotations attached to tree-sitter nodes by
-/// decoration providers. Each node (keyed by its `id()`) can carry multiple
-/// decorations of different types. Decorations are type-erased via
-/// [`Any`] and retrieved by downcast.
+/// A decoration provider attaches semantic annotations to tree-sitter
+/// nodes, and this map holds them. Each node (keyed by its `id()`) can
+/// carry multiple decorations of different types. The map erases each
+/// value's type on insertion and recovers it by comparing
+/// [`Decoration::KEY`]s rather than [`TypeId`]s, because the whisker
+/// binary and a custom lint plugin compile the same decoration types into
+/// different [`TypeId`]s, and a lookup keyed on them would silently come
+/// back empty across that boundary.
 ///
-/// [`Any`]: std::any::Any
+/// [`TypeId`]: std::any::TypeId
 #[derive(Debug, Default)]
 pub struct DecorationMap {
     entries: HashMap<usize, Vec<ErasedDecoration>>,
 }
 
-#[derive(Debug)]
 struct ErasedDecoration {
-    type_id: TypeId,
-    value: Box<dyn Any + Send + Sync>,
+    key: DecorationKey,
+    value: ErasedValue,
+}
+
+impl fmt::Debug for ErasedDecoration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ErasedDecoration")
+            .field("key", &self.key)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An owned decoration with its type erased
+///
+/// [`Box<dyn Any>`] cannot store decorations, because downcasting goes
+/// through [`TypeId`] and a plugin's [`TypeId`] for a type differs from the
+/// host's. The map instead keeps a raw pointer to the boxed value together
+/// with the drop glue it captures at insertion, and [`DecorationMap::get`]
+/// recovers the concrete type from a [`Decoration::KEY`] match, which the
+/// unsafe [`Decoration`] contract makes sufficient.
+///
+/// The `Send` and `Sync` implementations are sound because the only
+/// constructor, [`ErasedValue::new`], requires [`Decoration`], which itself
+/// requires `Send + Sync`.
+///
+/// [`Box<dyn Any>`]: std::any::Any
+/// [`TypeId`]: std::any::TypeId
+struct ErasedValue {
+    ptr: NonNull<()>,
+    drop: unsafe fn(NonNull<()>),
+}
+
+unsafe impl Send for ErasedValue {}
+unsafe impl Sync for ErasedValue {}
+
+impl ErasedValue {
+    fn new<T: Decoration>(value: T) -> Self {
+        let ptr = NonNull::from(Box::leak(Box::new(value))).cast::<()>();
+
+        Self {
+            ptr,
+            drop: drop_boxed::<T>,
+        }
+    }
+
+    /// Returns the stored value as a `T`
+    ///
+    /// # Safety
+    ///
+    /// The caller must know that this value was created from a `T`. The
+    /// map establishes that by comparing [`Decoration::KEY`]s:
+    /// [`DecorationMap::insert`] creates every entry under the inserted
+    /// type's key, and the unsafe [`Decoration`] contract makes a key name
+    /// exactly one type definition.
+    ///
+    /// Where the host and a plugin compiled that definition separately,
+    /// the cast rests on one more fact: that both images laid the
+    /// definition out the same way. Rust promises nothing of the sort
+    /// between compilations, so the plugin handshake establishes it
+    /// instead, refusing any library that a different compiler or a
+    /// different whisker source produced.
+    unsafe fn get_unchecked<T>(&self) -> &T {
+        unsafe { self.ptr.cast::<T>().as_ref() }
+    }
+}
+
+impl Drop for ErasedValue {
+    fn drop(&mut self) {
+        unsafe { (self.drop)(self.ptr) }
+    }
+}
+
+/// Drops the boxed `T` behind an erased pointer
+///
+/// # Safety
+///
+/// `ptr` must have come from [`Box::leak`] on a `Box<T>` and must not be
+/// used again afterwards. [`ErasedValue`] guarantees both: it stores the
+/// pointer next to this function at construction and only calls it from
+/// [`Drop`].
+unsafe fn drop_boxed<T>(ptr: NonNull<()>) {
+    drop(unsafe { Box::from_raw(ptr.cast::<T>().as_ptr()) });
 }
 
 impl DecorationMap {
@@ -27,10 +113,10 @@ impl DecorationMap {
     }
 
     /// Attaches a decoration to the node with the given tree-sitter node ID
-    pub fn insert<T: Any + Send + Sync>(&mut self, node_id: usize, value: T) {
+    pub fn insert<T: Decoration>(&mut self, node_id: usize, value: T) {
         let entry = ErasedDecoration {
-            type_id: TypeId::of::<T>(),
-            value: Box::new(value),
+            key: T::KEY,
+            value: ErasedValue::new(value),
         };
         self.entries.entry(node_id).or_default().push(entry);
     }
@@ -38,13 +124,12 @@ impl DecorationMap {
     /// Retrieves the first decoration of type `T` attached to the given node
     ///
     /// Returns [`None`] if no decoration of that type exists for this node.
-    pub fn get<T: Any + Send + Sync>(&self, node_id: usize) -> Option<&T> {
+    pub fn get<T: Decoration>(&self, node_id: usize) -> Option<&T> {
         let decorations = self.entries.get(&node_id)?;
-        let target = TypeId::of::<T>();
         decorations
             .iter()
-            .find(|d| d.type_id == target)
-            .and_then(|d| d.value.downcast_ref())
+            .find(|d| d.key == T::KEY)
+            .map(|d| unsafe { d.value.get_unchecked::<T>() })
     }
 
     /// Merges another map into this one
@@ -59,15 +144,14 @@ impl DecorationMap {
     }
 
     /// Retrieves all decorations of type `T` attached to the given node
-    pub fn get_all<T: Any + Send + Sync>(&self, node_id: usize) -> Vec<&T> {
+    pub fn get_all<T: Decoration>(&self, node_id: usize) -> Vec<&T> {
         let Some(decorations) = self.entries.get(&node_id) else {
             return Vec::new();
         };
-        let target = TypeId::of::<T>();
         decorations
             .iter()
-            .filter(|d| d.type_id == target)
-            .filter_map(|d| d.value.downcast_ref())
+            .filter(|d| d.key == T::KEY)
+            .map(|d| unsafe { d.value.get_unchecked::<T>() })
             .collect()
     }
 }
@@ -75,12 +159,33 @@ impl DecorationMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DecoratedNode;
 
-    #[derive(Debug)]
+    #[derive(Eq, PartialEq, Debug)]
     struct TypeInfo(String);
 
-    #[derive(Debug)]
+    unsafe impl Decoration for TypeInfo {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::TypeInfo"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
+
+    #[derive(Eq, PartialEq, Debug)]
     struct Scope(u32);
+
+    unsafe impl Decoration for Scope {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Scope"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
 
     #[test]
     fn trait_send() {
@@ -104,6 +209,27 @@ mod tests {
     fn get_on_empty_map_returns_none() {
         let map = DecorationMap::new();
         assert!(map.get::<TypeInfo>(0).is_none());
+    }
+
+    #[test]
+    fn get_retrieves_a_zero_sized_decoration() {
+        #[derive(Eq, PartialEq, Debug)]
+        struct Present;
+
+        unsafe impl Decoration for Present {
+            const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Present"));
+
+            type Ref<'a> = Option<&'a Self>;
+
+            fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+                node.decoration::<Self>()
+            }
+        }
+
+        let mut map = DecorationMap::new();
+        map.insert(7, Present);
+
+        assert_eq!(map.get::<Present>(7), Some(&Present));
     }
 
     #[test]
@@ -219,14 +345,53 @@ mod tests {
 
         use super::*;
 
+        #[derive(Eq, PartialEq, Debug)]
+        struct Value(u64);
+
+        unsafe impl Decoration for Value {
+            const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Value"));
+
+            type Ref<'a> = Option<&'a Self>;
+
+            fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+                node.decoration::<Self>()
+            }
+        }
+
+        #[derive(Eq, PartialEq, Debug)]
+        struct Count(u32);
+
+        unsafe impl Decoration for Count {
+            const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Count"));
+
+            type Ref<'a> = Option<&'a Self>;
+
+            fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+                node.decoration::<Self>()
+            }
+        }
+
+        #[derive(Eq, PartialEq, Debug)]
+        struct Signed(i64);
+
+        unsafe impl Decoration for Signed {
+            const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Signed"));
+
+            type Ref<'a> = Option<&'a Self>;
+
+            fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+                node.decoration::<Self>()
+            }
+        }
+
         proptest! {
             #[test]
             fn insert_then_get_roundtrips(node_id: usize, value: u64) {
                 let mut map = DecorationMap::new();
-                map.insert(node_id, value);
+                map.insert(node_id, Value(value));
 
-                let result = map.get::<u64>(node_id);
-                prop_assert_eq!(result, Some(&value));
+                let result = map.get::<Value>(node_id);
+                prop_assert_eq!(result, Some(&Value(value)));
             }
 
             #[test]
@@ -237,17 +402,17 @@ mod tests {
             ) {
                 prop_assume!(insert_id != query_id);
                 let mut map = DecorationMap::new();
-                map.insert(insert_id, value);
+                map.insert(insert_id, Value(value));
 
-                prop_assert!(map.get::<u64>(query_id).is_none());
+                prop_assert!(map.get::<Value>(query_id).is_none());
             }
 
             #[test]
             fn get_with_wrong_type_returns_none(node_id: usize, value: u64) {
                 let mut map = DecorationMap::new();
-                map.insert(node_id, value);
+                map.insert(node_id, Value(value));
 
-                prop_assert!(map.get::<i32>(node_id).is_none());
+                prop_assert!(map.get::<Count>(node_id).is_none());
             }
 
             #[test]
@@ -257,10 +422,10 @@ mod tests {
             ) {
                 let mut map = DecorationMap::new();
                 for v in &values {
-                    map.insert(node_id, *v);
+                    map.insert(node_id, Count(*v));
                 }
 
-                let results = map.get_all::<u32>(node_id);
+                let results = map.get_all::<Count>(node_id);
                 prop_assert_eq!(results.len(), values.len());
             }
 
@@ -271,11 +436,11 @@ mod tests {
             ) {
                 let mut map = DecorationMap::new();
                 for v in &values {
-                    map.insert(node_id, *v);
+                    map.insert(node_id, Count(*v));
                 }
 
-                let results = map.get_all::<u32>(node_id);
-                let result_values: Vec<u32> = results.into_iter().copied().collect();
+                let results = map.get_all::<Count>(node_id);
+                let result_values: Vec<u32> = results.into_iter().map(|c| c.0).collect();
                 prop_assert_eq!(result_values, values);
             }
 
@@ -290,11 +455,11 @@ mod tests {
 
                 let mut map = DecorationMap::new();
                 for (node_id, value) in &left {
-                    map.insert(*node_id, *value);
+                    map.insert(*node_id, Count(*value));
                 }
                 let mut other = DecorationMap::new();
                 for (node_id, value) in &right {
-                    other.insert(*node_id, *value);
+                    other.insert(*node_id, Count(*value));
                 }
 
                 map.merge(other);
@@ -305,11 +470,11 @@ mod tests {
             #[test]
             fn different_types_do_not_interfere(node_id: usize, a: u32, b: i64) {
                 let mut map = DecorationMap::new();
-                map.insert(node_id, a);
-                map.insert(node_id, b);
+                map.insert(node_id, Count(a));
+                map.insert(node_id, Signed(b));
 
-                prop_assert_eq!(map.get::<u32>(node_id), Some(&a));
-                prop_assert_eq!(map.get::<i64>(node_id), Some(&b));
+                prop_assert_eq!(map.get::<Count>(node_id), Some(&Count(a)));
+                prop_assert_eq!(map.get::<Signed>(node_id), Some(&Signed(b)));
             }
         }
     }

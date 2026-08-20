@@ -77,6 +77,20 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use crate::{Decoration, DecorationKey};
+
+    #[derive(Eq, PartialEq, Debug)]
+    struct Tag(u32);
+
+    unsafe impl Decoration for Tag {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Tag"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
 
     fn parse_tree(source: &str) -> tree_sitter::Tree {
         let mut parser = tree_sitter::Parser::new();
@@ -111,11 +125,11 @@ mod tests {
         let mut decorated = DecoratedTree::new(tree, source.into(), PathBuf::from("test.rs"));
         let root_id = decorated.root_node().id();
         let mut decorations = DecorationMap::new();
-        decorations.insert(root_id, 7u32);
+        decorations.insert(root_id, Tag(7));
 
         decorated.merge_decorations(decorations);
 
-        assert_eq!(decorated.root_node().decoration::<u32>(), Some(&7));
+        assert_eq!(decorated.root_node().decoration::<Tag>(), Some(&Tag(7)));
     }
 
     #[test]
@@ -125,17 +139,17 @@ mod tests {
         let mut decorated = DecoratedTree::new(tree, source.into(), PathBuf::from("test.rs"));
         let root_id = decorated.root_node().id();
         let mut first = DecorationMap::new();
-        first.insert(root_id, 1u32);
+        first.insert(root_id, Tag(1));
         let mut second = DecorationMap::new();
-        second.insert(root_id, 2u32);
+        second.insert(root_id, Tag(2));
 
         decorated.merge_decorations(first);
         decorated.merge_decorations(second);
 
-        assert_eq!(decorated.root_node().decoration::<u32>(), Some(&1));
+        assert_eq!(decorated.root_node().decoration::<Tag>(), Some(&Tag(1)));
         assert_eq!(
-            decorated.root_node().decorations_of_type::<u32>(),
-            vec![&1, &2]
+            decorated.root_node().decorations_of_type::<Tag>(),
+            vec![&Tag(1), &Tag(2)]
         );
     }
 

@@ -122,8 +122,8 @@ mod tests {
     use std::path::PathBuf;
 
     use whisker_types::{
-        CoverageGap, DecoratedNode, DecorationMap, Diagnostic, Language, ProviderName, RuleId,
-        Severity,
+        CoverageGap, DecoratedNode, Decoration, DecorationKey, DecorationMap, Diagnostic, Language,
+        ProviderName, RuleId, Severity,
     };
 
     use super::*;
@@ -171,6 +171,16 @@ mod tests {
 
     #[derive(Debug)]
     struct Marker(&'static str);
+
+    unsafe impl Decoration for Marker {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Marker"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
 
     /// Reports whichever [`Marker`] a provider left on the root node
     ///

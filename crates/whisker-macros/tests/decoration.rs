@@ -102,3 +102,33 @@ fn lookup_can_be_called_through_the_trait() {
 
     assert_eq!(found.expect("should be present").0, "u32");
 }
+
+/// Two types of one name in two function bodies must stay apart
+///
+/// `module_path!` cannot see a function body, so a key built from the
+/// module path and the name alone would be the same for both, and the map
+/// would hand a lookup of one the other's memory.
+#[test]
+fn same_named_types_in_two_functions_do_not_collide() {
+    fn decorate(tree: &mut DecoratedTree) -> u64 {
+        #[derive(Decoration)]
+        #[decoration(cardinality = "one")]
+        struct Local(u64);
+
+        let id = tree.root_node().id();
+        tree.decorations_mut().insert(id, Local(7));
+
+        tree.root_node().get::<Local>().expect("should read back").0
+    }
+
+    #[derive(Decoration)]
+    #[decoration(cardinality = "one")]
+    struct Local;
+
+    let mut tree = parse("fn main() {}");
+
+    let decorated = decorate(&mut tree);
+
+    assert_eq!(decorated, 7);
+    assert!(tree.root_node().get::<Local>().is_none());
+}

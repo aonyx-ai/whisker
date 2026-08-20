@@ -31,6 +31,7 @@ ra_ap_syntax = { workspace = true, optional = true }
 ra_ap_vfs = { workspace = true, optional = true }
 tree-sitter.workspace = true
 tree-sitter-rust.workspace = true
+whisker-macros.workspace = true
 whisker-types.workspace = true
 
 [dev-dependencies]

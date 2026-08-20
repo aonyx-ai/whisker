@@ -219,9 +219,22 @@ impl DiagnosticAssertion<'_> {
 
 #[cfg(test)]
 mod tests {
-    use whisker_types::{DecoratedNode, Diagnostic, RuleId, Severity};
+    use whisker_types::{DecoratedNode, Decoration, DecorationKey, Diagnostic, RuleId, Severity};
 
     use super::*;
+
+    #[derive(Eq, PartialEq, Debug)]
+    struct Tag(u32);
+
+    unsafe impl Decoration for Tag {
+        const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Tag"));
+
+        type Ref<'a> = Option<&'a Self>;
+
+        fn lookup<'a>(node: &DecoratedNode<'a>) -> Self::Ref<'a> {
+            node.decoration::<Self>()
+        }
+    }
 
     #[test]
     fn trait_send() {
@@ -304,10 +317,10 @@ mod tests {
     fn decorate_replaces_decoration_map() {
         let mut tree = parse("fn main() {}", Language::Rust);
         let mut map = DecorationMap::new();
-        map.insert(0, 42u32);
+        map.insert(0, Tag(42));
         decorate(&mut tree, map);
 
-        assert_eq!(tree.decorations_mut().get::<u32>(0), Some(&42));
+        assert_eq!(tree.decorations_mut().get::<Tag>(0), Some(&Tag(42)));
     }
 
     mod prop {
