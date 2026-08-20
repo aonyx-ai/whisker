@@ -38,4 +38,7 @@ path = "lints/no_matches_macro"
 path = "lints/no_todo_comments"
 
 [[lints]]
+path = "lints/shadow_transformations"
+
+[[lints]]
 path = "lints/wildcard_match_arm"
