@@ -15,14 +15,9 @@ workspace = true
 
 [dependencies]
 anyhow = "1"
-anyhow_missing_context = { path = "../../lints/anyhow_missing_context" }
-bool_param = { path = "../../lints/bool_param" }
 clawless = "0.5.0"
-derive_order = { path = "../../lints/derive_order" }
-if_let_with_else = { path = "../../lints/if_let_with_else" }
 ignore.workspace = true
 libloading.workspace = true
-no_matches_macro = { path = "../../lints/no_matches_macro" }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
@@ -30,10 +25,10 @@ whisker-core = { path = "../whisker-core" }
 whisker-reporting = { path = "../whisker-reporting" }
 whisker-rust = { path = "../whisker-rust" }
 whisker-types = { path = "../whisker-types" }
-wildcard_match_arm = { path = "../../lints/wildcard_match_arm" }
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
 tempfile.workspace = true
+toml.workspace = true
 trycmd = "1.0"

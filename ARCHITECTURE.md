@@ -96,8 +96,13 @@ finding in code it cannot analyze than report one it cannot justify.
 
 A target project can configure lint crates of its own, and `whisker
 check` compiles each one at check time, loads the built dynamic library,
-and runs the exported rules alongside the built-ins. A custom lint is
-written exactly like a built-in — the same generated trait, the same
+and runs the exported rules. There is nothing else to run: whisker links
+no rules, so a rule the configuration omits does not run however complete
+its own tests are, and nothing is enabled by default. The rules in
+`lints/` are plugins on exactly these terms, each its own cargo package
+outside the workspace, which is why `.config/whisker.toml` names all six.
+A rule written elsewhere is written the same way — the same generated
+trait, the same
 decorations, the same test harness — and enters through
 `export_lints!` instead of the CLI's pass list.
 
@@ -141,7 +146,10 @@ than rustc's internals, and compatibility is checked instead of assumed.
 
 ## Workspace layout
 
-The platform lives in `crates/`, each lint in `lints/`.
+The platform lives in `crates/`. Each rule is its own cargo package in
+`lints/`, outside the workspace, resolving its own dependencies the way a
+rule written outside this repository does; `just test-lints` and
+`just check-lints` reach them, the workspace test run does not.
 
 | Crate               | Role                                               |
 | ------------------- | -------------------------------------------------- |

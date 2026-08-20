@@ -110,6 +110,9 @@ fn is_diverging_macro(node: &DecoratedNode<'_>) -> bool {
     DIVERGING_MACROS.contains(&name)
 }
 
+#[cfg(feature = "plugin")]
+whisker_rust::export_lints![IfLetWithElse];
+
 #[cfg(test)]
 mod tests {
     use whisker_rust::RustLintPassAdapter;

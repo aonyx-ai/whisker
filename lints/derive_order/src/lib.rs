@@ -117,6 +117,9 @@ impl RustLintPass for DeriveOrder {
     }
 }
 
+#[cfg(feature = "plugin")]
+whisker_rust::export_lints![DeriveOrder];
+
 #[cfg(test)]
 mod tests {
     use whisker_testing::{assert_diagnostic, assert_no_diagnostics, execute, parse};

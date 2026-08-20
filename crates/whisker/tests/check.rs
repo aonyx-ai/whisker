@@ -50,6 +50,33 @@ fn package(source: &str) -> TempDir {
     directory
 }
 
+/// Configures a package to run the `bool_param` rule
+///
+/// Whisker links no rules, so a fixture that expects a diagnostic has to
+/// name one. Pointing at the rule in this repository rather than at a
+/// purpose-built stub means the test exercises the whole path a real
+/// project takes: whisker builds the package, loads the library, and
+/// completes the handshake before a single file is walked.
+fn with_bool_param(directory: TempDir) -> TempDir {
+    let lint = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../lints/bool_param")
+        .canonicalize()
+        .expect("the bool_param rule should be in this repository");
+    let config = directory.path().join(".config");
+    std::fs::create_dir_all(&config).expect("the config directory should be created");
+    std::fs::write(
+        config.join("whisker.toml"),
+        toml::to_string(&toml::toml! {
+            [[lints]]
+            path = (lint.to_str().expect("the path should be UTF-8"))
+        })
+        .expect("the configuration should serialize"),
+    )
+    .expect("the configuration should be written");
+
+    directory
+}
+
 /// Creates a package whose `src` holds Rust files no module declares
 ///
 /// An orphan is a file the walk finds but no crate reaches, which is the
@@ -417,7 +444,7 @@ fn check_single_file_succeeds() {
 
 #[test]
 fn check_with_deny_warnings_fails_on_warnings() {
-    let package = package(WARNING_SOURCE);
+    let package = with_bool_param(package(WARNING_SOURCE));
 
     whisker()
         .args(["check", "--deny-warnings"])
@@ -506,7 +533,7 @@ fn check_with_unreadable_file_and_no_keep_going_fails() {
 
 #[test]
 fn check_without_deny_warnings_reports_warnings_and_succeeds() {
-    let package = package(WARNING_SOURCE);
+    let package = with_bool_param(package(WARNING_SOURCE));
 
     whisker()
         .arg("check")

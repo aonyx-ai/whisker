@@ -1,5 +1,26 @@
 # Whisker reads this file when `whisker check` runs against this repository.
 # The patterns below anchor at the repository root, not at `.config`.
-# Both paths hold code that breaks whisker's own lints on purpose. Neither is
-# part of the Cargo build, so rust-analyzer never sees them.
-ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
+# `/examples/` and the fixtures hold code that breaks whisker's own lints on
+# purpose. `/lints/` is different: each rule is its own cargo package outside
+# this workspace, so the toolchain a check of the repository loads never
+# reaches those files and no provider can cover them. `just check-lints`
+# checks each one against itself instead.
+ignore = ["/examples/", "/lints/", "crates/whisker-rust/tests/fixtures/"]
+
+[[lints]]
+path = "lints/wildcard_match_arm"
+
+[[lints]]
+path = "lints/anyhow_missing_context"
+
+[[lints]]
+path = "lints/bool_param"
+
+[[lints]]
+path = "lints/derive_order"
+
+[[lints]]
+path = "lints/if_let_with_else"
+
+[[lints]]
+path = "lints/no_matches_macro"
