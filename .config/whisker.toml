@@ -17,6 +17,9 @@ path = "lints/bool_param"
 path = "lints/derive_order"
 
 [[lints]]
+path = "lints/explicit_destructuring"
+
+[[lints]]
 path = "lints/if_let_with_else"
 
 [[lints]]
