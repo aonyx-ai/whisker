@@ -23,6 +23,9 @@ path = "lints/explicit_destructuring"
 path = "lints/if_let_with_else"
 
 [[lints]]
+path = "lints/long_doc_sentence"
+
+[[lints]]
 path = "lints/missing_examples_doc"
 
 [[lints]]
