@@ -23,6 +23,9 @@ path = "lints/if_let_with_else"
 path = "lints/missing_examples_doc"
 
 [[lints]]
+path = "lints/missing_trait_tests"
+
+[[lints]]
 path = "lints/no_commented_out_code"
 
 [[lints]]
