@@ -20,6 +20,9 @@ path = "lints/derive_order"
 path = "lints/if_let_with_else"
 
 [[lints]]
+path = "lints/missing_examples_doc"
+
+[[lints]]
 path = "lints/no_commented_out_code"
 
 [[lints]]

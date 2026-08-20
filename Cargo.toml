@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/*"]
-exclude = ["examples/*", "lints/anyhow_missing_context", "lints/bool_param", "lints/derive_order", "lints/if_let_with_else", "lints/no_commented_out_code", "lints/no_inline_comments", "lints/no_matches_macro", "lints/no_todo_comments", "lints/wildcard_match_arm"]
+exclude = ["examples/*", "lints/anyhow_missing_context", "lints/bool_param", "lints/derive_order", "lints/if_let_with_else", "lints/missing_examples_doc", "lints/no_commented_out_code", "lints/no_inline_comments", "lints/no_matches_macro", "lints/no_todo_comments", "lints/wildcard_match_arm"]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
 # https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
