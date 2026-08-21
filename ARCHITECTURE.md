@@ -106,6 +106,22 @@ trait, the same
 decorations, the same test harness — and enters through
 `export_lints!` instead of the CLI's pass list.
 
+An entry names either a directory or a repository pinned to one commit.
+The two meet immediately: a git entry is fetched into a cache under
+`~/.cache/whisker` and from there is a directory like any other. The fetch
+asks the remote for that single commit, at depth one, over gitoxide rather
+than the `git` binary, so whisker's behavior does not depend on which git
+a machine has or whether it has one. Because a commit hash names an
+immutable tree, a checkout that exists is never refreshed and never
+revalidated against the remote, which is what keeps the network out of the
+common path. Only a git entry builds with `--locked`: the pin is worth
+what the lockfile behind it is worth.
+
+A directory may hold one package or a workspace of them, and every dynamic
+library the build produces is loaded and handshaken separately. That is
+what lets a repository of rules arrive through a single entry rather than
+one entry per rule.
+
 Rust has no stable ABI, so a loaded library is only coherent with the
 whisker binary when the same rustc compiled both and both lay the
 boundary out the same way. Whisker establishes that before trusting

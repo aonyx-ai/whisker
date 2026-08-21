@@ -3,23 +3,29 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use serde::Deserialize;
 
+mod git_rev;
+mod git_url;
 mod ignore_pattern;
 mod lint_path;
+mod lint_source;
 
+pub use git_rev::GitRev;
+pub use git_url::GitUrl;
 pub use ignore_pattern::IgnorePattern;
 pub use lint_path::LintPath;
+pub use lint_source::{GitLintSource, LintSource};
 
 /// Whisker's configuration for a single target project
 ///
 /// Whisker reads a TOML file that any project can write, whatever language
 /// it is in. The file holds the [`IgnorePattern`]s that exclude files from
-/// discovery and the [`LintPath`]s of the project's custom lints. Both
+/// discovery and the [`LintSource`]s of the project's custom lints. Both
 /// anchor at the project directory, which [`WhiskerConfig::root`] returns.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct WhiskerConfig {
     root: PathBuf,
     ignore: Vec<IgnorePattern>,
-    lints: Vec<LintPath>,
+    lints: Vec<LintSource>,
 }
 
 impl WhiskerConfig {
@@ -34,7 +40,7 @@ impl WhiskerConfig {
     ///     Vec::new(),
     /// );
     /// ```
-    pub fn new(root: PathBuf, ignore: Vec<IgnorePattern>, lints: Vec<LintPath>) -> Self {
+    pub fn new(root: PathBuf, ignore: Vec<IgnorePattern>, lints: Vec<LintSource>) -> Self {
         Self {
             root,
             ignore,
@@ -54,7 +60,8 @@ impl WhiskerConfig {
     ///
     /// Returns an error if `path` cannot be resolved, or if one directory
     /// holds both accepted file names. A file that whisker cannot read as an
-    /// `ignore` list of strings is also an error. An unrecognized key is an
+    /// `ignore` list of strings is also an error, as is a `[[lints]]` entry
+    /// that does not describe exactly one source. An unrecognized key is an
     /// error too, because it is most likely a typo.
     ///
     /// # Examples
@@ -80,8 +87,9 @@ impl WhiskerConfig {
         let ignore = ignore.into_iter().map(IgnorePattern::new).collect();
         let lints = lints
             .into_iter()
-            .map(|LintEntry { path }| LintPath::new(path))
-            .collect();
+            .map(LintEntry::into_source)
+            .collect::<anyhow::Result<Vec<_>>>()
+            .with_context(|| format!("failed to read {}", file.display()))?;
 
         Ok(Self::new(root, ignore, lints))
     }
@@ -116,10 +124,10 @@ impl WhiskerConfig {
         &self.ignore
     }
 
-    /// Returns the paths of the project's custom lint crates
+    /// Returns the sources of the project's custom lint crates
     ///
-    /// Relative paths anchor at [`WhiskerConfig::root`]; resolve them with
-    /// [`LintPath::resolve`].
+    /// A [`LintSource::Path`] holding a relative path anchors at
+    /// [`WhiskerConfig::root`]; resolve it with [`LintPath::resolve`].
     ///
     /// # Examples
     ///
@@ -128,7 +136,7 @@ impl WhiskerConfig {
     ///
     /// assert!(config.lints().is_empty());
     /// ```
-    pub fn lints(&self) -> &[LintPath] {
+    pub fn lints(&self) -> &[LintSource] {
         &self.lints
     }
 }
@@ -150,12 +158,65 @@ struct ConfigTable {
 
 /// One `[[lints]]` entry as written on disk
 ///
-/// An entry is a table rather than a bare string, so options like a build
-/// profile can join `path` later without another shape change.
+/// The fields are all optional here and sorted out by
+/// [`LintEntry::into_source`] rather than by an untagged enum, because
+/// serde reports a failed untagged match as "data did not match any
+/// variant" and the author of a broken entry deserves to be told which
+/// combination they wrote and what to do about it.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LintEntry {
-    path: String,
+    #[serde(default)]
+    path: Option<String>,
+
+    #[serde(default)]
+    git: Option<String>,
+
+    #[serde(default)]
+    rev: Option<String>,
+}
+
+impl LintEntry {
+    /// Turns one configured entry into the source it describes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the entry names neither a path nor a
+    /// repository, names both, omits the revision a repository needs, or
+    /// pins a path to a revision. Each case names the keys it saw, since
+    /// the fix differs for every one of them.
+    fn into_source(self) -> anyhow::Result<LintSource> {
+        let Self { path, git, rev } = self;
+
+        match (path, git, rev) {
+            (Some(_), Some(_), _) => anyhow::bail!(
+                "a lint entry sets both path and git; a set of lints comes from one place, so \
+                 keep the one you meant and delete the other"
+            ),
+            (Some(_), None, Some(_)) => anyhow::bail!(
+                "a lint entry sets rev beside path; a revision pins a repository, and a path is \
+                 whatever is on disk, so drop rev or swap path for git"
+            ),
+            (Some(path), None, None) => Ok(LintSource::Path(LintPath::new(path))),
+            (None, Some(git), Some(rev)) => {
+                let rev = GitRev::new(rev)
+                    .with_context(|| format!("failed to read the lint entry for {git}"))?;
+
+                Ok(LintSource::Git(GitLintSource::new(GitUrl::new(git), rev)))
+            }
+            (None, Some(git), None) => anyhow::bail!(
+                "the lint entry for {git} sets no rev; whisker pins git lints to one commit so \
+                 that a check runs the same rules every time"
+            ),
+            (None, None, Some(_)) => anyhow::bail!(
+                "a lint entry sets rev but names no repository; add the git key that rev pins"
+            ),
+            (None, None, None) => anyhow::bail!(
+                "a lint entry names no lints; set path for a directory, or git and rev for a \
+                 repository"
+            ),
+        }
+    }
 }
 
 /// A configuration file whisker found, and the directory it anchors to
@@ -240,6 +301,9 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    /// A commit hash of the right shape for a configuration under test
+    const REV: &str = "0123456789abcdef0123456789abcdef01234567";
 
     /// Returns the resolved path of a temporary directory
     ///
@@ -388,8 +452,8 @@ mod tests {
         assert_eq!(
             config.lints(),
             vec![
-                LintPath::new("lints/no_todo"),
-                LintPath::new("lints/prefer_expect")
+                LintSource::Path(LintPath::new("lints/no_todo")),
+                LintSource::Path(LintPath::new("lints/prefer_expect")),
             ]
         );
     }
@@ -404,6 +468,142 @@ mod tests {
         assert!(
             format!("{error:#}").contains(".whisker.toml"),
             "error should name the offending file: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_git_lint_entry_returns_a_git_source() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            &format!("[[lints]]\ngit = \"https://example.com/rules\"\nrev = \"{REV}\"\n"),
+        );
+
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        assert_eq!(
+            config.lints(),
+            vec![LintSource::Git(GitLintSource::new(
+                GitUrl::new("https://example.com/rules"),
+                GitRev::new(REV).expect("the revision should be accepted"),
+            ))]
+        );
+    }
+
+    #[test]
+    fn load_with_lint_entry_holding_git_and_path_returns_error() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            &format!(
+                "[[lints]]\npath = \"lints/no_todo\"\ngit = \"https://example.com/rules\"\nrev = \
+                 \"{REV}\"\n"
+            ),
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("both path and git"),
+            "error should name the conflict: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_lint_entry_holding_neither_path_nor_git_returns_error() {
+        let directory = repository();
+        write_dotfile(directory.path(), "[[lints]]\n");
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("names no lints"),
+            "error should explain what an entry needs: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_lint_entry_holding_rev_without_git_returns_error() {
+        let directory = repository();
+        write_dotfile(directory.path(), &format!("[[lints]]\nrev = \"{REV}\"\n"));
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("names no repository"),
+            "error should name the missing key: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_lint_entry_pinning_a_path_returns_error() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            &format!("[[lints]]\npath = \"lints/no_todo\"\nrev = \"{REV}\"\n"),
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("rev beside path"),
+            "error should name the conflict: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_git_lint_entry_missing_rev_returns_error() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            "[[lints]]\ngit = \"https://example.com/rules\"\n",
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("sets no rev"),
+            "error should name the missing key: {error:#}"
+        );
+        assert!(
+            format!("{error:#}").contains("https://example.com/rules"),
+            "error should name the entry it read: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_git_lint_entry_holding_a_branch_name_returns_error() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            "[[lints]]\ngit = \"https://example.com/rules\"\nrev = \"main\"\n",
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("full commit hash"),
+            "error should explain the pin: {error:#}"
+        );
+        assert!(
+            format!("{error:#}").contains("https://example.com/rules"),
+            "error should name the entry it read: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_with_git_lint_entry_holding_an_abbreviated_rev_returns_error() {
+        let directory = repository();
+        write_dotfile(
+            directory.path(),
+            "[[lints]]\ngit = \"https://example.com/rules\"\nrev = \"0123456\"\n",
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("full commit hash"),
+            "error should explain the pin: {error:#}"
         );
     }
 

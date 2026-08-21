@@ -9,9 +9,10 @@ use whisker_types::LintPass;
 use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
 
 use self::handshake::AbiIdentity;
-use crate::config::WhiskerConfig;
+use crate::config::{LintSource, WhiskerConfig};
 
 mod artifact;
+mod git_source;
 mod handshake;
 
 /// The lint passes loaded from the project's configured custom lint crates
@@ -35,16 +36,15 @@ impl CustomLints {
     ///
     /// # Errors
     ///
-    /// Returns an error if a configured path does not name a cargo
-    /// package, is configured twice, fails to build, does not export a
-    /// plugin declaration, fails the ABI handshake, or registers no
-    /// lints.
+    /// Returns an error if a configured source cannot be resolved, is
+    /// configured twice, fails to build, does not export a plugin
+    /// declaration, fails the ABI handshake, or registers no lints.
     pub fn load(config: &WhiskerConfig) -> anyhow::Result<Self> {
         let host = AbiIdentity::host();
         let mut factories = Vec::new();
 
-        for directory in configured_directories(config)? {
-            let loaded = load_directory(&directory, &host).with_context(|| {
+        for Checkout { directory, locking } in configured_checkouts(config)? {
+            let loaded = load_directory(&directory, locking, &host).with_context(|| {
                 format!("failed to load the custom lints at {}", directory.display())
             })?;
             factories.extend(loaded);
@@ -59,57 +59,103 @@ impl CustomLints {
     }
 }
 
-/// Resolves and validates the configured lint paths before any build runs
+/// A resolved lint source, ready to build
 ///
-/// All paths are checked up front, so a typo in the second entry surfaces
-/// before the first entry's potentially long compilation, and a path
-/// configured twice is caught however it was spelled.
+/// Resolution loses the difference between a path and a repository, save
+/// for one thing the build still needs to know, so [`Locking`] rides along
+/// with the directory.
+#[derive(Clone, Eq, PartialEq, Debug)]
+struct Checkout {
+    directory: PathBuf,
+    locking: Locking,
+}
+
+/// Whether a build may change the lockfile it finds
+///
+/// A path source belongs to the person running whisker, and cargo updating
+/// its lockfile is ordinary. A git source is pinned to a commit, and that
+/// pin is only worth as much as the dependency versions behind it, so its
+/// build refuses to resolve anything the committed lockfile did not
+/// already settle.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum Locking {
+    Locked,
+    Unlocked,
+}
+
+/// Resolves and validates the configured lint sources before any build runs
+///
+/// Everything is resolved up front, so a typo in the second entry surfaces
+/// before the first entry's potentially long compilation, and a source
+/// configured twice is caught however it was spelled. A git source is
+/// fetched here, which is also why it happens before the builds: a network
+/// failure should not arrive after five minutes of compiling.
 ///
 /// # Errors
 ///
 /// Returns an error if an entry does not exist, is not a directory, holds
-/// no `Cargo.toml`, or resolves to the same package as an earlier entry.
-fn configured_directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>> {
-    let mut directories = Vec::new();
+/// no `Cargo.toml`, cannot be fetched, or resolves to the same directory
+/// as an earlier entry.
+fn configured_checkouts(config: &WhiskerConfig) -> anyhow::Result<Vec<Checkout>> {
+    let mut checkouts = Vec::new();
     let mut seen = HashSet::new();
 
     for entry in config.lints() {
-        let directory = entry.resolve(config.root());
+        let (directory, locking) = match entry {
+            LintSource::Path(path) => (path.resolve(config.root()), Locking::Unlocked),
+            LintSource::Git(git) => (git_source::checkout(git)?, Locking::Locked),
+        };
 
         anyhow::ensure!(
             directory.exists(),
-            "the configured lint path {entry} resolves to {}, which does not exist",
+            "the configured lint source {entry} resolves to {}, which does not exist",
             directory.display()
         );
         anyhow::ensure!(
             directory.is_dir(),
-            "the configured lint path {entry} resolves to {}, which is not a directory",
+            "the configured lint source {entry} resolves to {}, which is not a directory",
             directory.display()
         );
 
         let directory = std::fs::canonicalize(&directory)
-            .with_context(|| format!("failed to resolve the configured lint path {entry}"))?;
+            .with_context(|| format!("failed to resolve the configured lint source {entry}"))?;
 
         anyhow::ensure!(
             directory.join("Cargo.toml").is_file(),
-            "the configured lint path {entry} holds no Cargo.toml; custom lints are cargo \
+            "the configured lint source {entry} holds no Cargo.toml; custom lints are cargo \
              packages"
         );
         anyhow::ensure!(
             seen.insert(directory.clone()),
-            "the configured lint path {entry} names a package that is already configured"
+            "the configured lint source {entry} names lints that are already configured"
         );
 
-        directories.push(directory);
+        checkouts.push(Checkout { directory, locking });
     }
 
-    Ok(directories)
+    Ok(checkouts)
 }
 
-/// Builds the package at `directory` and loads the lints it exports
-fn load_directory(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
-    let library = build(directory)?;
-    load_library(&library, host)
+/// Builds the packages at `directory` and loads the lints they export
+///
+/// A directory may hold one package or a workspace of them, so every
+/// dynamic library the build produced is loaded, each with its own
+/// handshake.
+fn load_directory(
+    directory: &Path,
+    locking: Locking,
+    host: &AbiIdentity,
+) -> anyhow::Result<Vec<LintPassFactory>> {
+    let libraries = build(directory, locking)?;
+    let mut factories = Vec::new();
+
+    for library in libraries {
+        let loaded = load_library(&library, host)
+            .with_context(|| format!("failed to load {}", library.display()))?;
+        factories.extend(loaded);
+    }
+
+    Ok(factories)
 }
 
 /// Compiles the plugin with the user's cargo and returns the built library
@@ -122,16 +168,25 @@ fn load_directory(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<Li
 /// # Errors
 ///
 /// Returns an error if cargo cannot be run, exits unsuccessfully, or
-/// produces no dynamic library for the package.
-fn build(directory: &Path) -> anyhow::Result<PathBuf> {
+/// produces no dynamic library.
+fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
 
-    let output = Command::new(cargo)
-        .args([
-            "build",
-            "--release",
-            "--message-format=json-render-diagnostics",
-        ])
+    let mut command = Command::new(cargo);
+    command.args([
+        "build",
+        "--release",
+        "--message-format=json-render-diagnostics",
+    ]);
+
+    match locking {
+        Locking::Locked => {
+            command.arg("--locked");
+        }
+        Locking::Unlocked => {}
+    }
+
+    let output = command
         .current_dir(directory)
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -142,7 +197,7 @@ fn build(directory: &Path) -> anyhow::Result<PathBuf> {
 
     let stdout = String::from_utf8(output.stdout).context("cargo build wrote invalid UTF-8")?;
 
-    artifact::cdylib_artifact(&stdout, &directory.join("Cargo.toml"))
+    artifact::cdylib_artifacts(&stdout, directory)
 }
 
 /// Opens the built library, performs the handshake, and collects factories
@@ -267,7 +322,18 @@ mod tests {
     use crate::config::LintPath;
 
     fn config_with(root: &Path, lints: Vec<LintPath>) -> WhiskerConfig {
+        let lints = lints.into_iter().map(LintSource::Path).collect();
+
         WhiskerConfig::new(root.to_path_buf(), Vec::new(), lints)
+    }
+
+    fn directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>> {
+        let checkouts = configured_checkouts(config)?;
+
+        Ok(checkouts
+            .into_iter()
+            .map(|Checkout { directory, .. }| directory)
+            .collect())
     }
 
     fn package(root: &Path, name: &str) -> PathBuf {
@@ -291,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_directories_rejects_a_duplicate_entry() {
+    fn configured_checkouts_rejects_a_duplicate_entry() {
         let root = tempfile::tempdir().expect("temporary directory should be created");
         package(root.path(), "no_todo");
         let config = config_with(
@@ -299,7 +365,7 @@ mod tests {
             vec![LintPath::new("no_todo"), LintPath::new("./no_todo")],
         );
 
-        let error = configured_directories(&config).expect_err("should fail");
+        let error = directories(&config).expect_err("should fail");
 
         assert!(
             error.to_string().contains("already configured"),
@@ -308,12 +374,12 @@ mod tests {
     }
 
     #[test]
-    fn configured_directories_rejects_a_file_entry() {
+    fn configured_checkouts_rejects_a_file_entry() {
         let root = tempfile::tempdir().expect("temporary directory should be created");
         std::fs::write(root.path().join("lint.rs"), "").expect("file should be written");
         let config = config_with(root.path(), vec![LintPath::new("lint.rs")]);
 
-        let error = configured_directories(&config).expect_err("should fail");
+        let error = directories(&config).expect_err("should fail");
 
         assert!(
             error.to_string().contains("not a directory"),
@@ -322,11 +388,11 @@ mod tests {
     }
 
     #[test]
-    fn configured_directories_rejects_a_missing_entry() {
+    fn configured_checkouts_rejects_a_missing_entry() {
         let root = tempfile::tempdir().expect("temporary directory should be created");
         let config = config_with(root.path(), vec![LintPath::new("absent")]);
 
-        let error = configured_directories(&config).expect_err("should fail");
+        let error = directories(&config).expect_err("should fail");
 
         assert!(
             error.to_string().contains("does not exist"),
@@ -335,12 +401,12 @@ mod tests {
     }
 
     #[test]
-    fn configured_directories_rejects_an_entry_without_manifest() {
+    fn configured_checkouts_rejects_an_entry_without_manifest() {
         let root = tempfile::tempdir().expect("temporary directory should be created");
         std::fs::create_dir(root.path().join("empty")).expect("directory should be created");
         let config = config_with(root.path(), vec![LintPath::new("empty")]);
 
-        let error = configured_directories(&config).expect_err("should fail");
+        let error = directories(&config).expect_err("should fail");
 
         assert!(
             error.to_string().contains("no Cargo.toml"),
@@ -349,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_directories_resolves_entries_in_order() {
+    fn configured_checkouts_resolves_entries_in_order() {
         let root = tempfile::tempdir().expect("temporary directory should be created");
         let first = package(root.path(), "first");
         let second = package(root.path(), "second");
@@ -358,14 +424,29 @@ mod tests {
             vec![LintPath::new("first"), LintPath::new("second")],
         );
 
-        let directories = configured_directories(&config).expect("should resolve");
+        let resolved = directories(&config).expect("should resolve");
 
         assert_eq!(
-            directories,
+            resolved,
             vec![
                 std::fs::canonicalize(first).expect("should resolve"),
                 std::fs::canonicalize(second).expect("should resolve"),
             ]
+        );
+    }
+
+    #[test]
+    fn configured_checkouts_leaves_a_path_source_unlocked() {
+        let root = tempfile::tempdir().expect("temporary directory should be created");
+        package(root.path(), "no_todo");
+        let config = config_with(root.path(), vec![LintPath::new("no_todo")]);
+
+        let checkouts = configured_checkouts(&config).expect("should resolve");
+
+        assert_eq!(
+            checkouts.first().map(|checkout| checkout.locking),
+            Some(Locking::Unlocked),
+            "a lockfile on disk belongs to the person running whisker"
         );
     }
 

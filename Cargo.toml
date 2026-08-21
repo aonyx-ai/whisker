@@ -1,6 +1,27 @@
 [workspace]
 members = ["crates/*"]
-exclude = ["examples/*", "lints/anyhow_missing_context", "lints/bool_param", "lints/derive_order", "lints/explicit_destructuring", "lints/function_scoped_import", "lints/if_let_with_else", "lints/long_doc_sentence", "lints/missing_examples_doc", "lints/missing_trait_tests", "lints/no_commented_out_code", "lints/no_em_dash_aside", "lints/no_inline_comments", "lints/no_matches_macro", "lints/no_todo_comments", "lints/pub_field", "lints/reference_style_links", "lints/repeated_primitive_params", "lints/shadow_transformations", "lints/wildcard_match_arm"]
+exclude = [
+  "examples/*",
+  "lints/anyhow_missing_context",
+  "lints/bool_param",
+  "lints/derive_order",
+  "lints/explicit_destructuring",
+  "lints/function_scoped_import",
+  "lints/if_let_with_else",
+  "lints/long_doc_sentence",
+  "lints/missing_examples_doc",
+  "lints/missing_trait_tests",
+  "lints/no_commented_out_code",
+  "lints/no_em_dash_aside",
+  "lints/no_inline_comments",
+  "lints/no_matches_macro",
+  "lints/no_todo_comments",
+  "lints/pub_field",
+  "lints/reference_style_links",
+  "lints/repeated_primitive_params",
+  "lints/shadow_transformations",
+  "lints/wildcard_match_arm",
+]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
 # https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
@@ -24,6 +45,18 @@ opt-level = 2
 [workspace.dependencies]
 anyhow = "1"
 codespan-reporting = "0.13"
+# Fetches git-sourced lint plugins. Gitoxide rather than the git CLI so that
+# whisker's own behavior does not depend on which git a machine has, or on
+# whether it has one; the fetch asks the remote for the single pinned commit
+# and nothing else.
+gix = { version = "0.86", default-features = false, features = [
+  "blocking-network-client",
+  "blocking-http-transport-reqwest-rust-tls",
+  "worktree-mutation",
+  "index",
+  "max-performance-safe",
+  "sha1",
+] }
 # The walker behind ripgrep. Whisker uses it instead of a plain directory walk
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.

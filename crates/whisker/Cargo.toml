@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 anyhow = "1"
 clawless = "0.5.0"
+gix.workspace = true
 ignore.workspace = true
 libloading.workspace = true
 serde.workspace = true
