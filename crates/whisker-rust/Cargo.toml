@@ -35,15 +35,14 @@ whisker-macros.workspace = true
 whisker-types.workspace = true
 
 [dev-dependencies]
-# The lint crates depend on this one, so the two lint entries below close a
-# cycle. Cargo permits that for dev-dependencies. The cycle lets the
-# integration tests assert on diagnostics that real lints draw from real
-# decorations, not on the decorations alone.
-anyhow_missing_context = { path = "../../lints/anyhow_missing_context", default-features = false }
-function_scoped_import = { path = "../../lints/function_scoped_import", default-features = false }
+# A lint crate depends on this one, so this entry closes a cycle. Cargo
+# permits that for dev-dependencies. The cycle lets the integration tests
+# assert on diagnostics a lint draws from real decorations, rather than on
+# the decorations alone: a provider can record a decoration that is present,
+# well-formed, and still says the wrong thing.
+decoration_probes = { path = "tests/fixtures/lints/decoration_probes", default-features = false }
 proptest.workspace = true
 whisker-core.workspace = true
-wildcard_match_arm = { path = "../../lints/wildcard_match_arm", default-features = false }
 
 [build-dependencies]
 whisker-codegen.workspace = true

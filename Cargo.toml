@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/*"]
 exclude = [
+  "crates/whisker-rust/tests/fixtures/lints/decoration_probes",
   "examples/*",
   "lints/anyhow_missing_context",
   "lints/bool_param",

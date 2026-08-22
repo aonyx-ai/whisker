@@ -4,8 +4,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use anyhow_missing_context::AnyhowMissingContext;
-use function_scoped_import::FunctionScopedImport;
+use decoration_probes::{AnyhowBareTry, FunctionScopedImport, WildcardMatchArm};
 use whisker_rust::decorations::{
     AdtFlags, FnSignature, ImportSource, ResolvedType, ReturnMode, TypePathRef,
 };
@@ -14,7 +13,6 @@ use whisker_types::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, LintPass,
     RuleId, Severity, Span,
 };
-use wildcard_match_arm::WildcardMatchArm;
 
 static PROVIDER: OnceLock<RustDecorationProvider> = OnceLock::new();
 
@@ -822,20 +820,20 @@ fn flagged_within_with_a_span_past_the_function_end_returns_nothing() {
     assert!(flagged.is_empty(), "unexpected matches: {flagged:?}");
 }
 
-/// The `anyhow_missing_context` rule fires on decorations the provider made
+/// The bare-try probe fires on decorations the provider made
 ///
-/// The rule's unit tests attach decorations by hand, so only an end-to-end
-/// run shows that real decorations satisfy the rule. The expectation lists
-/// everything the rule flags in the function, so the `.context(..)` call
-/// next to the bare `?` must stay unflagged.
+/// The probe's own tests attach decorations by hand, so only an end-to-end
+/// run shows that real decorations satisfy a rule that reads them. The
+/// expectation lists everything the probe flags in the function, so the
+/// `.context(..)` call next to the bare `?` must stay unflagged.
 #[test]
-fn anyhow_missing_context_flags_a_bare_try_in_an_anyhow_function() {
+fn anyhow_bare_try_flags_a_bare_try_in_an_anyhow_function() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "returns_anyhow_result")
         .expect("should find returns_anyhow_result");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -850,13 +848,13 @@ fn anyhow_missing_context_flags_a_bare_try_in_an_anyhow_function() {
 /// The signature output is the opaque future, so a provider that reads the
 /// signature verbatim reports no error type and misses every `async fn`.
 #[test]
-fn anyhow_missing_context_flags_a_bare_try_in_an_async_anyhow_function() {
+fn anyhow_bare_try_flags_a_bare_try_in_an_async_anyhow_function() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "returns_anyhow_result_async")
         .expect("should find returns_anyhow_result_async");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -872,12 +870,12 @@ fn anyhow_missing_context_flags_a_bare_try_in_an_async_anyhow_function() {
 /// different shape from the `async fn` that implements it. The awaited
 /// type must come from the implementation, not the declaration.
 #[test]
-fn anyhow_missing_context_flags_a_bare_try_in_an_async_trait_method() {
+fn anyhow_bare_try_flags_a_bare_try_in_an_async_trait_method() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "load_async").expect("should find load_async");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -888,13 +886,13 @@ fn anyhow_missing_context_flags_a_bare_try_in_an_async_trait_method() {
 }
 
 #[test]
-fn anyhow_missing_context_flags_a_bare_try_on_a_method_call() {
+fn anyhow_bare_try_flags_a_bare_try_on_a_method_call() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func =
         find_function_by_name(&root, "try_on_method_call").expect("should find try_on_method_call");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -911,11 +909,11 @@ fn anyhow_missing_context_flags_a_bare_try_on_a_method_call() {
 /// the rendering flags all four. The `syn` case also covers an `Error`
 /// whose definition path differs from its public re-export path.
 #[test]
-fn anyhow_missing_context_flags_only_the_anyhow_function_among_lookalike_errors() {
+fn anyhow_bare_try_flags_only_the_anyhow_function_among_lookalike_errors() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -941,13 +939,13 @@ fn anyhow_missing_context_flags_only_the_anyhow_function_among_lookalike_errors(
 /// The async projection must identify the awaited error type, not just
 /// make every `async fn` visible to the rule.
 #[test]
-fn anyhow_missing_context_ignores_a_bare_try_in_an_async_io_function() {
+fn anyhow_bare_try_ignores_a_bare_try_in_an_async_io_function() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "returns_io_result_async")
         .expect("should find returns_io_result_async");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -959,13 +957,13 @@ fn anyhow_missing_context_ignores_a_bare_try_in_an_async_io_function() {
 /// `std::io::Result<()>` renders as `Result<(), Error>`, so a rule that
 /// reads the rendering cannot tell this `Error` from anyhow's.
 #[test]
-fn anyhow_missing_context_ignores_a_bare_try_in_an_io_function() {
+fn anyhow_bare_try_ignores_a_bare_try_in_an_io_function() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func =
         find_function_by_name(&root, "returns_io_result").expect("should find returns_io_result");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -977,13 +975,13 @@ fn anyhow_missing_context_ignores_a_bare_try_in_an_io_function() {
 /// The `E` resolves to `Box`, defined in `alloc`, so the rule sees a named
 /// error type with the wrong path.
 #[test]
-fn anyhow_missing_context_ignores_a_boxed_error() {
+fn anyhow_bare_try_ignores_a_boxed_error() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "returns_boxed_error")
         .expect("should find returns_boxed_error");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -996,13 +994,13 @@ fn anyhow_missing_context_ignores_a_boxed_error() {
 /// compile for every `E` the bounds admit. `.context(..)` is not available
 /// there, so the rule reports nothing.
 #[test]
-fn anyhow_missing_context_ignores_a_generic_error() {
+fn anyhow_bare_try_ignores_a_generic_error() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "returns_generic_error")
         .expect("should find returns_generic_error");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -1014,13 +1012,13 @@ fn anyhow_missing_context_ignores_a_generic_error() {
 /// This shape produced most of the false positives when the rule first ran
 /// over whisker's own source.
 #[test]
-fn anyhow_missing_context_ignores_a_local_error_type() {
+fn anyhow_bare_try_ignores_a_local_error_type() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "returns_local_error_result")
         .expect("should find returns_local_error_result");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -1033,13 +1031,13 @@ fn anyhow_missing_context_ignores_a_local_error_type() {
 /// would not compile. The function's own `read()?` is a genuine hit, so a
 /// removed barrier fails the expectation with an extra entry.
 #[test]
-fn anyhow_missing_context_ignores_a_try_inside_a_closure() {
+fn anyhow_bare_try_ignores_a_try_inside_a_closure() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
     let root = tree.root_node();
     let func = find_function_by_name(&root, "closure_returning_io_result")
         .expect("should find closure_returning_io_result");
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -1052,10 +1050,10 @@ fn anyhow_missing_context_ignores_a_try_inside_a_closure() {
 /// `std::io::Result` function nothing asserted about. The whole-file list
 /// pins the rule's reach.
 #[test]
-fn anyhow_missing_context_over_the_whole_file_reports_only_anyhow_bodies() {
+fn anyhow_bare_try_over_the_whole_file_reports_only_anyhow_bodies() {
     let provider = load_provider();
     let tree = parse_and_decorate_fixture(provider);
-    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowMissingContext::into_lint_pass()];
+    let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
     let diagnostics = whisker_core::walk(&tree, &mut passes);
 
@@ -1071,7 +1069,7 @@ fn anyhow_missing_context_over_the_whole_file_reports_only_anyhow_bodies() {
     );
 }
 
-/// Every place the `function_scoped_import` rule fires in the fixture
+/// Every place the function-scoped-import probe fires in the fixture
 ///
 /// Among imports inside function bodies, the rule spares only those whose
 /// qualifier resolves to an enum.
@@ -1090,7 +1088,7 @@ fn function_scoped_import_over_the_whole_file_spares_only_variant_imports() {
     );
 }
 
-/// The `wildcard_match_arm` rule fires on a scrutinee reached through a field
+/// The wildcard probe fires on a scrutinee reached through a field
 ///
 /// The old start-offset lookup only resolved scrutinees that are a bare
 /// name. This test pins a shape that lookup used to miss.
@@ -1124,7 +1122,7 @@ fn wildcard_match_arm_flags_a_scrutinee_returned_by_a_call() {
     assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["_"]);
 }
 
-/// The `wildcard_match_arm` rule still ignores a non-enum scrutinee
+/// The wildcard probe still ignores a non-enum scrutinee
 ///
 /// A lookup that resolves too broadly would make `is_enum` true for
 /// scrutinees that are not enums, and this test would catch that.
