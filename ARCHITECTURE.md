@@ -1,8 +1,9 @@
 # Architecture
 
 Whisker is a language-agnostic linting platform built on [tree-sitter][ts].
-It ships with Rust lints that enforce Aonyx's coding conventions — rules
-that Clippy doesn't cover, like derive ordering and wildcard match arms.
+It ships no rules of its own; Aonyx's live in
+[whisker-aonyx-rules][rules] and cover what Clippy does not, like derive
+ordering and wildcard match arms.
 
 This document describes the shape of the platform. Individual crates
 document their own APIs, and each lint crate documents its own rule.
@@ -98,13 +99,12 @@ A target project can configure lint crates of its own, and `whisker
 check` compiles each one at check time, loads the built dynamic library,
 and runs the exported rules. There is nothing else to run: whisker links
 no rules, so a rule the configuration omits does not run however complete
-its own tests are, and nothing is enabled by default. The rules in
-`lints/` are plugins on exactly these terms, each its own cargo package
-outside the workspace, which is why `.config/whisker.toml` names all six.
-A rule written elsewhere is written the same way — the same generated
-trait, the same
-decorations, the same test harness — and enters through
-`export_lints!` instead of the CLI's pass list.
+its own tests are, and nothing is enabled by default. Aonyx's own rules are
+plugins on exactly these terms: they live in [whisker-aonyx-rules][rules],
+and `.config/whisker.toml` names that repository and the commit to take it
+from. A rule written anywhere else is written the same way — the same
+generated trait, the same decorations, the same test harness — and enters
+through `export_lints!` rather than a pass list in the binary.
 
 An entry names either a directory or a repository pinned to one commit.
 The two meet immediately: a git entry is fetched into a cache under
@@ -162,10 +162,14 @@ than rustc's internals, and compatibility is checked instead of assumed.
 
 ## Workspace layout
 
-The platform lives in `crates/`. Each rule is its own cargo package in
-`lints/`, outside the workspace, resolving its own dependencies the way a
-rule written outside this repository does; `just test-lints` and
-`just check-lints` reach them, the workspace test run does not.
+The platform lives in `crates/`, and that is all of it. Rules live in their
+own repository. Two plugin packages stay here for the tests that need one:
+`examples/custom_lint`, which is the template a rule is written from, and
+`crates/whisker-rust/tests/fixtures/lints/decoration_probes`, which reads
+decorations so the provider's output stays under test. Both sit outside the
+workspace, resolving their own dependencies the way a plugin written
+elsewhere does, so the workspace test run does not reach them and
+`just test-example-lint` and `just test-fixture-lint` do.
 
 | Crate               | Role                                               |
 | ------------------- | -------------------------------------------------- |
@@ -182,5 +186,6 @@ Dependencies flow one way: everything rests on `whisker-types`,
 `whisker-core` adds the pipeline, a language crate builds on both, and the
 CLI ties the platform, a language, and the lints together.
 
+[rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
 [ra]: https://rust-analyzer.github.io/
 [ts]: https://tree-sitter.github.io/tree-sitter/

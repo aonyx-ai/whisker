@@ -218,10 +218,21 @@ fn check_directory_without_sources_fails() {
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
+/// Pins that whisker refuses a file it has no grammar for
+///
+/// The target is a fixture rather than this repository's own manifest,
+/// which the test used to read because it inherited the working directory.
+/// Whisker resolves the configuration governing its target before it looks
+/// at the file, so reading this repository's would mean fetching and
+/// building this repository's rules to reach an error about a `.toml`
+/// extension.
 #[test]
 fn check_non_rust_file_fails() {
+    let package = package(CLEAN_SOURCE);
+
     whisker()
         .args(["check", "Cargo.toml"])
+        .current_dir(package.path())
         .assert()
         .failure()
         .stderr(predicate::str::contains("no grammar for `.toml` files"));
