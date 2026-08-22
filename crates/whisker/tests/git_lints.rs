@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use assert_cmd::prelude::*;
@@ -56,8 +56,28 @@ fn configure_git_lint(package: &Path, url: &str, rev: &str) {
 fn whisker(cache: &TempDir) -> Command {
     let mut command = Command::cargo_bin("whisker").expect("whisker binary should exist");
     command.env("WHISKER_CACHE_DIR", cache.path());
+    command.env("CARGO_TARGET_DIR", shared_build_directory());
 
     command
+}
+
+/// Returns the build directory every fixture plugin in this file shares
+///
+/// Each test fetches into a cache of its own, so a fixture would otherwise
+/// compile whisker-rust and everything under it from nothing, every test and
+/// every run. The dependencies are the same ones each time, so one directory
+/// outside the caches turns several cold builds into one. It sits under
+/// `CARGO_TARGET_TMPDIR`, which cargo keeps beside the workspace's own build
+/// output, so the warmth survives between runs as well as within one.
+///
+/// Whisker passes its environment to the cargo it runs, so this is also how
+/// someone with `CARGO_TARGET_DIR` already set builds their plugins, and the
+/// artifact search reads the paths cargo reports rather than assuming any.
+fn shared_build_directory() -> PathBuf {
+    let directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("git_lint_plugins");
+    std::fs::create_dir_all(&directory).expect("the build directory should be created");
+
+    directory
 }
 
 /// Creates a repository holding one lint package
