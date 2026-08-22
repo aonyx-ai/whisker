@@ -53,10 +53,17 @@ fn configure_git_lint(package: &Path, url: &str, rev: &str) {
 /// Every test points the cache somewhere of its own, so a run neither
 /// reads nor writes the cache of the person running it, and one test
 /// cannot serve another's checkout.
+///
+/// The git configuration is emptied too. A fetch that quietly depended on
+/// the identity in someone's `~/.gitconfig` passed everywhere it was
+/// written and failed on every build agent, which is where whisker most
+/// needs to work, so these tests run with the same nothing an agent has.
 fn whisker(cache: &TempDir) -> Command {
     let mut command = Command::cargo_bin("whisker").expect("whisker binary should exist");
     command.env("WHISKER_CACHE_DIR", cache.path());
     command.env("CARGO_TARGET_DIR", shared_build_directory());
+    command.env("GIT_CONFIG_GLOBAL", "/dev/null");
+    command.env("GIT_CONFIG_SYSTEM", "/dev/null");
 
     command
 }

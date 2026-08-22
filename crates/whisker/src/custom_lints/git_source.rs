@@ -149,17 +149,33 @@ fn materialize(source: &GitLintSource, staging: &Path) -> anyhow::Result<()> {
         .write(gix::index::write::Options::default())
         .context("failed to write the index")?;
 
-    repository
-        .edit_reference(gix::refs::transaction::RefEdit {
-            change: gix::refs::transaction::Change::Update {
-                log: gix::refs::transaction::LogChange::default(),
-                expected: gix::refs::transaction::PreviousValue::Any,
-                new: gix::refs::Target::Object(commit),
-            },
-            name: "HEAD".try_into().context("HEAD should be a valid ref")?,
-            deref: false,
-        })
-        .context("failed to detach HEAD at the pinned commit")?;
+    detach_head(&repository, commit)?;
+
+    Ok(())
+}
+
+/// Points the checkout's `HEAD` at the commit it was built from
+///
+/// This is what lets a later run recognize the checkout as the pin it
+/// already has, and it leaves the cache full of repositories a person can
+/// inspect with ordinary git.
+///
+/// The file is written rather than edited through a ref transaction,
+/// because a transaction also writes a reflog, and a reflog entry needs a
+/// committer. Whisker would then be unable to fetch on any machine whose
+/// git identity is unset, which is most build agents, and would fail there
+/// with an error about `user.email` that has nothing to do with linting. A
+/// detached `HEAD` is a file holding the hash, and this checkout has no
+/// history worth logging.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be written.
+fn detach_head(repository: &gix::Repository, commit: gix::ObjectId) -> anyhow::Result<()> {
+    let head = repository.path().join("HEAD");
+
+    std::fs::write(&head, format!("{commit}\n"))
+        .with_context(|| format!("failed to write {}", head.display()))?;
 
     Ok(())
 }
