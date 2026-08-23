@@ -120,3 +120,13 @@ test-example-lint:
 # nextest needs pointing at this repository's profile.
 test-fixture-lint:
     cd crates/whisker-rust/tests/fixtures/lints/decoration_probes && cargo nextest run --config-file ../../../../../../.config/nextest.toml
+
+# Check this repository with the rules it configures
+#
+# This is the end-to-end run: whisker resolves every configured lint source,
+# builds it, completes the handshake, and reports on its own sources. It was
+# once an integration test, but a test that reaches the network belongs in a
+# recipe a person can choose to run, not in `cargo test`.
+check-self:
+    cargo build --release -p whisker
+    ./target/release/whisker check .
