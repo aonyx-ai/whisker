@@ -45,6 +45,13 @@ opt-level = 2
 [workspace.dependencies]
 anyhow = "1"
 codespan-reporting = "0.13"
+# Reads the remote a git lint source names. Git accepts forms a general URL
+# parser rejects, such as an scp-like `git@host:org/repo` and a bare local
+# path, and this is the parser gitoxide itself uses, so the configuration and
+# the fetch agree on what a remote is. Whisker takes it directly rather than
+# through `gix`, because reading a configuration file should not pull in a
+# whole git implementation; cargo resolves both to one version.
+gix-url = "0.37"
 # The walker behind ripgrep. Whisker uses it instead of a plain directory walk
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.
