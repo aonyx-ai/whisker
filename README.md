@@ -75,15 +75,35 @@ same way `ignore` patterns do:
 path = "lints/no_todo"
 ```
 
+An entry can also name a repository, which is how a set of rules is shared
+between projects. Whisker pins it to one commit, written out in full:
+
+```toml
+[[lints]]
+git = "https://github.com/aonyx-ai/whisker-aonyx-rules"
+rev = "0123456789abcdef0123456789abcdef01234567"
+```
+
+A branch or a tag is whatever the remote points it at today, so the same
+configuration would run different rules on different days. Whisker asks for
+that one commit and nothing else, keeps the checkout under
+`~/.cache/whisker`, and reuses it forever after, because the commit it
+names can never change. Set `WHISKER_CACHE_DIR` to keep those checkouts
+somewhere else. A git source builds with `--locked`, so commit the
+lockfile beside the rules.
+
 `whisker check` compiles each entry with your `cargo`, loads the built
-library, and runs its lints. Whisker ships no rules of its own, so the
+libraries, and runs their lints. Whisker ships no rules of its own, so the
 rules a project configures are exactly the rules it runs. The first build takes
 as long as any Rust compilation; afterwards cargo's cache makes it cheap.
 
 A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
 its rules to `export_lints!`. The complete crate in
 [`examples/custom_lint`][example] is the template: a `Cargo.toml` declaring
-the crate type and the whisker dependencies, one rule, and its tests.
+the crate type and the whisker dependencies, one rule, and its tests. An
+entry may also name a directory holding a cargo workspace, in which case
+every plugin in it loads, which is what lets one entry bring a whole
+repository of rules.
 
 Rust has no stable ABI, so whisker only loads a plugin built by the same
 rustc from the same whisker source as the binary itself, and refuses
