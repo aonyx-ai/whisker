@@ -1,65 +1,12 @@
 # Whisker reads this file when `whisker check` runs against this repository.
 # The patterns below anchor at the repository root, not at `.config`.
 # `/examples/` and the fixtures hold code that breaks whisker's own lints on
-# purpose. `/lints/` is different: each rule is its own cargo package outside
-# this workspace, so the toolchain a check of the repository loads never
-# reaches those files and no provider can cover them. `just check-lints`
-# checks each one against itself instead.
-ignore = ["/examples/", "/lints/", "crates/whisker-rust/tests/fixtures/"]
+# purpose.
+ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 
+# Whisker's rules live in their own repository, pinned to one commit. Bumping
+# this is how whisker adopts a new rule or a changed one; until it moves, a
+# check here runs exactly the rules it ran yesterday.
 [[lints]]
-path = "lints/anyhow_missing_context"
-
-[[lints]]
-path = "lints/bool_param"
-
-[[lints]]
-path = "lints/derive_order"
-
-[[lints]]
-path = "lints/explicit_destructuring"
-
-[[lints]]
-path = "lints/function_scoped_import"
-
-[[lints]]
-path = "lints/if_let_with_else"
-
-[[lints]]
-path = "lints/long_doc_sentence"
-
-[[lints]]
-path = "lints/missing_examples_doc"
-
-[[lints]]
-path = "lints/missing_trait_tests"
-
-[[lints]]
-path = "lints/no_commented_out_code"
-
-[[lints]]
-path = "lints/no_em_dash_aside"
-
-[[lints]]
-path = "lints/no_inline_comments"
-
-[[lints]]
-path = "lints/no_matches_macro"
-
-[[lints]]
-path = "lints/no_todo_comments"
-
-[[lints]]
-path = "lints/pub_field"
-
-[[lints]]
-path = "lints/reference_style_links"
-
-[[lints]]
-path = "lints/repeated_primitive_params"
-
-[[lints]]
-path = "lints/shadow_transformations"
-
-[[lints]]
-path = "lints/wildcard_match_arm"
+git = "https://github.com/aonyx-ai/whisker-aonyx-rules"
+rev = "ffd02b34a39900a84045ff7bc0130885bf9f5732"
