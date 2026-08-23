@@ -29,6 +29,9 @@ pub struct GitUrl(gix_url::Url);
 /// What stands in for credentials when a remote is printed
 const REDACTED_USERINFO: &str = "***";
 
+/// The directory name whisker uses when a remote yields no usable segment
+const FALLBACK_SLUG: &str = "repository";
+
 impl GitUrl {
     /// Creates a remote from its configured source
     ///
@@ -61,6 +64,45 @@ impl GitUrl {
             Err(gix_url::parse::Error::RelativeUrl { .. }) => {
                 anyhow::bail!("the git remote is relative")
             }
+        }
+    }
+
+    /// Returns a readable directory name for this remote
+    ///
+    /// The slug exists so that a person looking through the cache can tell
+    /// the checkouts apart. It is not an identity: two different remotes
+    /// can share a last path segment. The cache therefore pairs the slug
+    /// with a digest of the whole remote.
+    ///
+    /// The name comes from the parsed path, so every form of remote is read
+    /// the same way. An scp-like `git@host:org/repo` and an `https://` URL
+    /// spell their separators differently, and only the parser knows which
+    /// part of either is the path.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let url = GitUrl::new("https://github.com/aonyx-ai/rules.git")?;
+    ///
+    /// assert_eq!(url.slug(), "rules");
+    /// ```
+    pub fn slug(&self) -> String {
+        let path = String::from_utf8_lossy(&self.0.path);
+        let slug = path.trim_end_matches('/');
+        let slug = slug.rsplit('/').next().unwrap_or(slug);
+        let slug = slug.strip_suffix(".git").unwrap_or(slug);
+        let slug: String = slug
+            .chars()
+            .map(|character| match character.is_ascii_alphanumeric() {
+                true => character,
+                false => '-',
+            })
+            .collect();
+        let slug = slug.trim_matches('-');
+
+        match slug.is_empty() {
+            true => FALLBACK_SLUG.to_owned(),
+            false => slug.to_owned(),
         }
     }
 }
@@ -197,6 +239,51 @@ mod tests {
             error.to_string().contains("names no repository"),
             "unexpected: {error:#}"
         );
+    }
+
+    #[test]
+    fn slug_of_a_local_path_uses_the_last_segment() {
+        let url = GitUrl::new("/src/checkouts/rules").expect("the remote should be accepted");
+
+        assert_eq!(url.slug(), "rules");
+    }
+
+    #[test]
+    fn slug_of_an_scp_style_remote_uses_the_last_segment() {
+        let url = GitUrl::new("git@github.com:aonyx-ai/rules.git")
+            .expect("the remote should be accepted");
+
+        assert_eq!(url.slug(), "rules");
+    }
+
+    #[test]
+    fn slug_replaces_characters_a_directory_name_should_not_hold() {
+        let url = GitUrl::new("https://example.com/we_ird").expect("the remote should be accepted");
+
+        assert_eq!(url.slug(), "we-ird");
+    }
+
+    #[test]
+    fn slug_strips_a_git_suffix() {
+        let url = GitUrl::new("https://github.com/aonyx-ai/rules.git")
+            .expect("the remote should be accepted");
+
+        assert_eq!(url.slug(), "rules");
+    }
+
+    #[test]
+    fn slug_strips_a_trailing_separator() {
+        let url = GitUrl::new("https://github.com/aonyx-ai/rules/")
+            .expect("the remote should be accepted");
+
+        assert_eq!(url.slug(), "rules");
+    }
+
+    #[test]
+    fn slug_with_no_usable_segment_falls_back() {
+        let url = GitUrl::new("https://example.com/").expect("the remote should be accepted");
+
+        assert_eq!(url.slug(), FALLBACK_SLUG);
     }
 
     #[test]

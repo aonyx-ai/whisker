@@ -43,6 +43,17 @@ fn configure_lint(package: &Path, lint_path: &Path) {
     .expect("configuration should be written");
 }
 
+/// Points the package's whisker configuration at one pinned repository
+fn configure_git_lint(package: &Path, url: &str, rev: &str) {
+    let url = toml::Value::from(url);
+
+    std::fs::write(
+        package.join(".whisker.toml"),
+        format!("[[lints]]\ngit = {url}\nrev = \"{rev}\"\n"),
+    )
+    .expect("configuration should be written");
+}
+
 /// Returns the example plugin this repository ships
 fn example_lint() -> PathBuf {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/custom_lint");
@@ -136,6 +147,36 @@ fn workspace_of_lints() -> TempDir {
     }
 
     directory
+}
+
+/// Pins where a pinned repository is looked for, and what is said if it
+/// is not there
+///
+/// The cache directory is the whole contract of this step: a run resolves
+/// a repository and a commit to one path and reads it, and the error has
+/// to name that path, because a reader who wants to prime the cache or
+/// clear it has nothing else to go on.
+#[test]
+fn check_with_a_git_lint_that_is_not_cached_names_the_checkout() {
+    let target = package(TODO_SOURCE);
+    let cache = tempfile::tempdir().expect("temporary directory should be created");
+    configure_git_lint(
+        target.path(),
+        "https://example.com/rules",
+        "0123456789abcdef0123456789abcdef01234567",
+    );
+
+    whisker()
+        .env("WHISKER_CACHE_DIR", cache.path())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("holds no checkout"))
+        .stderr(predicate::str::contains("https://example.com/rules"))
+        .stderr(predicate::str::contains(
+            "0123456789abcdef0123456789abcdef01234567",
+        ));
 }
 
 /// Pins that a configured directory may be a workspace of plugins
