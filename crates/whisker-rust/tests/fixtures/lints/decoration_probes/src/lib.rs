@@ -8,16 +8,16 @@
 //! what a rule needs it to say. Each probe below carries the part of one
 //! rule that reads a decoration, and none of the policy that surrounds it.
 //!
-//! The probes arrive one at a time; this is the first of them.
-//!
 //! [`AdtFlags`]: whisker_rust::decorations::AdtFlags
 //! [`FnSignature`]: whisker_rust::decorations::FnSignature
 //! [`ImportSource`]: whisker_rust::decorations::ImportSource
 //! [`ResolvedType`]: whisker_rust::decorations::ResolvedType
 
 mod anyhow_bare_try;
+mod function_scoped_import;
 
 pub use anyhow_bare_try::AnyhowBareTry;
+pub use function_scoped_import::FunctionScopedImport;
 
 #[cfg(feature = "plugin")]
-whisker_rust::export_lints![AnyhowBareTry];
+whisker_rust::export_lints![AnyhowBareTry, FunctionScopedImport];
