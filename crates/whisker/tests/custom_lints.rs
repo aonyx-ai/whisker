@@ -149,20 +149,19 @@ fn workspace_of_lints() -> TempDir {
     directory
 }
 
-/// Pins where a pinned repository is looked for, and what is said if it
-/// is not there
+/// Pins the error for a repository that cannot be reached
 ///
-/// The cache directory is the whole contract of this step: a run resolves
-/// a repository and a commit to one path and reads it, and the error has
-/// to name that path, because a reader who wants to prime the cache or
-/// clear it has nothing else to go on.
+/// The remote here does not resolve, so the fetch fails before any
+/// protocol runs. The test asserts that the report names both the remote
+/// and the commit, because neither alone tells a reader which entry of
+/// their configuration to look at.
 #[test]
-fn check_with_a_git_lint_that_is_not_cached_names_the_checkout() {
+fn check_with_a_git_lint_that_cannot_be_fetched_names_the_source() {
     let target = package(TODO_SOURCE);
     let cache = tempfile::tempdir().expect("temporary directory should be created");
     configure_git_lint(
         target.path(),
-        "https://example.com/rules",
+        "https://whisker.invalid/rules",
         "0123456789abcdef0123456789abcdef01234567",
     );
 
@@ -172,8 +171,8 @@ fn check_with_a_git_lint_that_is_not_cached_names_the_checkout() {
         .arg(target.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("holds no checkout"))
-        .stderr(predicate::str::contains("https://example.com/rules"))
+        .stderr(predicate::str::contains("failed to check out"))
+        .stderr(predicate::str::contains("https://whisker.invalid/rules"))
         .stderr(predicate::str::contains(
             "0123456789abcdef0123456789abcdef01234567",
         ));

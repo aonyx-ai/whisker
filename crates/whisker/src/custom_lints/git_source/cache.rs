@@ -118,6 +118,19 @@ fn checkout_directory_in(root: &Path, source: &GitLintSource) -> PathBuf {
     root.join("git").join(remote).join(source.rev().as_str())
 }
 
+/// Returns the directory a checkout is assembled in before it is installed
+///
+/// A fetch writes here and is renamed into place only once it is whole, so
+/// a run interrupted halfway leaves nothing another run could mistake for
+/// a finished checkout. The process id keeps two whiskers on one machine
+/// from writing into the same half-built tree.
+pub fn staging_directory(destination: &Path) -> PathBuf {
+    let mut name = destination.as_os_str().to_os_string();
+    name.push(format!(".{}.partial", std::process::id()));
+
+    PathBuf::from(name)
+}
+
 /// Returns a variable's value, treating an empty one as unset
 ///
 /// An empty variable is what a shell leaves behind when it expands
@@ -301,6 +314,14 @@ mod tests {
         let value = present(Some(OsString::from("/cache")));
 
         assert_eq!(value, Some(OsString::from("/cache")));
+    }
+
+    #[test]
+    fn staging_directory_is_a_sibling_of_the_destination() {
+        let staging = staging_directory(Path::new("/cache/git/rules-0/abc"));
+
+        assert_eq!(staging.parent(), Some(Path::new("/cache/git/rules-0")));
+        assert_ne!(staging, PathBuf::from("/cache/git/rules-0/abc"));
     }
 
     #[test]
