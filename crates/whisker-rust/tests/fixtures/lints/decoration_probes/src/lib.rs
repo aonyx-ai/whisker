@@ -15,9 +15,11 @@
 
 mod anyhow_bare_try;
 mod function_scoped_import;
+mod wildcard_match_arm;
 
 pub use anyhow_bare_try::AnyhowBareTry;
 pub use function_scoped_import::FunctionScopedImport;
+pub use wildcard_match_arm::WildcardMatchArm;
 
 #[cfg(feature = "plugin")]
-whisker_rust::export_lints![AnyhowBareTry, FunctionScopedImport];
+whisker_rust::export_lints![AnyhowBareTry, FunctionScopedImport, WildcardMatchArm];
