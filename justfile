@@ -36,7 +36,13 @@ format-markdown fix="false": (prettier fix "md")
 
 # Format Rust files
 format-rust fix="false":
-    cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }}
+    #!/usr/bin/env -S bash -euo pipefail
+    # The plugin packages sit outside the workspace, so a run at the root
+    # never reaches them. They are Rust like everything else and drift the
+    # moment nothing checks them.
+    for package in . examples/custom_lint; do
+        (cd "${package}" && cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }})
+    done
 
 # Format TOML files
 format-toml fix="false":
