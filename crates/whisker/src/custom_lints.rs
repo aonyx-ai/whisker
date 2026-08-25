@@ -9,7 +9,7 @@ use whisker_types::LintPass;
 use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
 
 use self::handshake::AbiIdentity;
-use crate::config::WhiskerConfig;
+use crate::config::{LintSource, WhiskerConfig};
 
 mod artifact;
 mod handshake;
@@ -74,30 +74,36 @@ fn configured_directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>
     let mut seen = HashSet::new();
 
     for entry in config.lints() {
-        let directory = entry.resolve(config.root());
+        let directory = match entry {
+            LintSource::Path(path) => path.resolve(config.root()),
+            LintSource::Git(git) => anyhow::bail!(
+                "the configured lint source {git} names a repository, and whisker cannot fetch \
+                 one yet"
+            ),
+        };
 
         anyhow::ensure!(
             directory.exists(),
-            "the configured lint path {entry} resolves to {}, which does not exist",
+            "the lint source {entry} resolves to {}, which does not exist",
             directory.display()
         );
         anyhow::ensure!(
             directory.is_dir(),
-            "the configured lint path {entry} resolves to {}, which is not a directory",
+            "the lint source {entry} resolves to {}, which is not a directory",
             directory.display()
         );
 
         let directory = std::fs::canonicalize(&directory)
-            .with_context(|| format!("failed to resolve the configured lint path {entry}"))?;
+            .with_context(|| format!("failed to resolve the lint source {entry}"))?;
 
         anyhow::ensure!(
             directory.join("Cargo.toml").is_file(),
-            "the configured lint path {entry} holds no Cargo.toml; custom lints are cargo \
-             packages"
+            "the lint source {entry} holds no Cargo.toml"
         );
         anyhow::ensure!(
             seen.insert(directory.clone()),
-            "the configured lint path {entry} names a package that is already configured"
+            "the lint source {entry} resolves to {}, which an earlier entry already configured",
+            directory.display()
         );
 
         directories.push(directory);
@@ -279,6 +285,8 @@ mod tests {
     use crate::config::LintPath;
 
     fn config_with(root: &Path, lints: Vec<LintPath>) -> WhiskerConfig {
+        let lints = lints.into_iter().map(LintSource::Path).collect();
+
         WhiskerConfig::new(root.to_path_buf(), Vec::new(), lints)
     }
 
