@@ -3,19 +3,20 @@ mod config;
 mod custom_lints;
 mod discovery;
 
+use clawless::output::OutputFlags;
+use clawless::resolved_leaf::ResolvedLeaf;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cancellation = clawless::cancellation::Cancellation::new();
-    let context = clawless::context::Context::try_new(cancellation.clone())?;
+    let app = OutputFlags::augment_command(commands::clawless_init())
+        .name("whisker")
+        .version(env!("CARGO_PKG_VERSION"));
 
-    let rt = clawless::tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        clawless::tokio::spawn(clawless::signal::wait_for_shutdown(cancellation));
-
-        let app = commands::clawless_init()
-            .name("whisker")
-            .version(env!("CARGO_PKG_VERSION"));
-        commands::clawless_exec(app.get_matches(), context).await
-    })?;
-
-    Ok(())
+    match commands::clawless_resolve(app.get_matches()) {
+        ResolvedLeaf::Command { matches, exec } => {
+            clawless::runner::CommandRunner::run(matches, exec)
+        }
+        ResolvedLeaf::Application { matches, exec } => {
+            clawless::tui::runner::ApplicationRunner::run(matches, exec)
+        }
+    }
 }
