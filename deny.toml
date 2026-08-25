@@ -17,12 +17,28 @@ feature-depth = 1
 # it. Zlib and ISC are permissive and behave like MIT. CC0-1.0 is a public
 # domain dedication that pointedly does not grant patent rights, which is why
 # it is worth naming here rather than leaving to be discovered later.
+#
+# BSD-3-Clause, MIT-0, and CDLA-Permissive-2.0 arrive with gitoxide, which
+# fetches git-sourced lint plugins: `encoding_rs` under `gix-filter`, which the
+# working-tree checkout needs, and `aws-lc-sys` and `webpki-root-certs` under
+# the TLS stack that talks to an HTTPS remote. All three are permissive.
+# BSD-3-Clause adds a no-endorsement clause to MIT's terms, so it constrains
+# how we may advertise rather than how we may use; MIT-0 is MIT with the
+# attribution requirement dropped; CDLA-Permissive-2.0 covers data rather than
+# code, and the data is Mozilla's list of certificate authorities.
+#
+# Gitoxide also offers pack caches that would arrive under MPL-2.0. Whisker
+# does not enable them, so no copyleft license appears in this tree and none
+# is allowed here.
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
+  "BSD-3-Clause",
   "CC0-1.0",
+  "CDLA-Permissive-2.0",
   "ISC",
   "MIT",
+  "MIT-0",
   "Unicode-3.0",
   "Zlib",
 ]

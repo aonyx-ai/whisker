@@ -67,6 +67,24 @@ impl GitUrl {
         }
     }
 
+    /// Returns the remote in the form the transport reads
+    ///
+    /// The fetch needs the remote as configured, credentials and all, which
+    /// is what separates this from [`Display`]. Gitoxide takes the parsed
+    /// form directly, so the remote whisker accepted is the remote it
+    /// connects to. No second parse can disagree with the first.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let remote = repository.remote_at(url.to_gix_url())?;
+    /// ```
+    ///
+    /// [`Display`]: std::fmt::Display
+    pub fn to_gix_url(&self) -> gix_url::Url {
+        self.0.clone()
+    }
+
     /// Returns a readable directory name for this remote
     ///
     /// The slug exists so that a person looking through the cache can tell

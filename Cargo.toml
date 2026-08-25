@@ -45,6 +45,30 @@ opt-level = 2
 [workspace.dependencies]
 anyhow = "1"
 codespan-reporting = "0.13"
+# Finds the directory whisker keeps fetched lint sources in. etcetera rather
+# than `dirs` or `directories`, because whisker wants the XDG layout on every
+# platform: a cache under `~/Library/Caches` on macOS would sit apart from the
+# one a container or a continuous integration job restores.
+etcetera = "0.11"
+# Fetches git-sourced lint plugins. Gitoxide rather than the git CLI so that
+# whisker's own behavior does not depend on which git a machine has, or on
+# whether it has one; the fetch asks the remote for the single pinned commit
+# and nothing else.
+#
+# The feature list is the smallest one that fetches and checks out. `parallel`
+# is on that list because it makes gitoxide's object store shareable between
+# threads, which the checkout requires. `max-performance-safe` would add it
+# along with pack caches that buy nothing here — one shallow fetch of one
+# commit — and would pull in a copyleft dependency to do it, so the feature is
+# named directly instead.
+gix = { version = "0.86", default-features = false, features = [
+  "blocking-network-client",
+  "blocking-http-transport-reqwest-rust-tls",
+  "worktree-mutation",
+  "index",
+  "parallel",
+  "sha1",
+] }
 # Reads the remote a git lint source names. Git accepts forms a general URL
 # parser rejects, such as an scp-like `git@host:org/repo` and a bare local
 # path, and this is the parser gitoxide itself uses, so the configuration and
@@ -52,7 +76,6 @@ codespan-reporting = "0.13"
 # through `gix`, because reading a configuration file should not pull in a
 # whole git implementation; cargo resolves both to one version.
 gix-url = "0.37"
-etcetera = "0.11"
 # The walker behind ripgrep. Whisker uses it instead of a plain directory walk
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.
