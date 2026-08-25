@@ -95,6 +95,30 @@ fn repository_with_one_lint(rule: &str) -> FixtureRepository {
     })
 }
 
+/// Pins that a git environment around whisker cannot reach its checkout
+///
+/// A linter is run from a git hook, and a hook exports `GIT_DIR` and
+/// `GIT_INDEX_FILE` pointing at the repository being committed. Gitoxide
+/// reads those, so a checkout that honored them would write its index into
+/// somebody else's repository and fail.
+#[test]
+fn check_with_git_lint_source_ignores_an_ambient_git_environment() {
+    let cache = tempfile::tempdir().expect("temporary directory should be created");
+    let rules = repository_with_one_lint("fixture.no-todo");
+    let target = package(TODO_SOURCE);
+    configure_git_lint(target.path(), &rules.url(), rules.rev());
+
+    whisker(&cache)
+        .env("GIT_DIR", target.path().join(".git"))
+        .env("GIT_INDEX_FILE", target.path().join(".git").join("index"))
+        .env("GIT_WORK_TREE", target.path())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[fixture.no-todo]"));
+}
+
 /// Pins the whole path: fetch, build, handshake, lint, report
 #[test]
 fn check_with_git_lint_source_reports_its_diagnostic() {

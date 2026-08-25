@@ -88,7 +88,7 @@ pub fn checkout(source: &GitLintSource) -> anyhow::Result<PathBuf> {
 /// finished tree with a rename, so whisker never publishes a half-written
 /// checkout of its own.
 fn holds(directory: &Path, rev: &GitRev) -> bool {
-    let Ok(repository) = gix::open(directory) else {
+    let Ok(repository) = gix::open_opts(directory, open_options()) else {
         return false;
     };
 
@@ -96,7 +96,36 @@ fn holds(directory: &Path, rev: &GitRev) -> bool {
         return false;
     };
 
-    head.to_string() == rev.as_str()
+    let Ok(pinned) = gix::ObjectId::from_hex(rev.as_str().as_bytes()) else {
+        return false;
+    };
+
+    head == pinned
+}
+
+/// Returns how whisker opens a repository it keeps in its own cache
+///
+/// A checkout in the cache belongs to whisker rather than to whatever
+/// invoked it. Whisker may run from inside a git hook, which exports
+/// `GIT_DIR` and `GIT_INDEX_FILE` pointing at the repository being
+/// committed, and gitoxide reads them. The `GIT_*` category is therefore
+/// denied, so a checkout cannot be redirected onto somebody else's
+/// repository.
+///
+/// Every other category stays open. A private rule repository is fetched
+/// with the credentials and the transport settings that the home directory
+/// and the environment carry, and denying those would only turn a working
+/// fetch into a failing one.
+fn open_options() -> gix::open::Options {
+    let permissions = gix::open::Permissions {
+        env: gix::open::permissions::Environment {
+            git_prefix: gix::sec::Permission::Deny,
+            ..gix::open::permissions::Environment::all()
+        },
+        ..gix::open::Permissions::default()
+    };
+
+    gix::open::Options::default().permissions(permissions)
 }
 
 /// Fetches the pinned commit into `staging` and writes its working tree
@@ -106,8 +135,14 @@ fn holds(directory: &Path, rev: &GitRev) -> bool {
 /// Returns an error if the repository cannot be created, the fetch fails,
 /// the remote does not serve the commit, or the checkout cannot be written.
 fn materialize(source: &GitLintSource, staging: &Path) -> anyhow::Result<()> {
-    let repository = gix::init(staging)
-        .with_context(|| format!("failed to create a repository at {}", staging.display()))?;
+    let repository = gix::ThreadSafeRepository::init_opts(
+        staging,
+        gix::create::Kind::WithWorktree,
+        gix::create::Options::default(),
+        open_options(),
+    )
+    .with_context(|| format!("failed to create a repository at {}", staging.display()))?
+    .to_thread_local();
 
     fetch(&repository, source.url(), source.rev())?;
 

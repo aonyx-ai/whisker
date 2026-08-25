@@ -43,6 +43,11 @@ etcetera = "0.11"
 # along with pack caches that buy nothing here — one shallow fetch of one
 # commit — and would pull in a copyleft dependency to do it, so the feature is
 # named directly instead.
+#
+# `gix::url` also reads the remote a lint entry names, so the configuration and
+# the fetch agree on what a remote is. Whisker took that parser from `gix-url`
+# directly until gitoxide 0.87 moved the two crates apart, and a remote parsed
+# by one version cannot be handed to a fetch built on the other.
 gix = { version = "0.87", default-features = false, features = [
   "blocking-network-client",
   "blocking-http-transport-reqwest-rust-tls",
@@ -51,13 +56,6 @@ gix = { version = "0.87", default-features = false, features = [
   "parallel",
   "sha1",
 ] }
-# Reads the remote a git lint source names. Git accepts forms a general URL
-# parser rejects, such as an scp-like `git@host:org/repo` and a bare local
-# path, and this is the parser gitoxide itself uses, so the configuration and
-# the fetch agree on what a remote is. Whisker takes it directly rather than
-# through `gix`, because reading a configuration file should not pull in a
-# whole git implementation; cargo resolves both to one version.
-gix-url = "0.37"
 # The walker behind ripgrep. Whisker uses it instead of a plain directory walk
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.

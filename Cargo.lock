@@ -996,7 +996,7 @@ dependencies = [
  "gix-trace",
  "gix-transport",
  "gix-traverse",
- "gix-url 0.38.0",
+ "gix-url",
  "gix-utils",
  "gix-validate",
  "gix-worktree",
@@ -1128,7 +1128,7 @@ dependencies = [
  "gix-quote",
  "gix-sec",
  "gix-trace",
- "gix-url 0.38.0",
+ "gix-url",
  "thiserror",
 ]
 
@@ -1613,7 +1613,7 @@ dependencies = [
  "gix-path",
  "gix-pathspec",
  "gix-refspec",
- "gix-url 0.38.0",
+ "gix-url",
  "thiserror",
 ]
 
@@ -1651,7 +1651,7 @@ dependencies = [
  "gix-path",
  "gix-quote",
  "gix-sec",
- "gix-url 0.38.0",
+ "gix-url",
  "parking_lot",
  "reqwest",
  "thiserror",
@@ -1671,19 +1671,6 @@ dependencies = [
  "gix-object",
  "gix-revwalk",
  "smallvec",
- "thiserror",
-]
-
-[[package]]
-name = "gix-url"
-version = "0.37.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31bdfc93aa880cda3272718a5879ce3aa7723fa13514320dd6608151607afe72"
-dependencies = [
- "bstr",
- "gix-path",
- "gix-utils",
- "percent-encoding",
  "thiserror",
 ]
 
@@ -4972,7 +4959,6 @@ dependencies = [
  "clawless",
  "etcetera",
  "gix",
- "gix-url 0.37.1",
  "ignore",
  "libloading",
  "predicates",
