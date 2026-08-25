@@ -24,7 +24,7 @@
 /// );
 /// ```
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct GitUrl(gix_url::Url);
+pub struct GitUrl(gix::url::Url);
 
 /// What stands in for credentials when a remote is printed
 const REDACTED_USERINFO: &str = "***";
@@ -47,22 +47,25 @@ impl GitUrl {
     /// let url = GitUrl::new("https://github.com/aonyx-ai/whisker-aonyx-rules")?;
     /// ```
     pub fn new(url: impl AsRef<str>) -> anyhow::Result<Self> {
-        match gix_url::parse(url.as_ref()) {
+        match gix::url::parse(url.as_ref()) {
             Ok(url) => Ok(Self(url)),
-            Err(gix_url::parse::Error::Utf8 { .. }) => {
+            Err(gix::url::parse::Error::Utf8 { .. }) => {
                 anyhow::bail!("the git remote is not valid UTF-8")
             }
-            Err(gix_url::parse::Error::Url { .. }) => {
+            Err(gix::url::parse::Error::Url { .. }) => {
                 anyhow::bail!("cannot read the git remote as a URL")
             }
-            Err(gix_url::parse::Error::TooLong { .. }) => {
+            Err(gix::url::parse::Error::TooLong { .. }) => {
                 anyhow::bail!("the git remote names a host that is too long")
             }
-            Err(gix_url::parse::Error::MissingRepositoryPath { .. }) => {
+            Err(gix::url::parse::Error::MissingRepositoryPath { .. }) => {
                 anyhow::bail!("the git remote names no repository")
             }
-            Err(gix_url::parse::Error::RelativeUrl { .. }) => {
+            Err(gix::url::parse::Error::RelativeUrl { .. }) => {
                 anyhow::bail!("the git remote is relative")
+            }
+            Err(gix::url::parse::Error::InvalidRemoteHelperName { .. }) => {
+                anyhow::bail!("the git remote names an invalid transport")
             }
         }
     }
@@ -81,7 +84,7 @@ impl GitUrl {
     /// ```
     ///
     /// [`Display`]: std::fmt::Display
-    pub fn to_gix_url(&self) -> gix_url::Url {
+    pub fn to_gix_url(&self) -> gix::url::Url {
         self.0.clone()
     }
 
@@ -133,7 +136,7 @@ impl GitUrl {
 /// rather than the password half of it. Both forms carry secrets, and one
 /// rule cannot be applied to the wrong one.
 ///
-/// [`gix_url::Url`] hides only the password and prints the name beside it,
+/// [`gix::url::Url`] hides only the password and prints the name beside it,
 /// which is why this does not delegate to its own [`Display`].
 ///
 /// An scp-style remote such as `git@github.com:org/repo` keeps its name.
@@ -141,7 +144,7 @@ impl GitUrl {
 /// form has no other way to spell one.
 ///
 /// [`Display`]: std::fmt::Display
-fn redacted(url: &gix_url::Url) -> String {
+fn redacted(url: &gix::url::Url) -> String {
     let mut redacted = url.clone();
 
     redacted.set_password(None);
