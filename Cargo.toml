@@ -43,7 +43,7 @@ etcetera = "0.11"
 # along with pack caches that buy nothing here — one shallow fetch of one
 # commit — and would pull in a copyleft dependency to do it, so the feature is
 # named directly instead.
-gix = { version = "0.86", default-features = false, features = [
+gix = { version = "0.87", default-features = false, features = [
   "blocking-network-client",
   "blocking-http-transport-reqwest-rust-tls",
   "worktree-mutation",
