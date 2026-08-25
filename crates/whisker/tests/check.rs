@@ -24,10 +24,10 @@ const UNPARSABLE_IGNORE_FILE: &str = "{a,b\n";
 /// A manifest for a standalone package with no dependencies
 const MANIFEST: &str = "[package]\nname = \"target\"\nversion = \"0.1.0\"\nedition = \"2024\"\n";
 
-/// Source that trips `lint.bool-param` and nothing else
+/// Source that trips `custom.no-todo` and nothing else
 ///
 /// The rule is syntactic, so it fires without semantic decorations.
-const WARNING_SOURCE: &str = "pub fn set(flag: bool) {\n    let _ = flag;\n}\n";
+const WARNING_SOURCE: &str = "pub fn later() {\n    todo!()\n}\n";
 
 /// Rust source that is not valid UTF-8
 ///
@@ -50,31 +50,59 @@ fn package(source: &str) -> TempDir {
     directory
 }
 
-/// Configures a package to run the `bool_param` rule
+/// Configures a package to run the example plugin's rule
 ///
 /// Whisker links no rules, so a fixture that expects a diagnostic has to
-/// name one. Pointing at the rule in this repository rather than at a
+/// name one. Pointing at a plugin in this repository rather than at a
 /// purpose-built stub means the test exercises the whole path a real
 /// project takes: whisker builds the package, loads the library, and
 /// completes the handshake before a single file is walked.
-fn with_bool_param(directory: TempDir) -> TempDir {
-    let lint = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../lints/bool_param")
-        .canonicalize()
-        .expect("the bool_param rule should be in this repository");
-    let config = directory.path().join(".config");
-    std::fs::create_dir_all(&config).expect("the config directory should be created");
-    std::fs::write(
-        config.join("whisker.toml"),
-        toml::to_string(&toml::toml! {
-            [[lints]]
-            path = (lint.to_str().expect("the path should be UTF-8"))
-        })
-        .expect("the configuration should serialize"),
-    )
-    .expect("the configuration should be written");
+fn with_no_todo(directory: TempDir) -> TempDir {
+    write_lint_config(directory.path(), &example_lint());
 
     directory
+}
+
+/// Returns the example plugin this repository ships
+fn example_lint() -> PathBuf {
+    let lint = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/custom_lint");
+
+    std::fs::canonicalize(lint).expect("the example plugin should be in this repository")
+}
+
+/// Returns the probe plugin whisker-rust's provider tests share
+///
+/// The probes read decorations, so they are what a fixture needs when the
+/// diagnostic under test has to survive real semantic analysis.
+fn decoration_probes() -> PathBuf {
+    let lint = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../whisker-rust/tests/fixtures/lints/decoration_probes");
+
+    std::fs::canonicalize(lint).expect("the probe plugin should be in this repository")
+}
+
+/// Writes a configuration naming one lint directory by absolute path
+///
+/// A fixture that expects a diagnostic needs one, because whisker links
+/// no rules of its own. A fixture inside this checkout needs one for a
+/// second reason. The search for a configuration climbs until it meets a
+/// `.git` directory. Such a fixture therefore reads this repository's
+/// file, and runs whatever rules whisker names today. A fixture under a
+/// temporary directory has no `.git` above it, so the search reaches the
+/// filesystem root and finds nothing.
+///
+/// The path goes through a TOML value rather than into quotes of our own,
+/// so a checkout under a directory holding a quote still writes a
+/// configuration whisker can read.
+fn write_lint_config(directory: &Path, lint: &Path) {
+    let lint = lint.to_str().expect("the lint path should be UTF-8");
+    let lint = toml::Value::from(lint);
+
+    std::fs::write(
+        directory.join(".whisker.toml"),
+        format!("[[lints]]\npath = {lint}\n"),
+    )
+    .expect("the configuration should be written");
 }
 
 /// Creates a package whose `src` holds Rust files no module declares
@@ -135,16 +163,17 @@ fn sample_project() -> PathBuf {
 /// around the path it is given. `CARGO_TARGET_TMPDIR` is a scratch
 /// directory, and nothing guarantees that a Cargo project sits above it.
 ///
-/// `src/lib.rs` trips `lint.wildcard-match-arm` and produces a diagnostic.
-/// Whisker cannot read `src/not_utf8.rs`. Discovery sorts, so `src/lib.rs`
-/// comes first, and a run without `--keep-going` collects the diagnostic
-/// before `src/not_utf8.rs` stops the walk.
+/// `src/lib.rs` trips `fixture.wildcard-match-arm` and produces a
+/// diagnostic. Whisker cannot read `src/not_utf8.rs`. Discovery sorts, so
+/// `src/lib.rs` comes first, and a run without `--keep-going` collects the
+/// diagnostic before `src/not_utf8.rs` stops the walk.
 ///
 /// Each caller passes its own `name`, so two tests that run at once never
 /// write the same directory.
 fn mixed_project(name: &str) -> PathBuf {
     let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     std::fs::create_dir_all(root.join("src")).expect("should create the fixture directories");
+    write_lint_config(&root, &decoration_probes());
     std::fs::write(
         root.join("Cargo.toml"),
         "[workspace]\n\n[package]\nname = \"mixed_project\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
@@ -179,15 +208,6 @@ fn unreachable_help_count(stderr: &str) -> usize {
         .count()
 }
 
-/// Pins that `whisker check` succeeds on this crate's own source
-///
-/// The test fails if anyone reintroduces source the decoration provider
-/// cannot reach.
-#[test]
-fn check_current_directory_succeeds() {
-    whisker().arg("check").assert().success();
-}
-
 #[test]
 fn check_directory_without_sources_fails() {
     let directory = tempfile::tempdir().expect("temporary directory should be created");
@@ -200,10 +220,20 @@ fn check_directory_without_sources_fails() {
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
+/// Pins that whisker refuses a file it has no grammar for
+///
+/// The target is a fixture rather than this repository's own manifest.
+/// Whisker resolves the configuration governing its target before it looks
+/// at the file, so reading this repository's would mean fetching and
+/// building this repository's rules to reach an error about a `.toml`
+/// extension.
 #[test]
 fn check_non_rust_file_fails() {
+    let package = package(CLEAN_SOURCE);
+
     whisker()
         .args(["check", "Cargo.toml"])
+        .current_dir(package.path())
         .assert()
         .failure()
         .stderr(predicate::str::contains("no grammar for `.toml` files"));
@@ -446,14 +476,14 @@ fn check_single_file_succeeds() {
 
 #[test]
 fn check_with_deny_warnings_fails_on_warnings() {
-    let package = with_bool_param(package(WARNING_SOURCE));
+    let package = with_no_todo(package(WARNING_SOURCE));
 
     whisker()
         .args(["check", "--deny-warnings"])
         .arg(package.path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("error[lint.bool-param]"));
+        .stderr(predicate::str::contains("error[custom.no-todo]"));
 }
 
 /// Pins the exit code to the failure recorded while walking the files, not
@@ -535,14 +565,14 @@ fn check_with_unreadable_file_and_no_keep_going_fails() {
 
 #[test]
 fn check_without_deny_warnings_reports_warnings_and_succeeds() {
-    let package = with_bool_param(package(WARNING_SOURCE));
+    let package = with_no_todo(package(WARNING_SOURCE));
 
     whisker()
         .arg("check")
         .arg(package.path())
         .assert()
         .success()
-        .stderr(predicate::str::contains("warning[lint.bool-param]"));
+        .stderr(predicate::str::contains("warning[custom.no-todo]"));
 }
 
 /// Pins that a stopped run keeps the diagnostics from earlier files
@@ -559,5 +589,7 @@ fn check_without_keep_going_keeps_diagnostics_from_earlier_files() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("error: src/not_utf8.rs"))
-        .stderr(predicate::str::contains("warning[lint.wildcard-match-arm]"));
+        .stderr(predicate::str::contains(
+            "warning[fixture.wildcard-match-arm]",
+        ));
 }
