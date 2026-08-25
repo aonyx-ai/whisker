@@ -427,7 +427,9 @@ fn check_real_crate_produces_diagnostics_not_coverage_errors() {
         .assert()
         .success()
         .stderr(predicate::str::contains("no decoration provider covers this file").not())
-        .stderr(predicate::str::contains("warning[lint.wildcard-match-arm]"));
+        .stderr(predicate::str::contains(
+            "warning[fixture.wildcard-match-arm]",
+        ));
 }
 
 #[test]

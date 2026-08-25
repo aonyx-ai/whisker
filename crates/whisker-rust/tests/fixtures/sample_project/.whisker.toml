@@ -1,0 +1,6 @@
+# The fixture names the rules it runs, so a check of it does not climb out
+# to whatever this repository happens to configure. Without this file the
+# search would reach the repository root, and a test asserting on one
+# diagnostic would silently depend on every rule whisker is set up with.
+[[lints]]
+path = "../lints/decoration_probes"

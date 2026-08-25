@@ -74,14 +74,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "anyhow_missing_context"
-version = "0.1.0"
-dependencies = [
- "whisker-rust",
- "whisker-types",
-]
-
-[[package]]
 name = "arc-swap"
 version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -605,6 +597,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "decoration_probes"
+version = "0.1.0"
+dependencies = [
+ "whisker-rust",
+ "whisker-types",
+]
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -853,14 +853,6 @@ name = "fst"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab85b9b05e3978cc9a9cf8fea7f01b494e1a09ed3037e16ba39edc7a29eb61a"
-
-[[package]]
-name = "function_scoped_import"
-version = "0.1.0"
-dependencies = [
- "whisker-rust",
- "whisker-types",
-]
 
 [[package]]
 name = "futures-channel"
@@ -5019,8 +5011,7 @@ name = "whisker-rust"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "anyhow_missing_context",
- "function_scoped_import",
+ "decoration_probes",
  "proptest",
  "ra_ap_hir",
  "ra_ap_ide_db",
@@ -5034,7 +5025,6 @@ dependencies = [
  "whisker-core",
  "whisker-macros",
  "whisker-types",
- "wildcard_match_arm",
 ]
 
 [[package]]
@@ -5058,14 +5048,6 @@ dependencies = [
  "rustc_version",
  "tree-sitter",
  "tree-sitter-rust",
-]
-
-[[package]]
-name = "wildcard_match_arm"
-version = "0.1.0"
-dependencies = [
- "whisker-rust",
- "whisker-types",
 ]
 
 [[package]]
