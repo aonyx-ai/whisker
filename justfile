@@ -40,7 +40,7 @@ format-rust fix="false":
     # The plugin packages sit outside the workspace, so a run at the root
     # never reaches them. They are Rust like everything else and drift the
     # moment nothing checks them.
-    for package in . examples/custom_lint; do
+    for package in . examples/custom_lint crates/whisker-rust/tests/fixtures/lints/decoration_probes; do
         (cd "${package}" && cargo fmt -- --unstable-features {{ if fix != "true" { "--check" } else { "" } }})
     done
 
@@ -112,3 +112,11 @@ check-lints:
 # CI selects without being pointed at this repository's configuration.
 test-example-lint:
     cd examples/custom_lint && cargo nextest run --config-file ../../.config/nextest.toml
+
+# Run the decoration probes' tests, which sit outside the workspace
+#
+# The probes stand in for rules inside whisker-rust's provider tests. They
+# are excluded from the workspace for the same reason every plugin is, so
+# nextest needs pointing at this repository's profile.
+test-fixture-lint:
+    cd crates/whisker-rust/tests/fixtures/lints/decoration_probes && cargo nextest run --config-file ../../../../../../.config/nextest.toml

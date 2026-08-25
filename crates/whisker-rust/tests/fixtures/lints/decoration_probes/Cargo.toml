@@ -1,0 +1,35 @@
+# Lints that exist to prove the Rust decoration provider records what a real
+# rule reads. Whisker's own rules live in their own repository, so a test in
+# this one cannot depend on them; these probes carry just enough of three of
+# those rules to keep the provider's output under test, and their rule ids
+# are prefixed `fixture.` so nothing mistakes them for rules to adopt.
+#
+# The package is not a workspace member, for the same reason a lint crate
+# never is: it is built and loaded the way a plugin outside this repository
+# would be. It is named in the root manifest's `exclude` list.
+[package]
+name = "decoration_probes"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+publish = false
+
+# The rlib is what whisker-rust's own tests link against; the cdylib is what
+# `whisker check` loads when a test drives the CLI end to end.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["plugin"]
+plugin = []
+
+[dependencies]
+whisker-rust = { path = "../../../..", default-features = false }
+whisker-types = { path = "../../../../../whisker-types" }
+
+[dev-dependencies]
+whisker-testing = { path = "../../../../../whisker-testing" }
+
+[lints.clippy]
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
