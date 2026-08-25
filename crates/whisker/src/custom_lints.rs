@@ -106,13 +106,25 @@ fn configured_directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>
     Ok(directories)
 }
 
-/// Builds the package at `directory` and loads the lints it exports
+/// Builds the packages at `directory` and loads the lints they export
+///
+/// A directory may hold one package or a workspace of them, so every
+/// dynamic library the build produced is loaded, each with its own
+/// handshake.
 fn load_directory(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
-    let library = build(directory)?;
-    load_library(&library, host)
+    let libraries = build(directory)?;
+    let mut factories = Vec::new();
+
+    for library in libraries {
+        let loaded = load_library(&library, host)
+            .with_context(|| format!("failed to load {}", library.display()))?;
+        factories.extend(loaded);
+    }
+
+    Ok(factories)
 }
 
-/// Compiles the plugin with the user's cargo and returns the built library
+/// Compiles the packages at `directory` and returns every library built
 ///
 /// The build inherits stderr, so compiler errors and progress render to
 /// the terminal exactly as they would for a direct `cargo build`; stdout
@@ -122,8 +134,8 @@ fn load_directory(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<Li
 /// # Errors
 ///
 /// Returns an error if cargo cannot be run, exits unsuccessfully, or
-/// produces no dynamic library for the package.
-fn build(directory: &Path) -> anyhow::Result<PathBuf> {
+/// produces no dynamic library.
+fn build(directory: &Path) -> anyhow::Result<Vec<PathBuf>> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
 
     let output = Command::new(cargo)
@@ -142,7 +154,7 @@ fn build(directory: &Path) -> anyhow::Result<PathBuf> {
 
     let stdout = String::from_utf8(output.stdout).context("cargo build wrote invalid UTF-8")?;
 
-    artifact::cdylib_artifact(&stdout, &directory.join("Cargo.toml"))
+    artifact::cdylib_artifacts(&stdout, directory)
 }
 
 /// Opens the built library, performs the handshake, and collects factories

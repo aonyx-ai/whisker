@@ -53,6 +53,112 @@ fn whisker() -> Command {
     Command::cargo_bin("whisker").expect("whisker binary should exist")
 }
 
+/// Returns the build directory the plugin workspace uses
+///
+/// That workspace compiles against whisker-rust, and a target directory
+/// inside the temporary checkout would compile the dependency again on
+/// every run. One directory under the crate's own scratch space keeps a
+/// repeat run cheap and stays out of anyone else's target directory.
+fn shared_build_directory() -> PathBuf {
+    let directory = Path::new(env!("CARGO_TARGET_TMPDIR")).join("plugin-builds");
+    std::fs::create_dir_all(&directory).expect("the shared build directory should be created");
+
+    directory
+}
+
+/// Writes a workspace of two plugin packages and returns its root
+///
+/// The members differ in the node they answer to, so a source holding
+/// both proves that each library was loaded rather than one of them
+/// twice. Their dependencies are path dependencies on this repository,
+/// which is what makes the handshake pass: one toolchain builds whisker
+/// and both plugins.
+fn workspace_of_lints() -> TempDir {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = std::fs::canonicalize(crates).expect("the crates directory should exist");
+    let rust = toml::Value::from(
+        crates
+            .join("whisker-rust")
+            .to_str()
+            .expect("the path should be UTF-8"),
+    );
+    let types = toml::Value::from(
+        crates
+            .join("whisker-types")
+            .to_str()
+            .expect("the path should be UTF-8"),
+    );
+
+    std::fs::write(
+        directory.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"first\", \"second\"]\nresolver = \"3\"\n",
+    )
+    .expect("the workspace manifest should be written");
+
+    for (name, rule, method) in [
+        ("first", "workspace.first", "check_function_item"),
+        ("second", "workspace.second", "check_macro_invocation"),
+    ] {
+        let member = directory.path().join(name);
+        std::fs::create_dir(&member).expect("the member should be created");
+        std::fs::create_dir(member.join("src")).expect("src should be created");
+        std::fs::write(
+            member.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\
+                 publish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n\
+                 whisker-rust = {{ path = {rust}, default-features = false }}\n\
+                 whisker-types = {{ path = {types} }}\n"
+            ),
+        )
+        .expect("the member manifest should be written");
+        std::fs::write(
+            member.join("src").join("lib.rs"),
+            format!(
+                "use whisker_rust::RustLintPass;\n\
+                 use whisker_types::{{DecoratedNode, Diagnostic, RuleId, Severity}};\n\n\
+                 pub struct Flag;\n\n\
+                 impl RustLintPass for Flag {{\n\
+                 \x20   fn {method}(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {{\n\
+                 \x20       vec![Diagnostic::new(\n\
+                 \x20           RuleId::new(\"{rule}\"),\n\
+                 \x20           Severity::Warn,\n\
+                 \x20           \"the member fired\".into(),\n\
+                 \x20           node.span(),\n\
+                 \x20       )]\n\
+                 \x20   }}\n\
+                 }}\n\n\
+                 whisker_rust::export_lints![Flag];\n"
+            ),
+        )
+        .expect("the member source should be written");
+    }
+
+    directory
+}
+
+/// Pins that a configured directory may be a workspace of plugins
+///
+/// One entry naming a repository of rules is the reason this matters: a
+/// shared rule set is a workspace, and loading only its first library
+/// would run a fraction of the rules while looking like it ran them all.
+#[test]
+fn check_with_a_workspace_of_lints_reports_every_member() {
+    let target = package(TODO_SOURCE);
+    let workspace = workspace_of_lints();
+    configure_lint(target.path(), workspace.path());
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[workspace.first]"))
+        .stderr(predicate::str::contains("warning[workspace.second]"));
+}
+
 /// Pins the whole path: configure, compile, handshake, lint, report
 ///
 /// One toolchain builds both sides here, as the setup documentation asks
