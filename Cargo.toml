@@ -1,6 +1,27 @@
 [workspace]
 members = ["crates/*"]
-exclude = ["examples/*", "lints/anyhow_missing_context", "lints/bool_param", "lints/derive_order", "lints/explicit_destructuring", "lints/function_scoped_import", "lints/if_let_with_else", "lints/long_doc_sentence", "lints/missing_examples_doc", "lints/missing_trait_tests", "lints/no_commented_out_code", "lints/no_em_dash_aside", "lints/no_inline_comments", "lints/no_matches_macro", "lints/no_todo_comments", "lints/pub_field", "lints/reference_style_links", "lints/repeated_primitive_params", "lints/shadow_transformations", "lints/wildcard_match_arm"]
+exclude = [
+  "examples/*",
+  "lints/anyhow_missing_context",
+  "lints/bool_param",
+  "lints/derive_order",
+  "lints/explicit_destructuring",
+  "lints/function_scoped_import",
+  "lints/if_let_with_else",
+  "lints/long_doc_sentence",
+  "lints/missing_examples_doc",
+  "lints/missing_trait_tests",
+  "lints/no_commented_out_code",
+  "lints/no_em_dash_aside",
+  "lints/no_inline_comments",
+  "lints/no_matches_macro",
+  "lints/no_todo_comments",
+  "lints/pub_field",
+  "lints/reference_style_links",
+  "lints/repeated_primitive_params",
+  "lints/shadow_transformations",
+  "lints/wildcard_match_arm",
+]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
 # https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
