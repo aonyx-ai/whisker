@@ -52,6 +52,7 @@ codespan-reporting = "0.13"
 # through `gix`, because reading a configuration file should not pull in a
 # whole git implementation; cargo resolves both to one version.
 gix-url = "0.37"
+etcetera = "0.11"
 # The walker behind ripgrep. Whisker uses it instead of a plain directory walk
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.

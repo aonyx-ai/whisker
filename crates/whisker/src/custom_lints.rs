@@ -12,6 +12,7 @@ use self::handshake::AbiIdentity;
 use crate::config::{LintSource, WhiskerConfig};
 
 mod artifact;
+mod git_source;
 mod handshake;
 
 /// The lint passes loaded from the project's configured custom lint crates
@@ -76,10 +77,7 @@ fn configured_directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>
     for entry in config.lints() {
         let directory = match entry {
             LintSource::Path(path) => path.resolve(config.root()),
-            LintSource::Git(git) => anyhow::bail!(
-                "the configured lint source {git} names a repository, and whisker cannot fetch \
-                 one yet"
-            ),
+            LintSource::Git(git) => git_source::checkout(git)?,
         };
 
         anyhow::ensure!(

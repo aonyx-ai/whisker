@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 anyhow = "1"
 clawless = "0.5.0"
+etcetera.workspace = true
 gix-url.workspace = true
 ignore.workspace = true
 libloading.workspace = true

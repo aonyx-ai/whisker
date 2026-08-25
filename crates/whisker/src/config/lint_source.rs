@@ -65,6 +65,28 @@ impl GitLintSource {
     pub fn new(url: GitUrl, rev: GitRev) -> Self {
         Self { url, rev }
     }
+
+    /// Returns the remote the lints are fetched from
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// println!("{}", source.url());
+    /// ```
+    pub fn url(&self) -> &GitUrl {
+        &self.url
+    }
+
+    /// Returns the commit the lints are checked out at
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// println!("{}", source.rev());
+    /// ```
+    pub fn rev(&self) -> &GitRev {
+        &self.rev
+    }
 }
 
 impl std::fmt::Display for GitLintSource {
@@ -104,6 +126,20 @@ mod tests {
         let source = LintSource::Path(LintPath::new("lints/no_todo"));
 
         assert_eq!(source.to_string(), "lints/no_todo");
+    }
+
+    #[test]
+    fn rev_returns_the_configured_commit() {
+        let source = git_source();
+
+        assert_eq!(source.rev().as_str(), REV);
+    }
+
+    #[test]
+    fn url_returns_the_configured_remote() {
+        let source = git_source();
+
+        assert_eq!(source.url().to_string(), "https://example.com/rules");
     }
 
     #[test]

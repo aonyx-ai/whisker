@@ -11,7 +11,7 @@
 /// ```ignore
 /// let rev = GitRev::new("0123456789abcdef0123456789abcdef01234567")?;
 ///
-/// assert_eq!(rev.to_string().len(), 40);
+/// assert_eq!(rev.as_str().len(), 40);
 /// ```
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct GitRev(String);
@@ -49,6 +49,19 @@ impl GitRev {
 
         Ok(Self(rev))
     }
+
+    /// Returns the hash as written
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let rev = GitRev::new("0123456789abcdef0123456789abcdef01234567")?;
+    ///
+    /// assert!(rev.as_str().starts_with("0123"));
+    /// ```
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Display for GitRev {
@@ -62,6 +75,13 @@ mod tests {
     use super::*;
 
     const VALID: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    #[test]
+    fn as_str_returns_the_hash() {
+        let rev = GitRev::new(VALID).expect("the revision should be accepted");
+
+        assert_eq!(rev.as_str(), VALID);
+    }
 
     #[test]
     fn display_matches_source() {
@@ -94,7 +114,7 @@ mod tests {
     fn new_with_full_hash_is_accepted() {
         let rev = GitRev::new(VALID).expect("the revision should be accepted");
 
-        assert_eq!(rev.to_string(), VALID);
+        assert_eq!(rev.as_str(), VALID);
     }
 
     #[test]
