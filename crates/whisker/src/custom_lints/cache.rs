@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use etcetera::base_strategy::{BaseStrategy as _, Xdg};
 
+use super::abi_tag::AbiTag;
 use super::digest::digest;
 use crate::config::GitLintSource;
 
@@ -114,22 +115,55 @@ pub fn checkout_directory(source: &GitLintSource) -> anyhow::Result<PathBuf> {
 
 /// Returns where one pinned lint source sits under `root`
 ///
+/// The commit forms the last segment, so every checkout of one remote
+/// stays together under that remote's directory.
+fn checkout_directory_in(root: &Path, source: &GitLintSource) -> PathBuf {
+    root.join("git")
+        .join(remote_directory(source))
+        .join(source.rev().as_str())
+}
+
+/// Returns the directory whisker unpacks one set of prebuilt lints into
+///
+/// # Errors
+///
+/// Returns an error if no cache location can be determined.
+pub fn prebuilt_directory(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<PathBuf> {
+    let root = cache_root()?;
+
+    Ok(prebuilt_directory_in(&root, source, tag))
+}
+
+/// Returns where one set of prebuilt lints sits under `root`
+///
+/// One commit of one remote yields a different set of libraries for
+/// every whisker that loads them. Prebuilt libraries therefore sit apart
+/// from checkouts, under a last segment that holds the [`AbiTag`]. That
+/// tag names the whisker the libraries fit, and a whisker with another
+/// tag must not read them.
+fn prebuilt_directory_in(root: &Path, source: &GitLintSource, tag: &AbiTag) -> PathBuf {
+    root.join("prebuilt")
+        .join(remote_directory(source))
+        .join(source.rev().as_str())
+        .join(tag.to_string())
+}
+
+/// Returns the directory that holds everything cached for one remote
+///
 /// The remote contributes a readable name so that the cache can be
 /// browsed, and a digest so that two remotes ending in the same segment
-/// stay apart. The commit is the last segment rather than part of the
-/// name, which keeps every checkout of one remote together.
+/// stay apart. Both layouts under the cache root use this, so a remote is
+/// spelled the same way wherever it appears.
 ///
-/// The digest reads the remote as it prints, credentials removed, so two
-/// people holding different tokens for one repository share a checkout
-/// rather than fetching the same commit twice.
-fn checkout_directory_in(root: &Path, source: &GitLintSource) -> PathBuf {
-    let remote = format!(
+/// The digest reads the remote as it prints, credentials removed. Two
+/// people who hold different tokens for one repository therefore share a
+/// cache entry.
+fn remote_directory(source: &GitLintSource) -> String {
+    format!(
         "{}-{}",
         source.url().slug(),
         digest(&source.url().to_string())
-    );
-
-    root.join("git").join(remote).join(source.rev().as_str())
+    )
 }
 
 /// Returns the directory a checkout is assembled in before it is installed
@@ -158,15 +192,34 @@ fn present(value: Option<OsString>) -> Option<OsString> {
 mod tests {
     use super::*;
     use crate::config::{GitRev, GitUrl};
+    use crate::custom_lints::handshake::AbiIdentity;
 
     const REV: &str = "0123456789abcdef0123456789abcdef01234567";
     const ROOT: &str = "/cache";
+    const RUSTC: &str = "rustc 1.92.0-nightly (0123456 2026-08-11)";
+    const TARGET: &str = "aarch64-apple-darwin";
 
     fn location(override_directory: Option<&str>, base_directory: Option<&str>) -> CacheLocation {
         CacheLocation {
             override_directory: override_directory.map(OsString::from),
             base_directory: base_directory.map(PathBuf::from),
         }
+    }
+
+    /// Returns the tag of a whisker built by `rustc` for `target`
+    ///
+    /// These build real tags, so a change to how whisker spells one
+    /// reaches these paths too.
+    fn tag(rustc: &str, target: &str) -> AbiTag {
+        AbiTag::new(
+            &AbiIdentity {
+                abi_version: 2,
+                rustc_version: rustc.to_owned(),
+                types_fingerprint: 0,
+                language_fingerprint: 0,
+            },
+            target,
+        )
     }
 
     fn source(url: &str) -> GitLintSource {
@@ -246,6 +299,66 @@ mod tests {
         let second = checkout_directory_in(Path::new(ROOT), &source("https://example.com/b/rules"));
 
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn prebuilt_directory_in_ends_with_the_tag() {
+        let directory = prebuilt_directory_in(
+            Path::new(ROOT),
+            &source("https://example.com/rules"),
+            &tag(RUSTC, TARGET),
+        );
+
+        assert_eq!(
+            directory.file_name().expect("should have a name"),
+            std::ffi::OsStr::new(&tag(RUSTC, TARGET).to_string())
+        );
+    }
+
+    /// Two whiskers must never read each other's libraries
+    #[test]
+    fn prebuilt_directory_in_separates_tags() {
+        let source = source("https://example.com/rules");
+
+        let first = prebuilt_directory_in(Path::new(ROOT), &source, &tag(RUSTC, TARGET));
+        let second = prebuilt_directory_in(
+            Path::new(ROOT),
+            &source,
+            &tag("rustc 1.93.0-nightly (0000000 2026-09-01)", TARGET),
+        );
+
+        assert_ne!(first, second);
+    }
+
+    /// A checkout of a source and the libraries built from it are two
+    /// different things, and one must never be served for the other.
+    #[test]
+    fn prebuilt_directory_in_stays_apart_from_the_checkout() {
+        let source = source("https://example.com/rules");
+
+        let prebuilt = prebuilt_directory_in(Path::new(ROOT), &source, &tag(RUSTC, TARGET));
+        let checkout = checkout_directory_in(Path::new(ROOT), &source);
+
+        assert!(!prebuilt.starts_with(&checkout), "{prebuilt:?}");
+        assert!(!checkout.starts_with(&prebuilt), "{checkout:?}");
+    }
+
+    #[test]
+    fn prebuilt_directory_in_names_the_remote_the_way_a_checkout_does() {
+        let source = source("https://example.com/rules");
+
+        let prebuilt = prebuilt_directory_in(Path::new(ROOT), &source, &tag(RUSTC, TARGET));
+        let checkout = checkout_directory_in(Path::new(ROOT), &source);
+
+        let remote_of = |path: &Path, depth: usize| {
+            path.ancestors()
+                .nth(depth)
+                .and_then(Path::file_name)
+                .expect("should have a remote directory")
+                .to_owned()
+        };
+
+        assert_eq!(remote_of(&prebuilt, 2), remote_of(&checkout, 1));
     }
 
     #[test]

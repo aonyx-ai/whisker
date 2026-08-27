@@ -45,7 +45,7 @@ impl AbiTag {
     /// A newline separates the values, and each fingerprint occupies a
     /// fixed width. Two different identities therefore cannot produce one
     /// input to the digest.
-    fn new(identity: &AbiIdentity, target: &str) -> Self {
+    pub(super) fn new(identity: &AbiIdentity, target: &str) -> Self {
         let AbiIdentity {
             abi_version,
             rustc_version,
