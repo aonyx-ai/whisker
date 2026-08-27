@@ -12,8 +12,10 @@
 //!
 //! So whisker looks for libraries that were built once, by whoever
 //! publishes the lints, against the whisker that is asking. The
-//! [`AbiTag`] is how it asks. This module owns what happens with the
-//! answer: where it is kept, and which files in it are libraries.
+//! [`AbiTag`] is how it asks. This module owns the asking and everything
+//! that follows it: which remote to ask, what to call the archive it
+//! wants, how to tell that the archive arrived whole, where to keep what
+//! it unpacks, and which of those files are libraries.
 //!
 //! Nothing here is trusted for being prebuilt. Every library still goes
 //! through the same handshake as one whisker compiled itself, and a
@@ -27,21 +29,33 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 
+use self::archive::Sha256Digest;
+use self::asset_name::AssetName;
+use self::github_release::{GitHubApi, PrebuiltAsset};
+use self::github_repository::GitHubRepository;
 use super::abi_tag::AbiTag;
 use super::cache;
 use crate::config::GitLintSource;
 
-/// Returns the directory holding prebuilt lints for `source`, if any
+mod archive;
+mod asset_name;
+mod github_release;
+mod github_repository;
+
+/// What the downloaded archive is called while it is being checked
+const DOWNLOAD: &str = "archive.tar.gz";
+
+/// Returns the prebuilt lints for `source` that the machine already holds
 ///
 /// Whisker keeps what it unpacks, so a run that finds its directory
-/// touches nothing else. An empty directory does not count as a find.
-/// An interrupted unpack leaves one behind, and whisker replaces it.
+/// touches no network. An empty directory does not count as a find. An
+/// interrupted unpack leaves one behind, and whisker replaces it.
 ///
 /// # Errors
 ///
 /// Returns an error if no cache location can be determined, which is the
-/// same condition that stops a git checkout.
-pub fn resolve(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<Option<PathBuf>> {
+/// condition that also stops a git checkout.
+pub fn cached(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<Option<PathBuf>> {
     let directory = cache::prebuilt_directory(source, tag)?;
 
     match holds_libraries(&directory) {
@@ -50,14 +64,203 @@ pub fn resolve(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<Option<Pa
     }
 }
 
+/// Asks a release for prebuilt lints, and keeps them if it has any
+///
+/// This is the one path here that reaches the network, so a caller asks
+/// it only when the machine holds nothing that would serve instead.
+///
+/// Everything it does is best effort. A remote that publishes no
+/// releases, a release with nothing named for this whisker, an API it
+/// cannot reach, an archive that fails its digest: each one answers with
+/// nothing, and the caller then compiles the source. That fallback is
+/// what whisker did before any of this existed, and it is never wrong.
+///
+/// The cases differ in whether the reader hears about them. Whisker stays
+/// quiet about a failure it cannot tell apart from a repository that
+/// nobody built for.
+///
+/// # Errors
+///
+/// Returns an error if no cache location can be determined.
+pub fn fetch(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<Option<PathBuf>> {
+    let directory = cache::prebuilt_directory(source, tag)?;
+    let host = github_release::configured_repository_host();
+
+    let Some(repository) = GitHubRepository::from_url(source.url(), host.as_deref()) else {
+        return Ok(None);
+    };
+
+    let name = AssetName::new(source.rev(), tag);
+
+    match download(&repository, &name, &directory) {
+        Ok(Installed::Yes) => Ok(Some(directory)),
+        Ok(Installed::Absent) => Ok(None),
+        Err(error) => {
+            warn(source, &error);
+            Ok(None)
+        }
+    }
+}
+
+/// Runs the whole exchange with the release API on a thread of its own
+///
+/// The HTTP client owns an asynchronous runtime, and a program panics
+/// when it drops one runtime inside another. Whisker's check command is
+/// asynchronous, so this thread builds the client, uses it, and drops it.
+///
+/// A panic on that thread becomes an ordinary failure. It would otherwise
+/// vanish, and whisker would compile from source with nothing said.
+fn download(
+    repository: &GitHubRepository,
+    name: &AssetName,
+    destination: &Path,
+) -> anyhow::Result<Installed> {
+    std::thread::scope(|scope| {
+        let thread = scope.spawn(|| {
+            let api = GitHubApi::from_environment()?;
+
+            install(&api, repository, name, destination)
+        });
+
+        match thread.join() {
+            Ok(outcome) => outcome,
+            Err(_) => Err(anyhow::anyhow!("the download stopped unexpectedly")),
+        }
+    })
+}
+
+/// Whether a release had prebuilt lints to install
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum Installed {
+    Yes,
+    Absent,
+}
+
+/// Tells the reader that whisker compiles what it hoped to download
+///
+/// Whisker says this once per source, and says nothing else about the
+/// prebuilt path. Nothing is broken when it appears. The check goes on
+/// and reports the same diagnostics, more slowly.
+fn warn(source: &GitLintSource, error: &anyhow::Error) {
+    eprintln!(
+        "warning: whisker cannot use the prebuilt lints for {source}: {error:#}; it builds them \
+         from source instead"
+    );
+}
+
+/// Downloads, checks, and unpacks the archive a release publishes
+///
+/// Whisker assembles the archive beside the directory it will become,
+/// then moves it into place whole. A run that stops halfway therefore
+/// leaves nothing a later run could mistake for a finished unpack.
+///
+/// Two runs may install the same archive at once. The move decides which
+/// one wins, and the loser reads what the winner installed, because both
+/// downloaded the same bytes.
+fn install(
+    api: &GitHubApi,
+    repository: &GitHubRepository,
+    name: &AssetName,
+    destination: &Path,
+) -> anyhow::Result<Installed> {
+    let Some(PrebuiltAsset { archive, sidecar }) = api.find_asset(repository, name)? else {
+        return Ok(Installed::Absent);
+    };
+
+    if destination.exists() {
+        std::fs::remove_dir_all(destination).with_context(|| {
+            format!(
+                "failed to discard the damaged directory at {}",
+                destination.display()
+            )
+        })?;
+    }
+
+    let staging = cache::staging_directory(destination);
+    if staging.exists() {
+        std::fs::remove_dir_all(&staging).with_context(|| {
+            format!(
+                "failed to discard the abandoned download at {}",
+                staging.display()
+            )
+        })?;
+    }
+
+    let parent = destination
+        .parent()
+        .context("the prebuilt directory has no parent")?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("failed to create {}", parent.display()))?;
+    std::fs::create_dir_all(&staging)
+        .with_context(|| format!("failed to create {}", staging.display()))?;
+
+    let outcome = unpack(api, &archive, &sidecar, &staging);
+
+    if outcome.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
+    outcome.with_context(|| format!("failed to unpack {name}"))?;
+
+    match std::fs::rename(&staging, destination) {
+        Ok(()) => Ok(Installed::Yes),
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staging);
+
+            anyhow::ensure!(
+                holds_libraries(destination),
+                "failed to install the prebuilt lints at {}: {error}",
+                destination.display()
+            );
+
+            Ok(Installed::Yes)
+        }
+    }
+}
+
+/// Downloads the archive into `staging` and unpacks what it holds
+///
+/// This compares the digest before it unpacks anything, so a truncated or
+/// corrupted download never becomes files. It then removes the archive,
+/// because whisker installs the libraries and nothing else.
+fn unpack(
+    api: &GitHubApi,
+    archive: &github_release::ReleaseAsset,
+    sidecar: &github_release::ReleaseAsset,
+    staging: &Path,
+) -> anyhow::Result<()> {
+    let downloaded = staging.join(DOWNLOAD);
+
+    let published = api.download_text(sidecar)?;
+    let published = Sha256Digest::from_sidecar(&published)?;
+    let arrived = api.download(archive, &downloaded)?;
+
+    anyhow::ensure!(
+        arrived == published,
+        "the archive has digest {arrived}, but the sidecar beside it publishes {published}"
+    );
+
+    archive::extract(&downloaded, staging)?;
+
+    std::fs::remove_file(&downloaded)
+        .with_context(|| format!("failed to remove {}", downloaded.display()))?;
+
+    anyhow::ensure!(
+        holds_libraries(staging),
+        "the archive holds no dynamic library at its root"
+    );
+
+    Ok(())
+}
+
 /// Returns every dynamic library directly inside `directory`, in order
 ///
 /// A publisher ships one library per lint package, so a directory holds
 /// as many as the repository built. Whisker ignores every other file, so
 /// a publisher may add a manifest or a license beside them.
 ///
-/// Whisker sorts by file name, so two runs load the same lints in the
-/// same order and report the same diagnostics.
+/// The order is the file names', so that two runs load the same lints in
+/// the same order and report their diagnostics the same way.
 ///
 /// # Errors
 ///

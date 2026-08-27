@@ -55,6 +55,13 @@ gix = { version = "0.87", default-features = false, features = [
   "parallel",
   "sha1",
 ] }
+# Decompresses an archive of prebuilt lints. Its `zlib-rs` backend is the
+# one gitoxide already builds, so naming it saves a second copy of the
+# same algorithm.
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+# Reads and writes the SHA-256 digest that travels beside an archive of
+# prebuilt lints.
+hex = "0.4"
 # The walker behind ripgrep. Whisker uses it instead of a plain directory walk
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.
@@ -79,14 +86,30 @@ ra_ap_syntax = "0.0.350"
 ra_ap_vfs = "0.0.350"
 proc-macro2 = "1"
 quote = "1"
+# Asks a GitHub release for prebuilt lints and downloads them. Reqwest
+# rather than a smaller client, because gitoxide already fetches over it,
+# so both share one HTTP stack and one set of trusted roots.
+reqwest = { version = "0.13", default-features = false, features = [
+  "blocking",
+  "rustls",
+] }
 # Read by build scripts to bake the compiler's identity into the plugin
 # handshake: whisker refuses to load a custom lint plugin built by a
 # different rustc, because Rust's ABI is only coherent within one compiler.
 rustc_version = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Checks an archive of prebuilt lints against the digest its publisher
+# put beside it, which catches a truncated or corrupted download.
+sha2 = "0.11"
 syn = { version = "3", features = ["full", "extra-traits"] }
+# Unpacks an archive of prebuilt lints. The `xattr` feature is off,
+# because a lint library carries no extended attributes.
+tar = { version = "0.4", default-features = false }
 tempfile = "3"
+# Serves a release API to the tests that cover the download, so those
+# tests exercise the HTTP client whisker ships rather than a stand-in.
+tiny_http = "0.12"
 toml = "1"
 tree-sitter = "0.26"
 tree-sitter-rust = "0.24"
