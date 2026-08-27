@@ -41,8 +41,10 @@ fn configure_git_lint(package: &Path, url: &str, rev: &str) {
     let url = toml::Value::from(url);
     let rev = toml::Value::from(rev);
 
+    let config = package.join(".config");
+    std::fs::create_dir_all(&config).expect("the config directory should be created");
     std::fs::write(
-        package.join(".whisker.toml"),
+        config.join("whisker.toml"),
         format!("[[lints]]\ngit = {url}\nrev = {rev}\n"),
     )
     .expect("configuration should be written");

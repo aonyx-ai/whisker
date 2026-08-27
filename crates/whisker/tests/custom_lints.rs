@@ -36,22 +36,24 @@ fn configure_lint(package: &Path, lint_path: &Path) {
     let lint_path = lint_path.to_str().expect("the lint path should be UTF-8");
     let lint_path = toml::Value::from(lint_path);
 
-    std::fs::write(
-        package.join(".whisker.toml"),
-        format!("[[lints]]\npath = {lint_path}\n"),
-    )
-    .expect("configuration should be written");
+    write_config(package, &format!("[[lints]]\npath = {lint_path}\n"));
+}
+
+/// Writes `contents` to the configuration file of the project at `package`
+fn write_config(package: &Path, contents: &str) {
+    let config = package.join(".config");
+    std::fs::create_dir_all(&config).expect("the config directory should be created");
+    std::fs::write(config.join("whisker.toml"), contents).expect("configuration should be written");
 }
 
 /// Points the package's whisker configuration at one pinned repository
 fn configure_git_lint(package: &Path, url: &str, rev: &str) {
     let url = toml::Value::from(url);
 
-    std::fs::write(
-        package.join(".whisker.toml"),
-        format!("[[lints]]\ngit = {url}\nrev = \"{rev}\"\n"),
-    )
-    .expect("configuration should be written");
+    write_config(
+        package,
+        &format!("[[lints]]\ngit = {url}\nrev = \"{rev}\"\n"),
+    );
 }
 
 /// Returns the example plugin this repository ships

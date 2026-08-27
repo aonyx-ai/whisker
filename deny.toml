@@ -27,9 +27,13 @@ feature-depth = 1
 # attribution requirement dropped; CDLA-Permissive-2.0 covers data rather than
 # code, and the data is Mozilla's list of certificate authorities.
 #
-# Gitoxide also offers pack caches that would arrive under MPL-2.0. Whisker
-# does not enable them, so no copyleft license appears in this tree and none
-# is allowed here.
+# MPL-2.0 is the one copyleft license here. It arrives through `option-ext`,
+# under the `dirs` that kawauso-config reads a user's configuration directory
+# with. MPL's copyleft is per-file and binds whoever modifies the covered
+# files: whisker depends on the crate rather than vendoring it, so it
+# modifies nothing and the clause never reaches whisker's own source. The
+# same reasoning covers gitoxide's pack caches, which whisker leaves off for
+# reasons of its own.
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
@@ -39,6 +43,7 @@ allow = [
   "ISC",
   "MIT",
   "MIT-0",
+  "MPL-2.0",
   "Unicode-3.0",
   "Zlib",
 ]

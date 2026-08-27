@@ -19,10 +19,10 @@ clawless = "0.6.0"
 etcetera.workspace = true
 gix.workspace = true
 ignore.workspace = true
+kawauso-project.workspace = true
 libloading.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-toml.workspace = true
 whisker-core = { path = "../whisker-core" }
 whisker-reporting = { path = "../whisker-reporting" }
 whisker-rust = { path = "../whisker-rust" }

@@ -41,8 +41,7 @@ etcetera = "0.11"
 # is on that list because it makes gitoxide's object store shareable between
 # threads, which the checkout requires. `max-performance-safe` would add it
 # along with pack caches that buy nothing here — one shallow fetch of one
-# commit — and would pull in a copyleft dependency to do it, so the feature is
-# named directly instead.
+# commit — so the feature is named directly instead.
 #
 # `gix::url` also reads the remote a lint entry names, so the configuration and
 # the fetch agree on what a remote is. Whisker took that parser from `gix-url`
@@ -60,6 +59,13 @@ gix = { version = "0.87", default-features = false, features = [
 # so that `.gitignore` and friends are honored: a linter that reports on
 # generated output such as `target/` is worse than no linter at all.
 ignore = "0.4"
+# Finds the project a `whisker check` run targets, and reads the
+# configuration file at the top of it. Whisker used to walk the directory
+# tree itself. The crate does the same walk, but it is the walk every Aonyx
+# tool does, so `.config/whisker.toml` sits where a user already expects a
+# tool's configuration to sit, and a broken file is reported in the same
+# words with the same line and column.
+kawauso-project = "0.1.0"
 # Loads custom lint plugins. The loader trusts a library only after the
 # handshake in whisker-types::plugin proves it was built by the same rustc
 # from the same whisker source.

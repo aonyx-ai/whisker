@@ -223,7 +223,7 @@ fn attached_error(entry: &DirEntry) -> Option<anyhow::Error> {
 /// Returns an error that names the offending pattern when it is not valid
 /// gitignore syntax.
 fn build_excludes(config: &WhiskerConfig) -> anyhow::Result<Gitignore> {
-    let mut builder = GitignoreBuilder::new(config.root());
+    let mut builder = GitignoreBuilder::new(config.root().get());
 
     for pattern in config.ignore() {
         builder
@@ -249,6 +249,7 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt as _;
 
+    use kawauso_project::project::ProjectRoot;
     use tempfile::TempDir;
 
     use super::*;
@@ -311,7 +312,7 @@ mod tests {
             .map(|pattern| IgnorePattern::new(*pattern))
             .collect();
 
-        WhiskerConfig::new(root, patterns, Vec::new())
+        WhiskerConfig::new(ProjectRoot::new(root), patterns, Vec::new())
     }
 
     /// Returns the discovered files as slash-separated paths relative to `root`
@@ -793,8 +794,10 @@ mod tests {
     #[test]
     fn run_with_project_configuration_excludes_the_configured_pattern() {
         let directory = tree(&["src/main.rs", "generated/schema.rs"]);
+        let config_directory = directory.path().join(".config");
+        std::fs::create_dir_all(&config_directory).expect("config directory should be created");
         std::fs::write(
-            directory.path().join(".whisker.toml"),
+            config_directory.join("whisker.toml"),
             "ignore = [\"generated/\"]\n",
         )
         .expect("configuration should be written");
