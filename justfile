@@ -71,6 +71,43 @@ lint-toml:
 lint-yaml:
     yamllint .
 
+# Assemble a release archive of whisker for one target
+package-whisker version target:
+    #!/usr/bin/env -S bash -euo pipefail
+    # The archive holds the binary, both licenses, and the README. A sidecar
+    # beside it carries the SHA-256 digest, so a download can be verified
+    # with `shasum -a 256 -c`. The recipe runs outside Flox, because the
+    # release runners have rustup and Flox installs on x86_64 Linux alone.
+    version="{{ version }}"
+    version="${version#v}"
+    target="{{ target }}"
+
+    # The tag names the version, and `Cargo.toml` names it too. A tag that
+    # disagrees would ship an archive whose name promises a version the
+    # binary does not report, so the disagreement stops the release here.
+    pinned="$(cargo pkgid -p whisker)"
+    pinned="${pinned##*#}"
+    pinned="${pinned##*@}"
+    if [ "${version}" != "${pinned}" ]; then
+        echo "the tag names version ${version}, but Cargo.toml holds ${pinned}" >&2
+        exit 1
+    fi
+
+    cargo build --release --locked -p whisker --target "${target}"
+    "target/${target}/release/whisker" --version
+
+    name="whisker-${version}-${target}"
+    rm -rf "dist/${name}"
+    mkdir -p "dist/${name}"
+    cp "target/${target}/release/whisker" "dist/${name}/"
+    cp LICENSE-APACHE LICENSE-MIT README.md "dist/${name}/"
+
+    # Short flags, because macOS ships bsdtar and its support for the
+    # GNU long spellings is not something a release should rely on.
+    tar -czf "dist/${name}.tar.gz" -C dist "${name}"
+    rm -rf "dist/${name}"
+    (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
+
 # Auto-format files with prettier
 [private]
 prettier fix="false" extension="*":
