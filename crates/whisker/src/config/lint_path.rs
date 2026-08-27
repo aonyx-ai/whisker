@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+use kawauso_project::project::ProjectRoot;
 
 /// The path of a custom lint crate configured in the whisker configuration
 ///
@@ -12,7 +14,7 @@ use std::path::{Path, PathBuf};
 /// ```ignore
 /// let path = LintPath::new("lints/no_todo");
 ///
-/// assert_eq!(path.resolve(Path::new("/project")), Path::new("/project/lints/no_todo"));
+/// assert_eq!(path.resolve(&root), Path::new("/project/lints/no_todo"));
 /// ```
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct LintPath(PathBuf);
@@ -31,19 +33,22 @@ impl LintPath {
 
     /// Returns the path this entry points at, anchored at `root`
     ///
-    /// A relative path anchors at the project directory that holds the
-    /// configuration file, the same directory the ignore patterns anchor
-    /// at. An absolute path stands on its own.
+    /// A relative path anchors at the project directory, the same directory
+    /// the ignore patterns anchor at. An absolute path stands on its own.
+    ///
+    /// The anchor is a [`ProjectRoot`] rather than any path, because the
+    /// only directory a configured entry may anchor at is the one the search
+    /// found.
     ///
     /// # Examples
     ///
     /// ```ignore
     /// let path = LintPath::new("lints/no_todo");
     ///
-    /// assert_eq!(path.resolve(Path::new("/project")), Path::new("/project/lints/no_todo"));
+    /// assert_eq!(path.resolve(&root), Path::new("/project/lints/no_todo"));
     /// ```
-    pub fn resolve(&self, root: &Path) -> PathBuf {
-        root.join(&self.0)
+    pub fn resolve(&self, root: &ProjectRoot) -> PathBuf {
+        root.get().join(&self.0)
     }
 }
 
@@ -55,7 +60,14 @@ impl std::fmt::Display for LintPath {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
+
+    /// Returns a project root for an entry under test to anchor at
+    fn root() -> ProjectRoot {
+        ProjectRoot::new(PathBuf::from("/project"))
+    }
 
     #[test]
     fn display_matches_source() {
@@ -68,7 +80,7 @@ mod tests {
     fn resolve_anchors_a_relative_path_at_the_root() {
         let path = LintPath::new("lints/no_todo");
 
-        let resolved = path.resolve(Path::new("/project"));
+        let resolved = path.resolve(&root());
 
         assert_eq!(resolved, Path::new("/project/lints/no_todo"));
     }
@@ -77,7 +89,7 @@ mod tests {
     fn resolve_keeps_an_absolute_path() {
         let path = LintPath::new("/elsewhere/no_todo");
 
-        let resolved = path.resolve(Path::new("/project"));
+        let resolved = path.resolve(&root());
 
         assert_eq!(resolved, Path::new("/elsewhere/no_todo"));
     }

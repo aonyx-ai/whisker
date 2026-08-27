@@ -44,26 +44,27 @@ wrong grammar finds nothing and would report the file clean.
 
 ### Configuration
 
-Whisker reads its configuration from `.config/whisker.toml` or
-`.whisker.toml`:
+Whisker reads its configuration from `.config/whisker.toml`:
 
 ```toml
 ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 ```
 
-Either name works. A directory that holds both is an error, because whisker
-cannot tell which one you meant. The search starts at the path you check and
-climbs to the repository root. `whisker check src/` still finds the
-configuration at the top of your repository.
+The search starts at the path you check and climbs until it finds that file,
+or failing that, a `.git` directory. `whisker check src/` still finds the
+configuration at the top of your repository, and a run inside a repository
+never reads a file from outside it. A directory with a configuration file of
+its own is its own project, so one repository can hold several. A directory
+that is neither is still a valid target: whisker checks it and applies no
+patterns.
 
 `ignore` holds gitignore-syntax patterns. Use it for test fixtures, vendored
 sources, and other code that git tracks on purpose. The patterns anchor at
-the project directory: the directory that holds `.whisker.toml`, or the one
-that holds `.config`. They behave as they would in a `.gitignore` written
-there. `crates/app/generated/` names one directory relative to that root,
-`examples/` matches at any depth, and `/examples/` matches only at the root.
-Whisker rejects keys it does not recognize, so a typo is an error and not a
-silent no-op.
+the project directory, the one that holds `.config`, and they behave as they
+would in a `.gitignore` written there. `crates/app/generated/` names one
+directory relative to that root, `examples/` matches at any depth, and
+`/examples/` matches only at the root. Whisker rejects keys it does not
+recognize, so a typo is an error and not a silent no-op.
 
 ### Custom lints
 

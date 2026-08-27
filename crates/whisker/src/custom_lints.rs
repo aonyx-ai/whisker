@@ -318,13 +318,15 @@ impl LintRegistrar for Collecting {
 mod tests {
     use std::path::PathBuf;
 
+    use kawauso_project::project::ProjectRoot;
+
     use super::*;
     use crate::config::LintPath;
 
     fn config_with(root: &Path, lints: Vec<LintPath>) -> WhiskerConfig {
         let lints = lints.into_iter().map(LintSource::Path).collect();
 
-        WhiskerConfig::new(root.to_path_buf(), Vec::new(), lints)
+        WhiskerConfig::new(ProjectRoot::new(root.to_path_buf()), Vec::new(), lints)
     }
 
     fn directories(config: &WhiskerConfig) -> anyhow::Result<Vec<PathBuf>> {

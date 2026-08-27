@@ -85,11 +85,9 @@ fn decoration_probes() -> PathBuf {
 ///
 /// A fixture that expects a diagnostic needs one, because whisker links
 /// no rules of its own. A fixture inside this checkout needs one for a
-/// second reason. The search for a configuration climbs until it meets a
-/// `.git` directory. Such a fixture therefore reads this repository's
-/// file, and runs whatever rules whisker names today. A fixture under a
-/// temporary directory has no `.git` above it, so the search reaches the
-/// filesystem root and finds nothing.
+/// second reason. Its own file makes the fixture the project, so the
+/// search stops there instead of climbing to this repository and running
+/// whatever rules whisker names today.
 ///
 /// The path goes through a TOML value rather than into quotes of our own,
 /// so a checkout under a directory holding a quote still writes a
@@ -98,11 +96,15 @@ fn write_lint_config(directory: &Path, lint: &Path) {
     let lint = lint.to_str().expect("the lint path should be UTF-8");
     let lint = toml::Value::from(lint);
 
-    std::fs::write(
-        directory.join(".whisker.toml"),
-        format!("[[lints]]\npath = {lint}\n"),
-    )
-    .expect("the configuration should be written");
+    write_config(directory, &format!("[[lints]]\npath = {lint}\n"));
+}
+
+/// Writes `contents` to the configuration file of the project at `directory`
+fn write_config(directory: &Path, contents: &str) {
+    let config = directory.join(".config");
+    std::fs::create_dir_all(&config).expect("the config directory should be created");
+    std::fs::write(config.join("whisker.toml"), contents)
+        .expect("the configuration should be written");
 }
 
 /// Creates a package whose `src` holds Rust files no module declares
@@ -318,11 +320,7 @@ fn check_package_whose_sources_a_gitignore_excludes_fails() {
 #[test]
 fn check_package_whose_sources_the_configuration_excludes_fails() {
     let package = package(CLEAN_SOURCE);
-    std::fs::write(
-        package.path().join(".whisker.toml"),
-        "ignore = [\"src/\"]\n",
-    )
-    .expect("configuration should be written");
+    write_config(package.path(), "ignore = [\"src/\"]\n");
 
     whisker()
         .arg("check")
