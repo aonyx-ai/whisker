@@ -94,7 +94,18 @@ package-whisker version target:
     fi
 
     cargo build --release --locked -p whisker --target "${target}"
-    "target/${target}/release/whisker" --version
+    whisker="target/${target}/release/whisker"
+    "${whisker}" --version
+
+    # The archive's name promises a platform, and the binary decides which
+    # prebuilt lints it asks a publisher for. A disagreement would send
+    # everyone who unpacks this archive looking for artifacts that were
+    # never published under that name, so the two are compared here.
+    tag="$("${whisker}" abi)"
+    if [ "${tag#*-}" != "${target}" ]; then
+        echo "the binary is built for ${tag#*-}, but the archive names ${target}" >&2
+        exit 1
+    fi
 
     name="whisker-${version}-${target}"
     rm -rf "dist/${name}"
