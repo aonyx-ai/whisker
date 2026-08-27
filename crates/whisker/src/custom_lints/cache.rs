@@ -1,3 +1,16 @@
+//! Where whisker keeps what it fetches for custom lints
+//!
+//! A lint source that is not already a directory on the machine has to
+//! become one before whisker can use it. This module owns the layout of
+//! the cache those arrive in: where its root is, where one source sits
+//! under it, and where a fetch assembles a source before it is whole
+//! enough to install.
+//!
+//! The layout is written into directory names that outlive the process,
+//! so each part of it is stable by construction rather than by habit.
+//! The module sits beside the sources rather than inside one of them,
+//! because the cache is the platform's, not any one source's.
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
