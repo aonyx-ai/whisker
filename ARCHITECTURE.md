@@ -126,52 +126,51 @@ reaches the network happens there rather than between two compilations.
 
 ## Prebuilt lints
 
-Compiling a repository of rules costs a toolchain and several minutes, in
-every project and on every build agent pinning the same commit. It is
-also the step a released whisker binary usually cannot take at all: the
-handshake accepts a plugin only from the rustc that built whisker, and
-whoever downloaded the binary does not have that toolchain.
+A git entry can arrive as libraries that its publisher compiled, and
+whisker looks for those before it compiles the source. It asks the
+remote's releases for an archive named `<rev>-<tag>.tar.gz`, where the
+tag is the one `whisker abi` prints: a digest of every value the
+handshake compares, followed by the target triple the build script baked
+in.
 
-So a git entry is offered prebuilt libraries first. Whisker asks the
-remote's releases for an archive named `<rev>-<tag>.tar.gz`, where the tag
-is the one `whisker abi` prints: a digest of every value the handshake
-compares, followed by the target triple the build script baked in.
+Compiling costs a toolchain and several minutes, in every project and on
+every build agent that pins the same commit. A released whisker binary
+also cannot compile lints on most machines. The handshake accepts a
+library only from the rustc that built whisker, and whoever downloaded
+the binary does not have that rustc.
 
-The tag is what makes this safe by construction. It covers exactly what
-the handshake covers, so an archive published under a whisker's tag passes
-that whisker's handshake, and a whisker nobody built for finds no file
-rather than downloading one and being refused. A library that arrives
-prebuilt and then fails the handshake is therefore not a reason to fall
-back — it means the archive was published under a tag that does not
-describe it, and compiling the source instead would hide that from
-everyone else who trusts the tag. It ends the run and names the directory
-to delete.
+The tag covers what the handshake covers. An archive published under a
+whisker's tag passes that whisker's handshake, and a whisker nobody built
+for finds no file. A prebuilt library that fails the handshake ends the
+run and names the directory to delete. The publisher named the archive
+with a tag that does not describe it, and a source build would hide that
+from everyone who trusts the tag.
 
-The archive is checked against a `.sha256` published beside it, then
-unpacked into
-`<cache>/prebuilt/<remote>/<rev>/<tag>/`, staged and renamed the way a
-checkout is. `<remote>` is spelled exactly as it is under `<cache>/git/`,
-because both layouts derive it from the same function. Only regular files
-at the archive's root are unpacked, which is one rule doing three jobs: it
-skips what whisker has no use for, and an entry cannot climb out of the
-directory or plant a symbolic link without failing it.
+Whisker checks the archive against the `.sha256` published beside it,
+then unpacks it into `<cache>/prebuilt/<remote>/<rev>/<tag>/`, staged
+and renamed the way a checkout is. Both layouts derive `<remote>` from
+the same function, so it is spelled the same under `<cache>/git/`.
+Whisker unpacks only regular files at the archive's root. That one rule
+skips what whisker has no use for, keeps every entry inside the
+directory, and refuses a symbolic link.
 
-The digest guards against a truncated or corrupted download. It is
-published by the same party as the archive, so it establishes nothing
-about trust; the handshake does that, and configuring a repository of
-lints is already a decision to run its code.
+The digest catches a truncated or corrupted download. The same publisher
+writes the archive and the digest, so it establishes nothing about trust.
+The handshake does that, and a configured repository of lints already
+runs its code in whisker's process.
 
-Everything past the cache is best effort, because compiling the source is
-always available and always correct. What varies is whether the reader
-hears about it. A remote the API does not serve, a repository it will not
-list, and a release with nothing named for this whisker are all the
-ordinary case for a project nobody publishes lints for, so whisker is
-silent; warning there would greet most projects on every check. An API
-that answers with a fault, a digest that does not match, and an archive
-that will not unpack each earn one line on stderr.
+A missing archive never fails a check, because the source build is always
+available. Whisker is silent when the remote is not on GitHub, when the
+API answers 404, and when no release names an archive for this whisker.
+That is the ordinary case for a project whose rules nobody publishes
+prebuilt, and a warning there would appear on most projects on every
+check. Three failures print one line on stderr before whisker compiles
+the source: an API it cannot reach or that answers with an error, a
+digest that does not match, and an archive that will not unpack.
 
-The exchange runs on a thread of its own, because the HTTP client owns an
-asynchronous runtime and dropping one inside another panics.
+The exchange with the API runs on a thread of its own. The HTTP client
+owns an asynchronous runtime, and a runtime dropped inside another
+panics.
 
 A directory may hold one package or a workspace of them, and every dynamic
 library the build produces is loaded and handshaken separately. That is
