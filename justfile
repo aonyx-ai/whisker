@@ -157,5 +157,17 @@ test-fixture-lint:
 # once an integration test, but a test that reaches the network belongs in a
 # recipe a person can choose to run, not in `cargo test`.
 check-self:
+    #!/usr/bin/env -S bash -euo pipefail
     cargo build --release -p whisker
-    ./target/release/whisker check .
+
+    # The rules repository pins a toolchain of its own, and whisker's may
+    # move ahead of it. Rustup would then build those rules with their
+    # toolchain, and the handshake would refuse plugins that whisker had
+    # just built. Whisker passes its environment to the cargo it runs, so
+    # naming the toolchain here builds them with this repository's.
+    #
+    # This belongs to the recipe and not to whisker. Whisker has no business
+    # overriding the toolchain a plugin author chose; the two pins are
+    # coupled only because both repositories are ours.
+    RUSTUP_TOOLCHAIN="$(rustup show active-toolchain | cut -d" " -f1)" \
+        ./target/release/whisker check .
