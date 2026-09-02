@@ -80,7 +80,7 @@ impl<'a> DecoratedNode<'a> {
 
     /// Returns the total number of children (named and anonymous)
     pub fn child_count(&self) -> usize {
-        self.node.child_count()
+        self.node.child_count() as usize
     }
 
     /// Returns the child at the given index (named or anonymous)
