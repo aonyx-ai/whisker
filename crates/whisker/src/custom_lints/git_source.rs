@@ -6,6 +6,24 @@ use anyhow::Context as _;
 use super::cache;
 use crate::config::{GitLintSource, GitRev, GitUrl};
 
+/// Returns the checkout of `source` the machine already holds, if any
+///
+/// This is [`checkout`] without the fetch. A caller asks it whether a
+/// source sits on the machine, before it decides to reach the network
+/// for anything else.
+///
+/// # Errors
+///
+/// Returns an error if no cache location can be determined.
+pub fn cached(source: &GitLintSource) -> anyhow::Result<Option<PathBuf>> {
+    let destination = cache::checkout_directory(source)?;
+
+    match holds(&destination, source.rev()) {
+        true => Ok(Some(destination)),
+        false => Ok(None),
+    }
+}
+
 /// Returns a checkout of `source`, fetching it if the cache lacks one
 ///
 /// A checkout is permanent once it exists, because a [`GitRev`] names one

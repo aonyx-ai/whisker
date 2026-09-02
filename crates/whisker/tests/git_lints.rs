@@ -60,12 +60,18 @@ fn configure_git_lint(package: &Path, url: &str, rev: &str) {
 /// the identity in someone's `~/.gitconfig` passed everywhere it was
 /// written and failed on every build agent, which is where whisker most
 /// needs to work, so these tests run with the same nothing an agent has.
+///
+/// The same reasoning removes a token and a release API. Neither belongs
+/// near a fixture remote.
 fn whisker(cache: &TempDir) -> Command {
     let mut command = Command::cargo_bin("whisker").expect("whisker binary should exist");
     command.env("WHISKER_CACHE_DIR", cache.path());
     command.env("CARGO_TARGET_DIR", shared_build_directory());
     command.env("GIT_CONFIG_GLOBAL", "/dev/null");
     command.env("GIT_CONFIG_SYSTEM", "/dev/null");
+    command.env_remove("GH_TOKEN");
+    command.env_remove("GITHUB_TOKEN");
+    command.env_remove("WHISKER_GITHUB_API_URL");
 
     command
 }

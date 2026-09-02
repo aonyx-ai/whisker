@@ -62,8 +62,17 @@ fn example_lint() -> PathBuf {
     std::fs::canonicalize(path).expect("the example lint should exist")
 }
 
+/// Returns a whisker with nothing of the caller's environment in it
+///
+/// A token or a release API of the person who runs the tests must not
+/// reach a fixture remote. No run here reads either one.
 fn whisker() -> Command {
-    Command::cargo_bin("whisker").expect("whisker binary should exist")
+    let mut command = Command::cargo_bin("whisker").expect("whisker binary should exist");
+    command.env_remove("GH_TOKEN");
+    command.env_remove("GITHUB_TOKEN");
+    command.env_remove("WHISKER_GITHUB_API_URL");
+
+    command
 }
 
 /// Returns the build directory the plugin workspace uses

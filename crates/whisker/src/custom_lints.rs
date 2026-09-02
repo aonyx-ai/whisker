@@ -9,7 +9,7 @@ use whisker_types::LintPass;
 use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
 
 use self::handshake::AbiIdentity;
-use crate::config::{LintSource, WhiskerConfig};
+use crate::config::{GitLintSource, LintSource, WhiskerConfig};
 
 mod abi_tag;
 mod artifact;
@@ -145,13 +145,7 @@ fn configured_sources(config: &WhiskerConfig, tag: &AbiTag) -> anyhow::Result<Ve
                 path.resolve(config.root()),
                 Contents::Sources(Locking::Unlocked),
             ),
-            LintSource::Git(git) => match prebuilt::resolve(git, tag)? {
-                Some(directory) => (directory, Contents::Libraries),
-                None => (
-                    git_source::checkout(git)?,
-                    Contents::Sources(Locking::Locked),
-                ),
-            },
+            LintSource::Git(git) => resolve_git(git, tag)?,
         };
 
         anyhow::ensure!(
@@ -189,6 +183,42 @@ fn configured_sources(config: &WhiskerConfig, tag: &AbiTag) -> anyhow::Result<Ve
     }
 
     Ok(sources)
+}
+
+/// Resolves a git entry, preferring whatever the machine already holds
+///
+/// The order is by what each answer costs. Prebuilt libraries whisker
+/// already unpacked are the cheapest and win outright. A checkout that is
+/// already there comes next: whisker has to compile it, but cargo has
+/// compiled it before, so asking a release API first would put a network
+/// request in front of a run that needs none, and every check on a train
+/// would stop working. Only a machine holding neither asks anyone.
+///
+/// A project with a warm checkout therefore keeps compiling it, even
+/// after its rules start to publish archives. A person moves the pin or
+/// clears the cache to pick those up.
+///
+/// # Errors
+///
+/// Returns an error if no cache location can be determined, or if the
+/// source has to be fetched and cannot be.
+fn resolve_git(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<(PathBuf, Contents)> {
+    if let Some(directory) = prebuilt::cached(source, tag)? {
+        return Ok((directory, Contents::Libraries));
+    }
+
+    if let Some(directory) = git_source::cached(source)? {
+        return Ok((directory, Contents::Sources(Locking::Locked)));
+    }
+
+    if let Some(directory) = prebuilt::fetch(source, tag)? {
+        return Ok((directory, Contents::Libraries));
+    }
+
+    Ok((
+        git_source::checkout(source)?,
+        Contents::Sources(Locking::Locked),
+    ))
 }
 
 /// Builds the packages at `directory` and loads the lints they export
