@@ -1,0 +1,72 @@
+---
+name: Release binaries
+
+"on":
+  release:
+    types: [released]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  archives:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+
+    permissions:
+      contents: write # Required to attach the archives to the release
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The runners ship rustup but not the toolchain this repository pins.
+      # `rustup toolchain install` without an argument reads
+      # `rust-toolchain.toml`, so the pin lives in one place. Flox installs
+      # the same toolchain for every other job, but its action runs on
+      # x86_64 Linux alone, and two of these three runners are not that.
+      - name: Install the pinned toolchain
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          rustup toolchain install
+          rustup target add "${TARGET}"
+
+      - name: Install Just
+        uses: taiki-e/install-action@fcf5432d9f50d67e37ee6e29bdb7a224ff67b4a7 # v2.86.8
+        with:
+          tool: just
+
+      # This job deliberately keeps no Cargo cache. Every other workflow
+      # here restores one, but a cache that a pull request can write is a
+      # way to reach the binary a release publishes. A release builds once
+      # per tag, so the minutes a cache would save are worth less than the
+      # guarantee that the archive came from this source alone.
+
+      - name: Assemble the archive
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          TARGET: ${{ matrix.target }}
+        run: just package-whisker "${TAG}" "${TARGET}"
+
+      - name: Attach the archive to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "${TAG}" dist/*.tar.gz dist/*.sha256 --clobber
