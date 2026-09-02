@@ -80,17 +80,25 @@ impl FixtureRepository {
 
 /// Runs one git command in `directory` and returns its standard output
 ///
-/// The fixture ignores the configuration of whoever runs the tests. A
-/// global `commit.gpgsign`, a `core.hooksPath`, or a commit template would
-/// otherwise decide whether the suite passes.
+/// The command starts from an empty environment, plus the `PATH` that
+/// finds git. The fixture therefore ignores the configuration of whoever
+/// runs the tests, and it ignores the `GIT_DIR` and `GIT_INDEX_FILE` that
+/// git exports to a hook. A global `commit.gpgsign`, a `core.hooksPath`,
+/// or a commit template would otherwise decide whether the suite passes.
+/// A pre-commit hook in a linked worktree once handed the fixture its
+/// repository, and `git init` and `git add --all` then ran against the
+/// checkout being committed.
 ///
 /// # Panics
 ///
 /// Panics if git cannot be run or exits unsuccessfully.
-fn git(directory: &Path, arguments: &[&str]) -> String {
+pub fn git(directory: &Path, arguments: &[&str]) -> String {
+    let path = std::env::var_os("PATH").unwrap_or_default();
     let output = Command::new("git")
         .args(arguments)
         .current_dir(directory)
+        .env_clear()
+        .env("PATH", path)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")

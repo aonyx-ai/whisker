@@ -8,7 +8,7 @@ use tempfile::TempDir;
 #[path = "support/fixture_repository.rs"]
 mod fixture_repository;
 
-use fixture_repository::{FixtureRepository, Standalone, write_lint_package, write_lockfile};
+use fixture_repository::{FixtureRepository, Standalone, git, write_lint_package, write_lockfile};
 
 /// Source that trips the fixture lints and nothing whisker ships
 const TODO_SOURCE: &str = "pub fn later() {\n    todo!()\n}\n";
@@ -101,6 +101,52 @@ fn repository_with_one_lint(rule: &str) -> FixtureRepository {
         write_lint_package(directory, "fixture_lint", rule, Standalone::Yes);
         write_lockfile(directory);
     })
+}
+
+/// Pins that the fixture helper ignores the git environment around the tests
+///
+/// The suite runs from a pre-commit hook, and git exports `GIT_DIR` and
+/// `GIT_INDEX_FILE` to a hook in a linked worktree. A fixture that inherited
+/// them once ran `git init` and `git add --all` against the checkout being
+/// committed. The test sets the process environment, which nextest confines
+/// to this test's own process.
+#[test]
+fn fixture_repository_ignores_an_ambient_git_environment() {
+    let victim = tempfile::tempdir().expect("temporary directory should be created");
+    std::fs::write(victim.path().join("file.txt"), "hello\n").expect("the file should be written");
+    git(victim.path(), &["init", "--quiet", "-b", "main"]);
+    git(victim.path(), &["add", "--all"]);
+    let git_dir = victim.path().join(".git");
+    let index_before = std::fs::read(git_dir.join("index")).expect("the index should be readable");
+    let config_before =
+        std::fs::read(git_dir.join("config")).expect("the config should be readable");
+    unsafe {
+        std::env::set_var("GIT_DIR", &git_dir);
+        std::env::set_var("GIT_INDEX_FILE", git_dir.join("index"));
+    }
+
+    let rules = repository_with_one_lint("fixture.no-todo");
+
+    unsafe {
+        std::env::remove_var("GIT_DIR");
+        std::env::remove_var("GIT_INDEX_FILE");
+    }
+    let index_after = std::fs::read(git_dir.join("index")).expect("the index should be readable");
+    let config_after =
+        std::fs::read(git_dir.join("config")).expect("the config should be readable");
+    assert_eq!(
+        index_after, index_before,
+        "the fixture wrote the victim's index"
+    );
+    assert_eq!(
+        config_after, config_before,
+        "the fixture wrote the victim's config"
+    );
+    assert_eq!(
+        rules.rev().len(),
+        40,
+        "the fixture should hold a commit of its own"
+    );
 }
 
 /// Pins that a git environment around whisker cannot reach its checkout
