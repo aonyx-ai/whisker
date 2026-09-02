@@ -85,11 +85,17 @@ package-whisker version target:
     # The tag names the version, and `Cargo.toml` names it too. A tag that
     # disagrees would ship an archive whose name promises a version the
     # binary does not report, so the disagreement stops the release here.
+    #
+    # A prerelease tag such as `v0.1.0-rc.1` carries a suffix that the
+    # crate version never holds, and the binary reports `0.1.0` whatever
+    # the suffix says. The comparison therefore drops the suffix, while
+    # the archive keeps the whole tag in its name.
+    release="${version%%-*}"
     pinned="$(cargo pkgid -p whisker)"
     pinned="${pinned##*#}"
     pinned="${pinned##*@}"
-    if [ "${version}" != "${pinned}" ]; then
-        echo "the tag names version ${version}, but Cargo.toml holds ${pinned}" >&2
+    if [ "${release}" != "${pinned}" ]; then
+        echo "the tag names version ${release}, but Cargo.toml holds ${pinned}" >&2
         exit 1
     fi
 

@@ -3,7 +3,12 @@ name: Release binaries
 
 "on":
   release:
-    types: [released]
+    # `published` fires once, for a release and for a prerelease alike.
+    # `released` would skip a prerelease entirely, which is the one kind
+    # of release worth building binaries for before anyone depends on
+    # them. It also fires a second time when a prerelease is promoted,
+    # and the archives from the first run are still the right ones.
+    types: [published]
 
 permissions: {}
 
