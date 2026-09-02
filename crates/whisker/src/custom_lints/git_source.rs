@@ -3,9 +3,8 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::Context as _;
 
+use super::cache;
 use crate::config::{GitLintSource, GitRev, GitUrl};
-
-mod cache;
 
 /// Returns a checkout of `source`, fetching it if the cache lacks one
 ///

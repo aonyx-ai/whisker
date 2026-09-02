@@ -12,6 +12,7 @@ use self::handshake::AbiIdentity;
 use crate::config::{LintSource, WhiskerConfig};
 
 mod artifact;
+mod cache;
 mod git_source;
 mod handshake;
 
