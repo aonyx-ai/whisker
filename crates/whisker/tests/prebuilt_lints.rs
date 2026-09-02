@@ -13,7 +13,7 @@ mod fixture_repository;
 mod mismatched_plugin;
 
 use fake_github::{Answer, FakeGitHub};
-use fixture_repository::{FixtureRepository, Standalone, write_lint_package, write_lockfile};
+use fixture_repository::{FixtureRepository, Standalone, git, write_lint_package, write_lockfile};
 use mismatched_plugin::write_mismatched_lint_package;
 
 /// Source that trips the fixture lint and nothing whisker ships
@@ -652,22 +652,6 @@ fn check_with_a_remote_the_api_does_not_serve_asks_nothing() {
 ///
 /// Panics if git is unavailable or any step fails.
 fn clone_into(rules: &FixtureRepository, destination: &Path) {
-    let run = |arguments: &[&str], directory: &Path| {
-        let output = Command::new("git")
-            .args(arguments)
-            .current_dir(directory)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .output()
-            .unwrap_or_else(|error| panic!("git {arguments:?} should run: {error}"));
-
-        assert!(
-            output.status.success(),
-            "git {arguments:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
-
     let parent = destination.parent().expect("the path should have a parent");
     std::fs::create_dir_all(parent).expect("the parent should be created");
 
@@ -677,10 +661,10 @@ fn clone_into(rules: &FixtureRepository, destination: &Path) {
         .to_string_lossy()
         .into_owned();
 
-    run(&["clone", "--quiet", &rules.url(), &name], parent);
-    run(
-        &["checkout", "--quiet", "--detach", rules.rev()],
+    git(parent, &["clone", "--quiet", &rules.url(), &name]);
+    git(
         destination,
+        &["checkout", "--quiet", "--detach", rules.rev()],
     );
 }
 
