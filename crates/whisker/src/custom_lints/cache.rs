@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context as _;
 use etcetera::base_strategy::{BaseStrategy as _, Xdg};
 
+use super::digest::digest;
 use crate::config::GitLintSource;
 
 /// The environment variable that moves the cache somewhere else
@@ -153,29 +154,6 @@ fn present(value: Option<OsString>) -> Option<OsString> {
     value.filter(|value| !value.is_empty())
 }
 
-/// Returns a short, stable digest of `text`
-///
-/// This distinguishes remotes; it does not authenticate them, so a small
-/// non-cryptographic hash is the right tool. It is spelled out rather than
-/// taken from the standard library because the value is written into a
-/// directory name that outlives the process: [`DefaultHasher`] promises
-/// nothing across releases, and a toolchain upgrade that silently moved
-/// every cached checkout would refetch the world.
-///
-/// [`DefaultHasher`]: std::hash::DefaultHasher
-fn digest(text: &str) -> String {
-    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const PRIME: u64 = 0x0000_0100_0000_01b3;
-
-    let mut hash = OFFSET;
-    for byte in text.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(PRIME);
-    }
-
-    format!("{hash:016x}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,19 +246,6 @@ mod tests {
         let second = checkout_directory_in(Path::new(ROOT), &source("https://example.com/b/rules"));
 
         assert_ne!(first, second);
-    }
-
-    #[test]
-    fn digest_is_stable_across_releases() {
-        assert_eq!(digest("https://example.com/rules"), "cc3eedebbb64629b");
-    }
-
-    #[test]
-    fn digest_separates_different_remotes() {
-        assert_ne!(
-            digest("https://example.com/a/rules"),
-            digest("https://example.com/b/rules")
-        );
     }
 
     #[test]

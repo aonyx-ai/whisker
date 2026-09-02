@@ -11,10 +11,14 @@ use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
 use self::handshake::AbiIdentity;
 use crate::config::{LintSource, WhiskerConfig};
 
+mod abi_tag;
 mod artifact;
 mod cache;
+mod digest;
 mod git_source;
 mod handshake;
+
+pub use abi_tag::AbiTag;
 
 /// The lint passes loaded from the project's configured custom lint crates
 ///
