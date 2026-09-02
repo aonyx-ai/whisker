@@ -26,6 +26,8 @@ and this project adheres to
   loads. A publisher writes it into the name of each archive.
 - Every release carries an archive of the whisker binary for Linux on x86-64
   and arm64, and for macOS on Apple silicon, with a SHA-256 digest beside it.
+  A prerelease carries them too, so a release can be tried before anyone
+  depends on it.
 
 ### Changed
 
