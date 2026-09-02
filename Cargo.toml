@@ -111,7 +111,7 @@ tempfile = "3"
 # tests exercise the HTTP client whisker ships rather than a stand-in.
 tiny_http = "0.12"
 toml = "1"
-tree-sitter = "0.26"
+tree-sitter = "0.27"
 tree-sitter-rust = "0.24"
 whisker-core = { path = "crates/whisker-core", version = "=0.1.0" }
 whisker-macros = { path = "crates/whisker-macros", version = "=0.1.0" }
