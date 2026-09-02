@@ -15,6 +15,31 @@ from tree-sitter's Rust grammar. Type-dependent rules use
 
 Whisker is in early development. Check back soon.
 
+## Installation
+
+Every release carries an archive for Linux on x86-64 and arm64, and for
+macOS on Apple silicon. Download the one for your platform from the
+[releases page][releases], check it against the `.sha256` beside it, and
+unpack it:
+
+```bash
+shasum -a 256 -c whisker-0.1.0-aarch64-apple-darwin.tar.gz.sha256
+tar -xzf whisker-0.1.0-aarch64-apple-darwin.tar.gz
+```
+
+The archive holds the binary, both licenses, and this README. Move
+`whisker` to a directory on your `PATH`, such as `~/.local/bin`.
+
+Whisker also builds from source. `rust-toolchain.toml` pins a nightly
+toolchain, and rustup installs it during the build:
+
+```bash
+cargo install --git https://github.com/aonyx-ai/whisker --locked whisker
+```
+
+The choice decides how whisker obtains your custom lints. See
+[custom lints](#custom-lints).
+
 ## Usage
 
 ```bash
@@ -99,6 +124,42 @@ libraries, and runs their lints. Whisker ships no rules of its own, so the
 rules a project configures are exactly the rules it runs. The first build takes
 as long as any Rust compilation; afterwards cargo's cache makes it cheap.
 
+#### Prebuilt lints
+
+A repository can publish its rules already compiled, and whisker loads
+those before it compiles anything. Before it builds a git entry, whisker
+asks that repository's releases for an archive. The archive is named
+after the pinned commit and after the tag that `whisker abi` prints. If a
+release carries that archive and the `.sha256` beside it, whisker
+downloads it and checks the digest. It then unpacks the archive into the
+cache and loads the libraries. Each library still completes the handshake
+described below, and one that fails it ends the run.
+
+Whisker asks a release only when the cache holds nothing for the entry.
+Libraries it unpacked before come first, then a checkout it compiled
+before. A project with a cached checkout therefore keeps compiling it
+after its rules start to publish archives. Move the pin or clear the
+cache to pick the archives up.
+
+A repository that publishes nothing for your tag is the ordinary case,
+and whisker compiles the source and says nothing. A download that fails
+or a digest that does not match prints one line on stderr, and whisker
+compiles the source.
+
+Set `GH_TOKEN` or `GITHUB_TOKEN` to reach a private repository, and
+`WHISKER_GITHUB_API_URL` to point whisker at a GitHub Enterprise
+installation. Whisker sends the token only to that API.
+
+The digest proves that the download arrived intact. The same publisher
+writes the archive and the digest, so the digest establishes no trust in
+the publisher. A repository you configure runs its code in whisker's
+process, prebuilt or compiled.
+
+A released whisker accepts only a library built by the nightly that
+built it. To compile a lint crate for one yourself, install the toolchain
+that `rust-toolchain.toml` names at the release's commit. Otherwise build
+whisker from source and compile the lint crate with the same toolchain.
+
 A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
 its rules to `export_lints!`. The complete crate in
 [`examples/custom_lint`][example] is the template: a `Cargo.toml` declaring
@@ -119,6 +180,7 @@ in step with the whisker you build against, the way
 [`examples/custom_lint`][example] does.
 
 [example]: examples/custom_lint
+[releases]: https://github.com/aonyx-ai/whisker/releases
 
 ## License
 

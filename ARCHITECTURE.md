@@ -119,6 +119,59 @@ revalidated against the remote, which is what keeps the network out of the
 common path. Only a git entry builds with `--locked`: the pin is worth
 what the lockfile behind it is worth.
 
+Resolving an entry and loading it are separate stages. Every entry is
+resolved before any of them is compiled, so a typo in the second entry
+surfaces before the first one's five-minute build, and everything that
+reaches the network happens there rather than between two compilations.
+
+## Prebuilt lints
+
+A git entry can arrive as libraries that its publisher compiled, and
+whisker looks for those before it compiles the source. It asks the
+remote's releases for an archive named `<rev>-<tag>.tar.gz`, where the
+tag is the one `whisker abi` prints: a digest of every value the
+handshake compares, followed by the target triple the build script baked
+in.
+
+Compiling costs a toolchain and several minutes, in every project and on
+every build agent that pins the same commit. A released whisker binary
+also cannot compile lints on most machines. The handshake accepts a
+library only from the rustc that built whisker, and whoever downloaded
+the binary does not have that rustc.
+
+The tag covers what the handshake covers. An archive published under a
+whisker's tag passes that whisker's handshake, and a whisker nobody built
+for finds no file. A prebuilt library that fails the handshake ends the
+run and names the directory to delete. The publisher named the archive
+with a tag that does not describe it, and a source build would hide that
+from everyone who trusts the tag.
+
+Whisker checks the archive against the `.sha256` published beside it,
+then unpacks it into `<cache>/prebuilt/<remote>/<rev>/<tag>/`, staged
+and renamed the way a checkout is. Both layouts derive `<remote>` from
+the same function, so it is spelled the same under `<cache>/git/`.
+Whisker unpacks only regular files at the archive's root. That one rule
+skips what whisker has no use for, keeps every entry inside the
+directory, and refuses a symbolic link.
+
+The digest catches a truncated or corrupted download. The same publisher
+writes the archive and the digest, so it establishes nothing about trust.
+The handshake does that, and a configured repository of lints already
+runs its code in whisker's process.
+
+A missing archive never fails a check, because the source build is always
+available. Whisker is silent when the remote is not on GitHub, when the
+API answers 404, and when no release names an archive for this whisker.
+That is the ordinary case for a project whose rules nobody publishes
+prebuilt, and a warning there would appear on most projects on every
+check. Three failures print one line on stderr before whisker compiles
+the source: an API it cannot reach or that answers with an error, a
+digest that does not match, and an archive that will not unpack.
+
+The exchange with the API runs on a thread of its own. The HTTP client
+owns an asynchronous runtime, and a runtime dropped inside another
+panics.
+
 A directory may hold one package or a workspace of them, and every dynamic
 library the build produces is loaded and handshaken separately. That is
 what lets a repository of rules arrive through a single entry rather than
