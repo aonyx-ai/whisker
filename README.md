@@ -1,15 +1,16 @@
 # Whisker
 
-Whisker is a language-agnostic linting platform built on [tree-sitter][ts].
-It ships no rules of its own: a project configures the ones it wants, and
-those are exactly the ones it runs. Aonyx's own live in
+Whisker is a linting platform built on [tree-sitter][ts]. It lints Rust
+today. Whisker ships no rules of its own: a project configures the ones it
+wants, and those are exactly the ones it runs. Aonyx's own live in
 [whisker-aonyx-rules][rules] and cover what Clippy does not, like derive
 ordering, wildcard match arms, `matches!` macro usage, and the other style
 rules defined in our `CLAUDE.md` files.
 
-Each rule is a separate crate implementing the `RustLintPass` trait generated
-from tree-sitter's Rust grammar. Type-dependent rules use
-[rust-analyzer][ra] as a library for semantic analysis.
+A rule implements the `RustLintPass` trait, which whisker generates from
+tree-sitter's Rust grammar. A rule that needs type information reads
+decorations that whisker computes with [rust-analyzer][ra] before any rule
+runs.
 
 ## Status
 
@@ -55,12 +56,21 @@ always checks a path you name on the command line, even when an ignore rule
 matches that path. Ignore rules still apply to files below a named
 directory.
 
+`whisker check` needs a Cargo project. Whisker uses rust-analyzer to load
+the workspace nearest the path you name, and it runs that workspace's
+build scripts before it lints anything. A file that no crate in the workspace
+reaches has no type information. Whisker reports it as an error and prints
+what to do about it. The same happens to a file that rust-analyzer
+excludes from the workspace.
+
 A directory that whisker cannot read, or an ignore file that it cannot
 parse, ends the run: each one changes which files whisker inspects. A file
 that whisker cannot read or analyze ends the run too. Pass `--keep-going`
-to report each failure, continue, and still exit non-zero.
+to report each failure, continue, and still exit non-zero. A diagnostic at
+the error severity also fails the run. Pass `--deny-warnings` to fail on
+a warning too.
 
-A run that finds nothing to check is an error, not a success. An empty run
+A run that finds nothing to check is an error. An empty run
 usually means a pattern matched too much, and it would otherwise look like
 a clean project.
 
@@ -89,13 +99,13 @@ the project directory, the one that holds `.config`, and they behave as they
 would in a `.gitignore` written there. `crates/app/generated/` names one
 directory relative to that root, `examples/` matches at any depth, and
 `/examples/` matches only at the root. Whisker rejects keys it does not
-recognize, so a typo is an error and not a silent no-op.
+recognize, so a typo is an error.
 
 ### Custom lints
 
 A project can bring its own rules. Each `lints` entry names a directory
-holding a lint crate; relative paths anchor at the project directory, the
-same way `ignore` patterns do:
+that holds a lint crate. Relative paths anchor at the project directory,
+the same way `ignore` patterns do:
 
 ```toml
 [[lints]]
@@ -113,11 +123,12 @@ rev = "0123456789abcdef0123456789abcdef01234567"
 
 A branch or a tag is whatever the remote points it at today, so the same
 configuration would run different rules on different days. Whisker asks for
-that one commit and nothing else, keeps the checkout under
-`~/.cache/whisker`, and reuses it forever after, because the commit it
-names can never change. Set `WHISKER_CACHE_DIR` to keep those checkouts
-somewhere else. A git source builds with `--locked`, so commit the
-lockfile beside the rules.
+that one commit and nothing else. It keeps the checkout under
+`~/.cache/whisker`, or under `XDG_CACHE_HOME` when that is set. A commit
+hash names one immutable tree, so whisker reuses the checkout on every
+later run. Set `WHISKER_CACHE_DIR` to keep those checkouts somewhere else.
+A git source builds with `--locked`, so commit the lockfile beside the
+rules.
 
 `whisker check` compiles each entry with your `cargo`, loads the built
 libraries, and runs their lints. Whisker ships no rules of its own, so the
@@ -126,9 +137,9 @@ as long as any Rust compilation; afterwards cargo's cache makes it cheap.
 
 #### Prebuilt lints
 
-A repository can publish its rules already compiled, and whisker loads
-those before it compiles anything. Before it builds a git entry, whisker
-asks that repository's releases for an archive. The archive is named
+A repository can publish its rules already compiled. Before whisker
+fetches a git entry, it asks that repository's releases for an archive.
+The archive is named
 after the pinned commit and after the tag that `whisker abi` prints. If a
 release carries that archive and the `.sha256` beside it, whisker
 downloads it and checks the digest. It then unpacks the archive into the
@@ -164,9 +175,9 @@ A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
 its rules to `export_lints!`. The complete crate in
 [`examples/custom_lint`][example] is the template: a `Cargo.toml` declaring
 the crate type and the whisker dependencies, one rule, and its tests. An
-entry may also name a directory holding a cargo workspace, in which case
-every plugin in it loads, which is what lets one entry bring a whole
-repository of rules.
+entry may also name a directory that holds a cargo workspace. Every
+plugin in it loads, which is what lets one entry bring a whole repository
+of rules.
 
 Rust has no stable ABI, so whisker only loads a plugin built by the same
 rustc from the same whisker source as the binary itself, and refuses
@@ -174,9 +185,9 @@ anything else with an error that says what to rebuild. In practice: pin the
 plugin's whisker dependencies to the revision your whisker was built from,
 and build both with the same toolchain.
 
-That check covers whisker's own source and the compiler, not the rest of
-the graph your plugin's lockfile resolves. Commit that lockfile and keep it
-in step with the whisker you build against, the way
+That check covers whisker's own source and the compiler. The rest of the
+graph your plugin's lockfile resolves lies outside it. Commit that
+lockfile and keep it in step with the whisker you build against, the way
 [`examples/custom_lint`][example] does.
 
 [example]: examples/custom_lint
