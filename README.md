@@ -31,6 +31,9 @@ tar -xzf whisker-0.1.0-aarch64-apple-darwin.tar.gz
 The archive holds the binary, both licenses, and this README. Move
 `whisker` to a directory on your `PATH`, such as `~/.local/bin`.
 
+The Linux binaries need glibc 2.35 or newer, which Ubuntu 22.04 and Debian
+12 satisfy. Build from source on anything older.
+
 Whisker also builds from source. `rust-toolchain.toml` pins a nightly
 toolchain, and rustup installs it during the build:
 

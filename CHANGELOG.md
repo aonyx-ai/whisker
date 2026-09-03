@@ -24,6 +24,8 @@ and this project adheres to
 
 ### Changed
 
+- The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
+  than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.
 - Whisker's own rules moved to [whisker-aonyx-rules][rules]. A project that ran
   them from `lints/` now names that repository and a commit.
 - Whisker finds its project with [kawauso-project][kawauso], and a broken

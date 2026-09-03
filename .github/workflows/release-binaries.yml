@@ -27,11 +27,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # A binary asks its build machine's glibc for a floor, and the
+        # oldest runner sets the oldest distribution that can run it.
+        # Ubuntu 24.04 carries glibc 2.39, which refuses Ubuntu 22.04 LTS
+        # and Debian 12. Ubuntu 22.04 carries 2.35, which both accept.
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-22.04-arm
           - target: aarch64-apple-darwin
             runner: macos-latest
 
