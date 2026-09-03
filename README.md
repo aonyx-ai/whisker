@@ -34,6 +34,16 @@ The archive holds the binary, both licenses, and this README. Move
 The Linux binaries need glibc 2.35 or newer, which Ubuntu 22.04 and Debian
 12 satisfy. Build from source on anything older.
 
+On GitHub Actions, the action in this repository does the same three
+steps, for the runner it finds itself on:
+
+```yaml
+- uses: aonyx-ai/whisker@v0.1.0-rc.2
+  with:
+    version: v0.1.0-rc.2
+- run: whisker check .
+```
+
 Whisker also builds from source. `rust-toolchain.toml` pins a nightly
 toolchain, and rustup installs it during the build:
 

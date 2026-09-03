@@ -1,5 +1,16 @@
 ---
 rules:
+  # The action writes the directory it unpacked into onto the PATH, which
+  # zizmor reads as a way to run code of a caller's choosing. The only part
+  # of that path a caller decides is the version, and the script refuses a
+  # version that is not a release name, so it cannot carry the newline that
+  # a second entry would need. An inline ignore does not apply inside a
+  # composite action, so the exemption sits here. Reread the check in
+  # `action.yml` before trusting this line.
+  github-env:
+    ignore:
+      - action.yml
+
   anonymous-definition:
     ignore:
       - release.yml
