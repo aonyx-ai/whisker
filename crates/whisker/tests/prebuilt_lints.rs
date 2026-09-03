@@ -326,7 +326,7 @@ fn check_with_a_prebuilt_that_fails_the_handshake_fails() {
         .arg(target.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("protocol version"))
+        .stderr(predicate::str::contains("speaks protocol"))
         .stderr(predicate::str::contains(
             destination.to_string_lossy().into_owned(),
         ));

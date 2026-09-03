@@ -84,24 +84,19 @@ impl fmt::Display for HandshakeMismatch {
         match self {
             HandshakeMismatch::AbiVersion { host, plugin } => write!(
                 f,
-                "the plugin speaks declaration protocol version {plugin}, but this whisker \
-                 speaks version {host}; rebuild the plugin against the whisker revision this \
-                 binary was built from"
+                "plugin speaks protocol {plugin}, whisker speaks {host}; rebuild the plugin"
             ),
             HandshakeMismatch::RustcVersion { host, plugin } => write!(
                 f,
-                "the plugin was built by `{plugin}`, but whisker was built by `{host}`; build \
-                 the plugin with the same toolchain"
+                "plugin built by `{plugin}`, whisker by `{host}`; use one toolchain"
             ),
             HandshakeMismatch::TypesFingerprint => write!(
                 f,
-                "the plugin was built against a different revision of whisker-types; update the \
-                 plugin's whisker dependencies to the revision whisker was built from"
+                "plugin built against another whisker-types; match its whisker pin"
             ),
             HandshakeMismatch::LanguageFingerprint => write!(
                 f,
-                "the plugin was built against a different revision of whisker-rust; update the \
-                 plugin's whisker dependencies to the revision whisker was built from"
+                "plugin built against another whisker-rust; match its whisker pin"
             ),
         }
     }
@@ -189,7 +184,7 @@ mod tests {
         let message = error.to_string();
         assert!(message.contains("1.92.0"), "should name both: {message}");
         assert!(message.contains("1.93.0"), "should name both: {message}");
-        assert!(message.contains("same toolchain"), "unexpected: {message}");
+        assert!(message.contains("one toolchain"), "unexpected: {message}");
     }
 
     #[test]
