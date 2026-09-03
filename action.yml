@@ -1,0 +1,59 @@
+---
+name: Set up whisker
+description: Downloads a released whisker and puts it on the PATH
+
+inputs:
+  version:
+    description: The release to install, such as v0.1.0-rc.2
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify whisker
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        # A caller chooses the version, and this writes a path derived
+        # from it into an environment file. Anything but a release name
+        # is refused, so a caller cannot write a second line of its own.
+        if ! printf '%s' "${VERSION}" | grep -Eq '^v[0-9A-Za-z.+-]+$'; then
+          echo "the version must look like v0.1.0-rc.2" >&2
+          exit 1
+        fi
+
+        # The archive names carry the version without its leading `v`,
+        # because that is what `Cargo.toml` holds.
+        version="${VERSION#v}"
+
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) target=x86_64-unknown-linux-gnu ;;
+          Linux-ARM64) target=aarch64-unknown-linux-gnu ;;
+          macOS-ARM64) target=aarch64-apple-darwin ;;
+          *)
+            echo "whisker publishes no binary for this runner" >&2
+            exit 1
+            ;;
+        esac
+
+        name="whisker-${version}-${target}.tar.gz"
+        base="https://github.com/aonyx-ai/whisker/releases/download"
+
+        # The download host serves a public repository without a token,
+        # and it spends none of the API rate limit that whisker needs
+        # later to look for prebuilt lints.
+        directory="${RUNNER_TEMP}/whisker"
+        mkdir -p "${directory}"
+        cd "${directory}"
+        curl --fail --location --silent --show-error \
+          --remote-name "${base}/${VERSION}/${name}"
+        curl --fail --location --silent --show-error \
+          --remote-name "${base}/${VERSION}/${name}.sha256"
+        shasum -a 256 -c "${name}.sha256"
+
+        tar -xzf "${name}"
+
+        echo "${directory}/whisker-${version}-${target}" >> "${GITHUB_PATH}"

@@ -15,6 +15,9 @@ and this project adheres to
 - Whisker asks a git source's releases for prebuilt lints before it compiles
   anything. It verifies the published SHA-256, and every library still
   completes the plugin handshake.
+- An action installs a released whisker on a GitHub Actions runner. It picks
+  the archive for the runner, checks it against the digest published beside
+  it, and puts whisker on the `PATH`.
 - `whisker abi` prints the tag that says which prebuilt lints this binary
   loads. Publishers put it in each archive's name.
 - Every release carries whisker binaries for Linux on x86-64 and arm64 and for
