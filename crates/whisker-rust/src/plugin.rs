@@ -11,7 +11,7 @@
 //! [`export_lints!`]: crate::export_lints
 
 pub use whisker_types::plugin::{
-    ABI_VERSION, LintPassFactory, LintRegistrar, PluginDeclaration, RUSTC_VERSION,
+    ABI_VERSION, LintPassFactory, LintRegistrar, MIN_ABI_VERSION, PluginDeclaration, RUSTC_VERSION,
     TYPES_FINGERPRINT, c_str,
 };
 use whisker_types::plugin::{Shape, seeded_fingerprint};

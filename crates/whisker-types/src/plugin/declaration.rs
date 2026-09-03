@@ -1,5 +1,6 @@
 use std::ffi::c_char;
 
+use crate::RuleId;
 use crate::plugin::LintRegistrar;
 
 /// The entry point a custom lint plugin exports
@@ -63,6 +64,24 @@ pub struct PluginDeclaration {
     /// The host calls this once, after the handshake, with a registrar
     /// that collects one factory per lint.
     pub register: fn(&mut dyn LintRegistrar),
+
+    /// Returns every rule this plugin can report
+    ///
+    /// A project names the rules it runs, and whisker refuses a name that
+    /// no loaded plugin declares. Without this, a misspelled name would
+    /// disable nothing and say nothing, which reads exactly like a rule
+    /// that found no fault.
+    ///
+    /// This is the first field a plugin may lack. A plugin built against
+    /// protocol 2 ends after `register`, so whisker reads this only once
+    /// [`PluginDeclaration::abi_version`] says it is there. Anything
+    /// added later goes on the end for the same reason: a `#[repr(C)]`
+    /// struct has offsets whisker can reason about, and a vtable does
+    /// not, so a capability that some plugins lack belongs here rather
+    /// than on [`LintPass`].
+    ///
+    /// [`LintPass`]: crate::LintPass
+    pub rules: fn() -> Vec<RuleId>,
 }
 
 unsafe impl Send for PluginDeclaration {}

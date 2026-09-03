@@ -35,6 +35,12 @@ impl AnyhowBareTry {
     }
 }
 
+impl whisker_rust::DeclaresRules for AnyhowBareTry {
+    fn rules(&self) -> Vec<RuleId> {
+        vec![RuleId::new("fixture.anyhow-bare-try")]
+    }
+}
+
 impl RustLintPass for AnyhowBareTry {
     fn check_try_expression(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(operand) = node.named_child(0) else {

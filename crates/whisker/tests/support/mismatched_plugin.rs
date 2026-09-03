@@ -36,6 +36,11 @@ pub fn write_mismatched_lint_package(directory: &Path, name: &str) {
 /// Registers no lint, because the handshake refuses this library first
 fn register(_registrar: &mut dyn LintRegistrar) {}
 
+/// Declares no rule, for the same reason
+fn rules() -> Vec<whisker_types::RuleId> {
+    Vec::new()
+}
+
 #[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
 pub static whisker_plugin_declaration: PluginDeclaration = PluginDeclaration {
@@ -44,6 +49,7 @@ pub static whisker_plugin_declaration: PluginDeclaration = PluginDeclaration {
     types_fingerprint: whisker_types::plugin::TYPES_FINGERPRINT,
     language_fingerprint: 0,
     register,
+    rules,
 };
 "#,
     )

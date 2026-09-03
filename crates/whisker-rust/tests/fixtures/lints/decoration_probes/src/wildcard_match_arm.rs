@@ -26,6 +26,12 @@ impl WildcardMatchArm {
     }
 }
 
+impl whisker_rust::DeclaresRules for WildcardMatchArm {
+    fn rules(&self) -> Vec<RuleId> {
+        vec![RuleId::new("fixture.wildcard-match-arm")]
+    }
+}
+
 impl RustLintPass for WildcardMatchArm {
     fn check_match_expression(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         let Some(scrutinee) = node.child_by_field_name("value") else {

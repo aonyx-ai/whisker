@@ -67,9 +67,32 @@ pub use registrar::{LintPassFactory, LintRegistrar};
 /// ```
 /// use whisker_types::plugin::ABI_VERSION;
 ///
-/// assert_eq!(ABI_VERSION, 2);
+/// assert_eq!(ABI_VERSION, 3);
 /// ```
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
+
+/// The oldest protocol whisker still loads
+///
+/// A protocol is raised when the declaration gains a field, and a plugin
+/// written before it simply ends sooner. Whisker knows the layout of
+/// every version in this range, so it reads what such a plugin has and
+/// treats the rest as absent.
+///
+/// This range covers the declaration alone. A change to the method list
+/// of [`LintPass`] or [`LintRegistrar`] reorders a vtable, which no
+/// version can make readable, so such a change raises this floor to meet
+/// [`ABI_VERSION`] and refuses everything older.
+///
+/// [`LintPass`]: crate::LintPass
+///
+/// # Examples
+///
+/// ```
+/// use whisker_types::plugin::{ABI_VERSION, MIN_ABI_VERSION};
+///
+/// assert!(MIN_ABI_VERSION <= ABI_VERSION);
+/// ```
+pub const MIN_ABI_VERSION: u32 = 2;
 
 /// The full identity of the rustc that compiled this crate
 ///

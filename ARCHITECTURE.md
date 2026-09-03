@@ -283,6 +283,21 @@ declaration's `ABI_VERSION`. A test scans both traits' source and fails
 when either method list moves, so the test reminds a contributor to bump
 it.
 
+Two kinds of change reach that declaration, and they cost differently. A
+field appended to it is readable by version, because the struct is
+`#[repr(C)]` and whisker knows where each version's fields end. A plugin
+that stops sooner offers less rather than being refused. A method added
+to either trait is not readable that way, because whisker cannot measure
+a vtable. So an optional capability belongs in the declaration, and
+`MIN_ABI_VERSION` names the oldest layout whisker still reads. Raising
+`ABI_VERSION` alone keeps older plugins loading; raising the floor is what
+stops them, and only a vtable change needs that.
+
+The tag a publisher names an archive with carries the floor rather than
+the version, for the same reason. Two whiskers that read the same
+protocols accept each other's archives, so a protocol that only appends a
+field does not strand what a publisher already built.
+
 The fingerprints stop at whisker's own layout. A contributor maintains
 each list of types by hand. A fieldless enum keeps its size and alignment
 when its variants reorder, so the fingerprint does not see that change. A

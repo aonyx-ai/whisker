@@ -115,6 +115,11 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     let custom_lints =
         CustomLints::load(&config).context("failed to load the project's custom lints")?;
 
+    config
+        .rules()
+        .validate(&custom_lints.declared())
+        .context("failed to read the project's [rules]")?;
+
     let on_error = match keep_going {
         true => WalkErrorPolicy::ReportAndContinue,
         false => WalkErrorPolicy::Fail,
@@ -164,6 +169,11 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
         match pipeline.run_on_source(&source, file, &providers, &mut passes) {
             Ok(diagnostics) => {
+                let diagnostics: Vec<_> = diagnostics
+                    .into_iter()
+                    .filter(|diagnostic| config.rules().admits(&diagnostic.rule_id()))
+                    .collect();
+
                 if !diagnostics.is_empty() {
                     let arc_path: Arc<Path> = file.clone().into();
                     sources.insert(arc_path, source);

@@ -1,12 +1,12 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ffi::{CStr, OsString, c_char};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::Context as _;
 use libloading::Library;
-use whisker_types::LintPass;
 use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
+use whisker_types::{LintPass, RuleId};
 
 use self::handshake::AbiIdentity;
 use crate::config::{GitLintSource, LintSource, WhiskerConfig};
@@ -35,6 +35,7 @@ pub use abi_tag::AbiTag;
 /// `--keep-going` governs per-file walk errors, not a broken setup.
 pub struct CustomLints {
     factories: Vec<LintPassFactory>,
+    declared: Vec<RuleId>,
 }
 
 impl CustomLints {
@@ -48,6 +49,7 @@ impl CustomLints {
     pub fn load(config: &WhiskerConfig) -> anyhow::Result<Self> {
         let host = AbiIdentity::host();
         let mut factories = Vec::new();
+        let mut declared = Vec::new();
 
         for Resolved {
             directory,
@@ -67,15 +69,40 @@ impl CustomLints {
                 }),
             }?;
 
-            factories.extend(loaded);
+            factories.extend(loaded.factories);
+            declared.extend(loaded.rules);
         }
 
-        Ok(Self { factories })
+        Ok(Self {
+            factories,
+            declared,
+        })
     }
 
     /// Constructs one fresh pass per loaded custom lint
+    ///
+    /// Every pass runs. A plugin declares the rules it can report, not
+    /// which pass reports which, so a rule a project turned off is
+    /// dropped from the report rather than never looked for.
     pub fn instantiate(&self) -> Vec<Box<dyn LintPass>> {
         self.factories.iter().map(|factory| factory()).collect()
+    }
+
+    /// Returns every rule the loaded plugins declare
+    ///
+    /// This is what a configured rule name is checked against. A plugin
+    /// declares its rules, so whisker knows them all before it walks a
+    /// single file, and a name matching none of them is a mistake it can
+    /// report rather than a filter that quietly admits everything.
+    ///
+    /// A plugin built against protocol 2 declares none, because its
+    /// declaration ends before the field that would say. Its rules still
+    /// run; they just cannot be named.
+    pub fn declared(&self) -> BTreeSet<String> {
+        self.declared
+            .iter()
+            .map(|rule| rule.as_str().to_owned())
+            .collect()
     }
 }
 
@@ -226,11 +253,7 @@ fn resolve_git(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<(PathBuf,
 /// A directory may hold one package or a workspace of them, so every
 /// dynamic library the build produced is loaded, each with its own
 /// handshake.
-fn load_sources(
-    directory: &Path,
-    locking: Locking,
-    host: &AbiIdentity,
-) -> anyhow::Result<Vec<LintPassFactory>> {
+fn load_sources(directory: &Path, locking: Locking, host: &AbiIdentity) -> anyhow::Result<Loaded> {
     let libraries = build(directory, locking)?;
 
     load_libraries(&libraries, host)
@@ -248,7 +271,7 @@ fn load_sources(
 ///
 /// Returns an error if the directory cannot be read, if it holds no
 /// library, or if any library fails to load.
-fn load_prebuilt(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
+fn load_prebuilt(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
     let libraries = prebuilt::libraries(directory)?;
 
     anyhow::ensure!(
@@ -260,19 +283,24 @@ fn load_prebuilt(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<Lin
 }
 
 /// Completes the handshake with each library and collects what registers
-fn load_libraries(
-    libraries: &[PathBuf],
-    host: &AbiIdentity,
-) -> anyhow::Result<Vec<LintPassFactory>> {
-    let mut factories = Vec::new();
+fn load_libraries(libraries: &[PathBuf], host: &AbiIdentity) -> anyhow::Result<Loaded> {
+    let mut all = Loaded::default();
 
     for library in libraries {
         let loaded = load_library(library, host)
             .with_context(|| format!("failed to load {}", library.display()))?;
-        factories.extend(loaded);
+        all.factories.extend(loaded.factories);
+        all.rules.extend(loaded.rules);
     }
 
-    Ok(factories)
+    Ok(all)
+}
+
+/// What one library, or a directory of them, contributed
+#[derive(Default)]
+struct Loaded {
+    factories: Vec<LintPassFactory>,
+    rules: Vec<RuleId>,
 }
 
 /// Compiles the packages at `directory` and returns every library built
@@ -317,6 +345,12 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
     artifact::cdylib_artifacts(&stdout, directory)
 }
 
+/// The first protocol version whose declaration names the plugin's rules
+///
+/// Whisker still loads a plugin older than this. It declares no rules, so
+/// a project cannot name them in `[rules]`, and every one of them runs.
+const RULES_FROM: u32 = 3;
+
 /// Opens the built library, performs the handshake, and collects factories
 ///
 /// The loader reads the declaration's leading protocol version through a
@@ -337,7 +371,7 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
 /// declaration, fails the ABI handshake, or registers no lints.
 ///
 /// [`RuleId`]: whisker_types::RuleId
-fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPassFactory>> {
+fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
     let library = unsafe { Library::new(library) }
         .with_context(|| format!("failed to open {}", library.display()))?;
 
@@ -350,10 +384,11 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPa
     let declaration: *const PluginDeclaration = *declaration;
 
     let plugin_abi_version = unsafe { abi_version(declaration) };
-    if plugin_abi_version != host.abi_version {
+    if !handshake::supported(plugin_abi_version) {
         return Err(handshake::HandshakeMismatch::AbiVersion {
-            host: host.abi_version,
             plugin: plugin_abi_version,
+            oldest: whisker_rust::plugin::MIN_ABI_VERSION,
+            newest: whisker_rust::plugin::ABI_VERSION,
         }
         .into());
     }
@@ -373,6 +408,16 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPa
     };
     (declaration.register)(&mut registrar);
 
+    // A plugin built against protocol 2 has no `rules` field: its
+    // declaration ends after `register`. Reading one would read past the
+    // static it exported, so the version decides whether to look. This is
+    // why an optional capability belongs in this `#[repr(C)]` struct and
+    // not on a trait, whose vtable whisker cannot measure.
+    let rules = match plugin_abi_version >= RULES_FROM {
+        true => (declaration.rules)(),
+        false => Vec::new(),
+    };
+
     anyhow::ensure!(
         !registrar.factories.is_empty(),
         "the plugin registered no lints; a plugin that does nothing looks exactly like one that \
@@ -381,7 +426,10 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Vec<LintPa
 
     std::mem::forget(library);
 
-    Ok(registrar.factories)
+    Ok(Loaded {
+        factories: registrar.factories,
+        rules,
+    })
 }
 
 /// Reads the protocol version at the head of a plugin declaration

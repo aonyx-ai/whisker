@@ -11,12 +11,14 @@ mod git_url;
 mod ignore_pattern;
 mod lint_path;
 mod lint_source;
+mod rule_filter;
 
 pub use git_rev::GitRev;
 pub use git_url::GitUrl;
 pub use ignore_pattern::IgnorePattern;
 pub use lint_path::LintPath;
 pub use lint_source::{GitLintSource, LintSource};
+pub use rule_filter::RuleFilter;
 
 /// The name whisker's configuration file carries
 ///
@@ -44,6 +46,7 @@ pub struct WhiskerConfig {
     root: ProjectRoot,
     ignore: Vec<IgnorePattern>,
     lints: Vec<LintSource>,
+    rules: RuleFilter,
 }
 
 impl WhiskerConfig {
@@ -59,11 +62,39 @@ impl WhiskerConfig {
     /// );
     /// ```
     pub fn new(root: ProjectRoot, ignore: Vec<IgnorePattern>, lints: Vec<LintSource>) -> Self {
+        Self::with_rules(root, ignore, lints, RuleFilter::All)
+    }
+
+    /// Creates a configuration that runs only the rules `rules` admits
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let config = WhiskerConfig::with_rules(root, ignore, lints, filter);
+    /// ```
+    pub fn with_rules(
+        root: ProjectRoot,
+        ignore: Vec<IgnorePattern>,
+        lints: Vec<LintSource>,
+        rules: RuleFilter,
+    ) -> Self {
         Self {
             root,
             ignore,
             lints,
+            rules,
         }
+    }
+
+    /// Returns which of the loaded rules this project runs
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let admitted = config.rules().admits(diagnostic.rule());
+    /// ```
+    pub fn rules(&self) -> &RuleFilter {
+        &self.rules
     }
 
     /// Loads the configuration that governs `path`
@@ -105,9 +136,18 @@ impl WhiskerConfig {
 
         let root = project.root().clone();
 
-        let Some(ConfigTable { ignore, lints }) = project.configuration() else {
+        let Some(ConfigTable {
+            ignore,
+            lints,
+            rules,
+        }) = project.configuration()
+        else {
             return Ok(Self::new(root, Vec::new(), Vec::new()));
         };
+
+        let RulesTable { enable, disable } = rules.clone();
+        let rules = RuleFilter::new(enable, disable)
+            .with_context(|| format!("failed to read {}", project.configuration_path()))?;
 
         let ignore = ignore
             .iter()
@@ -125,7 +165,7 @@ impl WhiskerConfig {
             .collect::<anyhow::Result<Vec<_>>>()
             .with_context(|| format!("failed to read {}", project.configuration_path()))?;
 
-        Ok(Self::new(root, ignore, lints))
+        Ok(Self::with_rules(root, ignore, lints, rules))
     }
 
     /// Returns the project directory that anchors the ignore patterns
@@ -202,6 +242,23 @@ struct ConfigTable {
 
     #[serde(default)]
     lints: Vec<LintEntry>,
+
+    #[serde(default)]
+    rules: RulesTable,
+}
+
+/// The `[rules]` table as written on disk
+///
+/// Both lists are read, and [`RuleFilter::new`] refuses a file that fills
+/// in both, so the contradiction is reported rather than resolved.
+#[derive(Clone, Eq, PartialEq, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RulesTable {
+    #[serde(default)]
+    enable: Vec<String>,
+
+    #[serde(default)]
+    disable: Vec<String>,
 }
 
 /// One `[[lints]]` entry as written on disk
