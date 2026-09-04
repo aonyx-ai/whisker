@@ -3,6 +3,13 @@ name: Continuous Integration
 
 "on":
   pull_request:
+  # A cache is scoped to the ref that wrote it, and a pull request can read
+  # only its own ref and the default branch. With pull requests alone,
+  # nothing ever wrote a cache on main, so every pull request started cold
+  # and saved a copy that only it would ever read. Running on main is what
+  # gives every pull request something to restore.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions: {}
@@ -66,8 +73,8 @@ jobs:
       - name: Remove Flox installer (if it exists)
         run: rm -f flox.x86_64-linux.deb
 
-      - name: Cache Cargo downloads and build output
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Cargo downloads and build output
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry/index
@@ -81,6 +88,24 @@ jobs:
         uses: flox/activate-action@7065dcbe5583b7b015f07a8ebd49d7266e3053e8 # v1.1.1
         with:
           command: just ${{ matrix.target }}
+
+      # One job writes the cache, on one branch. Every job in this matrix
+      # shares one key, and a key cannot be overwritten once it exists, so
+      # whichever job finished first used to claim it. `lint-markdown` won
+      # that race often enough to leave a 3 MB archive holding no build
+      # output at all, which every Rust job then restored and ignored.
+      # `test-rust` builds every target and its test binaries, so its
+      # directory is the one worth keeping.
+      - name: Save Cargo downloads and build output
+        if: github.event_name == 'push' && matrix.target == 'test-rust'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
 
   success:
     name: All checks succeeded
