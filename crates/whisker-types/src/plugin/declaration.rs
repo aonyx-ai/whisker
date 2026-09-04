@@ -98,6 +98,26 @@ mod tests {
         assert_eq!(offset_of!(PluginDeclaration, abi_version), 0);
     }
 
+    /// Pins that protocol 3's field was appended rather than inserted
+    ///
+    /// A plugin built against protocol 2 exported everything up to
+    /// `register` and nothing after it. Whisker reads those fields at the
+    /// offsets this struct gives, so a field inserted among them would
+    /// move the rest and whisker would read one plugin's data as another
+    /// field. That is silent: the fields are integers and pointers, and a
+    /// wrong one is a wrong answer rather than a crash. A new field goes
+    /// last, and this test fails if one does not.
+    #[test]
+    fn rules_sits_after_every_field_protocol_two_exported() {
+        let rules = offset_of!(PluginDeclaration, rules);
+
+        assert!(offset_of!(PluginDeclaration, abi_version) < rules);
+        assert!(offset_of!(PluginDeclaration, rustc_version) < rules);
+        assert!(offset_of!(PluginDeclaration, types_fingerprint) < rules);
+        assert!(offset_of!(PluginDeclaration, language_fingerprint) < rules);
+        assert!(offset_of!(PluginDeclaration, register) < rules);
+    }
+
     #[test]
     fn trait_send() {
         fn assert_send<T: Send>() {}

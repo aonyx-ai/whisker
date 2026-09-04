@@ -353,11 +353,19 @@ const RULES_FROM: u32 = 3;
 
 /// Opens the built library, performs the handshake, and collects factories
 ///
-/// The loader reads the declaration's leading protocol version through a
-/// raw pointer, and only a matching version licenses a reference to the
-/// whole struct: a plugin of another protocol may export a shorter or
-/// differently shaped declaration, and a reference to that is already
-/// undefined behavior.
+/// The loader never forms a `&PluginDeclaration`. A plugin built against
+/// an older protocol exports a shorter static, and a reference asserts
+/// that the whole of the current struct is there and holds a valid value
+/// of every field. Both claims are false for such a plugin, and `rules`
+/// is a function pointer, so the compiler may assume it is not null. That
+/// is undefined behavior whether or not the field is ever read.
+///
+/// So each field is read through a raw pointer at its own offset, and a
+/// field is only projected once [`PluginDeclaration::abi_version`] says
+/// the plugin exported it. This is what makes an appended field cheap:
+/// the offsets of a `#[repr(C)]` struct are knowable per version, and no
+/// step of the read depends on the plugin agreeing about the struct's
+/// size.
 ///
 /// The loader deliberately leaks the library. The registered factories and
 /// the `&'static str` inside every [`RuleId`] a plugin lint mints point into
@@ -393,28 +401,28 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
         .into());
     }
 
-    let declaration = unsafe { &*declaration };
-
     let plugin = AbiIdentity {
         abi_version: plugin_abi_version,
-        rustc_version: read_declaration_string(declaration.rustc_version)?,
-        types_fingerprint: declaration.types_fingerprint,
-        language_fingerprint: declaration.language_fingerprint,
+        rustc_version: read_declaration_string(unsafe {
+            (&raw const (*declaration).rustc_version).read()
+        })?,
+        types_fingerprint: unsafe { (&raw const (*declaration).types_fingerprint).read() },
+        language_fingerprint: unsafe { (&raw const (*declaration).language_fingerprint).read() },
     };
     handshake::validate(host, &plugin)?;
 
     let mut registrar = Collecting {
         factories: Vec::new(),
     };
-    (declaration.register)(&mut registrar);
+    let register = unsafe { (&raw const (*declaration).register).read() };
+    register(&mut registrar);
 
-    // A plugin built against protocol 2 has no `rules` field: its
-    // declaration ends after `register`. Reading one would read past the
-    // static it exported, so the version decides whether to look. This is
-    // why an optional capability belongs in this `#[repr(C)]` struct and
-    // not on a trait, whose vtable whisker cannot measure.
     let rules = match plugin_abi_version >= RULES_FROM {
-        true => (declaration.rules)(),
+        true => {
+            let rules = unsafe { (&raw const (*declaration).rules).read() };
+
+            rules()
+        }
         false => Vec::new(),
     };
 
