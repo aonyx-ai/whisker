@@ -27,6 +27,12 @@ impl FunctionScopedImport {
     }
 }
 
+impl whisker_rust::DeclaresRules for FunctionScopedImport {
+    fn rules(&self) -> Vec<RuleId> {
+        vec![RuleId::new("fixture.function-scoped-import")]
+    }
+}
+
 impl RustLintPass for FunctionScopedImport {
     fn check_use_declaration(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         if !is_inside_block(node) {

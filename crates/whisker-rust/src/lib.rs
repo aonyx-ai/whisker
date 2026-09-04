@@ -1,4 +1,5 @@
 mod adapter;
+mod declares_rules;
 pub mod decorations;
 mod export_lints;
 pub mod plugin;
@@ -6,8 +7,10 @@ pub mod plugin;
 mod provider;
 
 pub use adapter::RustLintPassAdapter;
+pub use declares_rules::DeclaresRules;
 #[cfg(feature = "provider")]
 pub use provider::RustDecorationProvider;
+pub use whisker_types::RuleId;
 
 include!(concat!(env!("OUT_DIR"), "/rust_lint_pass.rs"));
 

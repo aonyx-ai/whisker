@@ -1,5 +1,7 @@
 use std::fmt;
 
+use whisker_rust::plugin;
+
 use super::digest::digest;
 use super::handshake::AbiIdentity;
 
@@ -47,14 +49,22 @@ impl AbiTag {
     /// input to the digest.
     pub(super) fn new(identity: &AbiIdentity, target: &str) -> Self {
         let AbiIdentity {
-            abi_version,
+            abi_version: _,
             rustc_version,
             types_fingerprint,
             language_fingerprint,
         } = identity;
 
+        // The floor rather than the version whisker writes. Whisker loads
+        // every protocol from the floor upward, so two whiskers sharing
+        // one accept each other's archives, and raising the version alone
+        // does not strand what a publisher already built. Raising the
+        // floor does, which is the point: that is when older plugins stop
+        // loading.
+        let floor = plugin::MIN_ABI_VERSION;
+
         let key = digest(&format!(
-            "{abi_version}\n{rustc_version}\n{types_fingerprint:016x}\n{language_fingerprint:016x}"
+            "{floor}\n{rustc_version}\n{types_fingerprint:016x}\n{language_fingerprint:016x}"
         ));
 
         Self(format!("{key}-{target}"))
@@ -92,14 +102,21 @@ mod tests {
         assert_eq!(tag.to_string(), "4d1b722e64837210-aarch64-apple-darwin");
     }
 
+    /// A protocol version is not part of the tag
+    ///
+    /// Whisker loads every protocol from the floor upward, so two
+    /// whiskers that share a floor accept each other's archives. Raising
+    /// the version alone must therefore not strand what a publisher has
+    /// already built; raising the floor does, which is what the floor is
+    /// for.
     #[test]
-    fn new_separates_identities_that_differ_in_the_abi_version() {
+    fn new_ignores_the_protocol_a_whisker_writes() {
         let other = AbiIdentity {
-            abi_version: 3,
+            abi_version: identity().abi_version + 1,
             ..identity()
         };
 
-        assert_ne!(
+        assert_eq!(
             AbiTag::new(&identity(), "x86_64-unknown-linux-gnu"),
             AbiTag::new(&other, "x86_64-unknown-linux-gnu")
         );

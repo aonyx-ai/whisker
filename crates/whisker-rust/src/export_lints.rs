@@ -29,7 +29,17 @@ macro_rules! export_lints {
                 types_fingerprint: $crate::plugin::TYPES_FINGERPRINT,
                 language_fingerprint: $crate::plugin::LANGUAGE_FINGERPRINT,
                 register: __whisker_register,
+                rules: __whisker_rules,
             };
+
+        #[doc(hidden)]
+        fn __whisker_rules() -> ::std::vec::Vec<$crate::RuleId> {
+            let mut rules = ::std::vec::Vec::new();
+            $(
+                rules.extend($crate::DeclaresRules::rules(&$lint));
+            )+
+            rules
+        }
 
         #[doc(hidden)]
         fn __whisker_register(registrar: &mut dyn $crate::plugin::LintRegistrar) {
@@ -55,6 +65,12 @@ mod tests {
 
     struct FlagEveryFunction;
 
+    impl crate::DeclaresRules for FlagEveryFunction {
+        fn rules(&self) -> Vec<whisker_types::RuleId> {
+            vec![whisker_types::RuleId::new("test.flag-every-function")]
+        }
+    }
+
     impl RustLintPass for FlagEveryFunction {
         fn check_function_item(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
             vec![Diagnostic::new(
@@ -67,6 +83,12 @@ mod tests {
     }
 
     struct QuietLint;
+
+    impl crate::DeclaresRules for QuietLint {
+        fn rules(&self) -> Vec<whisker_types::RuleId> {
+            vec![whisker_types::RuleId::new("test.quiet")]
+        }
+    }
 
     impl RustLintPass for QuietLint {}
 

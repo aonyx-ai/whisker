@@ -1,5 +1,6 @@
 use std::ffi::c_char;
 
+use crate::RuleId;
 use crate::plugin::LintRegistrar;
 
 /// The entry point a custom lint plugin exports
@@ -63,6 +64,24 @@ pub struct PluginDeclaration {
     /// The host calls this once, after the handshake, with a registrar
     /// that collects one factory per lint.
     pub register: fn(&mut dyn LintRegistrar),
+
+    /// Returns every rule this plugin can report
+    ///
+    /// A project names the rules it runs, and whisker refuses a name that
+    /// no loaded plugin declares. Without this, a misspelled name would
+    /// disable nothing and say nothing, which reads exactly like a rule
+    /// that found no fault.
+    ///
+    /// This is the first field a plugin may lack. A plugin built against
+    /// protocol 2 ends after `register`, so whisker reads this only once
+    /// [`PluginDeclaration::abi_version`] says it is there. Anything
+    /// added later goes on the end for the same reason: a `#[repr(C)]`
+    /// struct has offsets whisker can reason about, and a vtable does
+    /// not, so a capability that some plugins lack belongs here rather
+    /// than on [`LintPass`].
+    ///
+    /// [`LintPass`]: crate::LintPass
+    pub rules: fn() -> Vec<RuleId>,
 }
 
 unsafe impl Send for PluginDeclaration {}
@@ -77,6 +96,26 @@ mod tests {
     #[test]
     fn abi_version_sits_at_offset_zero() {
         assert_eq!(offset_of!(PluginDeclaration, abi_version), 0);
+    }
+
+    /// Pins that protocol 3's field was appended rather than inserted
+    ///
+    /// A plugin built against protocol 2 exported everything up to
+    /// `register` and nothing after it. Whisker reads those fields at the
+    /// offsets this struct gives, so a field inserted among them would
+    /// move the rest and whisker would read one plugin's data as another
+    /// field. That is silent: the fields are integers and pointers, and a
+    /// wrong one is a wrong answer rather than a crash. A new field goes
+    /// last, and this test fails if one does not.
+    #[test]
+    fn rules_sits_after_every_field_protocol_two_exported() {
+        let rules = offset_of!(PluginDeclaration, rules);
+
+        assert!(offset_of!(PluginDeclaration, abi_version) < rules);
+        assert!(offset_of!(PluginDeclaration, rustc_version) < rules);
+        assert!(offset_of!(PluginDeclaration, types_fingerprint) < rules);
+        assert!(offset_of!(PluginDeclaration, language_fingerprint) < rules);
+        assert!(offset_of!(PluginDeclaration, register) < rules);
     }
 
     #[test]

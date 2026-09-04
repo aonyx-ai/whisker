@@ -205,6 +205,12 @@ impl RustLintPass for {pass} {{
     }}
 }}
 
+impl whisker_rust::DeclaresRules for {pass} {{
+    fn rules(&self) -> Vec<RuleId> {{
+        vec![RuleId::new("{rule}")]
+    }}
+}}
+
 whisker_rust::export_lints![{pass}];
 "#
     )

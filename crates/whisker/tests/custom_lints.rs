@@ -5,6 +5,11 @@ use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
+#[path = "support/protocol_two_plugin.rs"]
+mod protocol_two_plugin;
+
+use protocol_two_plugin::write_protocol_two_lint_package;
+
 /// Source that trips the example lint and none of the built-ins
 const TODO_SOURCE: &str = "pub fn later() {\n    todo!()\n}\n";
 
@@ -141,6 +146,11 @@ fn workspace_of_lints() -> TempDir {
                 "use whisker_rust::RustLintPass;\n\
                  use whisker_types::{{DecoratedNode, Diagnostic, RuleId, Severity}};\n\n\
                  pub struct Flag;\n\n\
+                 impl whisker_rust::DeclaresRules for Flag {{\n\
+                 \x20   fn rules(&self) -> Vec<RuleId> {{\n\
+                 \x20       vec![RuleId::new(\"{rule}\")]\n\
+                 \x20   }}\n\
+                 }}\n\n\
                  impl RustLintPass for Flag {{\n\
                  \x20   fn {method}(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {{\n\
                  \x20       vec![Diagnostic::new(\n\
@@ -158,6 +168,140 @@ fn workspace_of_lints() -> TempDir {
     }
 
     directory
+}
+
+/// Pins that a project runs only the rules it names
+#[test]
+fn check_with_an_enabled_rule_runs_only_that_rule() {
+    let target = package(TODO_SOURCE);
+    let lints = workspace_of_lints();
+    let lint_path = toml::Value::from(lints.path().to_str().expect("the path should be UTF-8"));
+    write_config(
+        target.path(),
+        &format!("[rules]\nenable = [\"workspace.second\"]\n\n[[lints]]\npath = {lint_path}\n"),
+    );
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[workspace.second]"))
+        .stderr(predicate::str::contains("workspace.first").not());
+}
+
+/// Pins that a disabled rule reports nothing and the others still do
+#[test]
+fn check_with_a_disabled_rule_runs_the_rest() {
+    let target = package(TODO_SOURCE);
+    let lints = workspace_of_lints();
+    let lint_path = toml::Value::from(lints.path().to_str().expect("the path should be UTF-8"));
+    write_config(
+        target.path(),
+        &format!("[rules]\ndisable = [\"workspace.first\"]\n\n[[lints]]\npath = {lint_path}\n"),
+    );
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[workspace.second]"))
+        .stderr(predicate::str::contains("workspace.first").not());
+}
+
+/// Pins that a name no lint reports is refused
+///
+/// A misspelled rule would otherwise disable nothing and say nothing,
+/// which reads exactly like a rule that found no fault. The error names
+/// what the loaded lints do report, so the fix is in front of the reader.
+#[test]
+fn check_with_a_rule_no_lint_reports_fails() {
+    let target = package(TODO_SOURCE);
+    let lints = workspace_of_lints();
+    let lint_path = toml::Value::from(lints.path().to_str().expect("the path should be UTF-8"));
+    write_config(
+        target.path(),
+        &format!("[rules]\ndisable = [\"workspace.frist\"]\n\n[[lints]]\npath = {lint_path}\n"),
+    );
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("workspace.frist"))
+        .stderr(predicate::str::contains("workspace.first"));
+}
+
+/// Pins that naming both lists is refused rather than resolved
+#[test]
+fn check_with_both_rule_lists_fails() {
+    let target = package(TODO_SOURCE);
+    write_config(
+        target.path(),
+        "[rules]\nenable = [\"a.b\"]\ndisable = [\"c.d\"]\n",
+    );
+
+    whisker()
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("both"));
+}
+
+/// Pins that a plugin from an older protocol still loads
+///
+/// A protocol is raised when the declaration gains a field, and such a
+/// plugin ends before it. Whisker knows the older layout, so it reads
+/// what the plugin has and treats the rest as absent, and the rules of an
+/// older plugin still run.
+///
+/// This is why an optional capability belongs in the declaration and not
+/// on a trait: a `#[repr(C)]` struct has offsets whisker can reason
+/// about, and a vtable has none it can measure.
+#[test]
+fn check_with_a_plugin_from_an_older_protocol_loads_it() {
+    let target = package(TODO_SOURCE);
+    let lints = tempfile::tempdir().expect("temporary directory should be created");
+    write_protocol_two_lint_package(lints.path(), "older_lint", "older.fired");
+    configure_lint(target.path(), lints.path());
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[older.fired]"));
+}
+
+/// Pins that an older plugin's rules cannot be named
+///
+/// It declares none, so whisker has nothing to check a name against and
+/// says so, rather than accepting a name it cannot honour.
+#[test]
+fn check_naming_a_rule_of_an_older_plugin_fails() {
+    let target = package(TODO_SOURCE);
+    let lints = tempfile::tempdir().expect("temporary directory should be created");
+    write_protocol_two_lint_package(lints.path(), "older_named", "older.fired");
+    let lint_path = toml::Value::from(lints.path().to_str().expect("the path should be UTF-8"));
+    write_config(
+        target.path(),
+        &format!("[rules]\ndisable = [\"older.fired\"]\n\n[[lints]]\npath = {lint_path}\n"),
+    );
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("older.fired"));
 }
 
 /// Pins the error for a repository that cannot be reached

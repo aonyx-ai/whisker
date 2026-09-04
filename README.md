@@ -184,6 +184,20 @@ built it. To compile a lint crate for one yourself, install the toolchain
 that `rust-toolchain.toml` names at the release's commit. Otherwise build
 whisker from source and compile the lint crate with the same toolchain.
 
+A `[[lints]]` entry brings every rule its source provides. Name the ones
+you want, or the ones you do not:
+
+```toml
+[rules]
+disable = ["lint.no-inline-comments"]
+```
+
+`enable` is the other half: name it and only those rules run, which is how
+a project adopts a rule at a time. Naming both is refused. So is naming a
+rule that no configured lint reports, because a misspelling would
+otherwise disable nothing and read exactly like a rule that found no
+fault.
+
 A custom lint crate is a `cdylib` that implements `RustLintPass` and hands
 its rules to `export_lints!`. The complete crate in
 [`examples/custom_lint`][example] is the template: a `Cargo.toml` declaring

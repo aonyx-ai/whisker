@@ -12,6 +12,9 @@ and this project adheres to
 
 ### Added
 
+- A `[rules]` table names the rules a project runs. `enable` runs only those
+  named, `disable` runs everything else, and a name that no configured lint
+  reports is an error rather than a filter that quietly admits everything.
 - Whisker asks a git source's releases for prebuilt lints before it compiles
   anything. It verifies the published SHA-256, and every library still
   completes the plugin handshake.
@@ -26,6 +29,11 @@ and this project adheres to
   A directory may also hold a cargo workspace.
 
 ### Changed
+
+- A plugin declares the rules it reports, which is what a `[rules]` name is
+  checked against. The protocol is 3, and whisker reads every protocol from
+  2 upward, so a plugin built before this still loads and its rules still
+  run. They only cannot be named.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.
