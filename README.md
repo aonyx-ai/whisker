@@ -122,7 +122,7 @@ the same way `ignore` patterns do:
 
 ```toml
 [[lints]]
-path = "lints/no_todo"
+path = "lints/todo_comment"
 ```
 
 An entry can also name a repository, which is how a set of rules is shared
@@ -147,6 +147,28 @@ rules.
 libraries, and runs their lints. Whisker ships no rules of its own, so the
 rules a project configures are exactly the rules it runs. The first build takes
 as long as any Rust compilation; afterwards cargo's cache makes it cheap.
+
+#### Naming a rule
+
+A rule id names the thing the rule reports. `todo_comment` reports a TODO
+comment, and `repeated_field_access` reports a statement that reads two or
+more fields of one binding. The id never names the state the author should
+reach instead, and never negates.
+
+Negation is the part that matters beyond consistency. A rule id is what a
+project names to turn the rule off, and a negated id inverts under that:
+`disable = ["lint.no-todo-comments"]` reads as turning off the absence of
+TODO comments, which is the opposite of what it does. Clippy names every
+lint after the thing it reports for the same reason.
+
+Keep the id singular, unless the finding needs more than one of something
+to exist. `missing_` is not negation: when a rule reports an absence, the
+absence is the thing it reports, so `missing_trait_tests` follows the
+convention as it stands.
+
+The crate directory, the package name, the `RULE_ID` constant, and the
+lint pass type all spell one name: `todo_comment`, `todo_comment`,
+`lint.todo-comment`, and `TodoComment`.
 
 #### Prebuilt lints
 
