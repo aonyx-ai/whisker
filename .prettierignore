@@ -1,1 +1,4 @@
 .flox/
+docs/.docusaurus/
+docs/build/
+docs/node_modules/
