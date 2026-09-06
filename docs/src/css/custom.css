@@ -1,0 +1,8 @@
+/**
+ * Infima defines the defaults for these variables. Only the ones the site
+ * overrides belong here.
+ */
+
+:root {
+  --ifm-code-font-size: 95%;
+}

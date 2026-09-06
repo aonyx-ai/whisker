@@ -1,3 +1,6 @@
 .claude/worktrees
 .flox
 target
+docs/.docusaurus
+docs/build
+docs/node_modules

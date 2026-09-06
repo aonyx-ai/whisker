@@ -1,6 +1,9 @@
 # Run all recipes inside the Flox environment
 set shell := ["flox", "activate", "--", "sh", "-cu"]
 
+# Commands to build and serve the documentation site
+mod docs
+
 [private]
 default:
     @just --list
@@ -55,9 +58,13 @@ format-yaml fix="false": (prettier fix "{yaml,yml}")
 lint-github-actions:
     zizmor -p .
 
+# `--ignore-path` replaces the `.markdownlintignore` that markdownlint reads by
+# default, so the recipe passes both files. `.gitignore` covers what git ignores
+# at the root, `.markdownlintignore` what only this linter skips.
+
 # Lint Markdown files
 lint-markdown:
-    markdownlint --ignore-path .gitignore "**/*.md"
+    markdownlint --ignore-path .gitignore --ignore-path .markdownlintignore "**/*.md"
 
 # Lint Rust files
 lint-rust:

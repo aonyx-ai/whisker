@@ -16,6 +16,10 @@ gcc.pkg-path = "gcc"
 gcc.systems = ["aarch64-linux", "x86_64-linux"]
 gcc.outputs = "all"
 
+# Node.js builds the documentation site. The catalog has no x86_64-darwin build.
+nodejs.pkg-path = "nodejs"
+nodejs.systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]
+
 # Local development tools
 cargo-deny.pkg-path = "cargo-deny"
 cargo-nextest.pkg-path = "cargo-nextest"
@@ -64,3 +68,11 @@ rustup show > /dev/null 2>&1
 [build]
 
 [options]
+# Whisker builds on all four systems. Without this list, a package that one
+# system lacks would drop that system from the lock with no error.
+systems = [
+  "aarch64-darwin",
+  "aarch64-linux",
+  "x86_64-darwin",
+  "x86_64-linux",
+]
