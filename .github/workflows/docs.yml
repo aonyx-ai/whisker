@@ -52,7 +52,14 @@ jobs:
 
     needs: build
 
-    if: github.event_name == 'release' && github.event.action == 'released'
+    # A release deploys the site, and a prerelease does not: the pages
+    # name the version a reader downloads, and a release candidate is not
+    # it. Running this workflow by hand deploys too, which is how the site
+    # goes up between releases.
+    if: >-
+      (github.event_name == 'release' && github.event.action == 'released')
+      || (github.event_name == 'workflow_dispatch'
+      && github.ref == 'refs/heads/main')
 
     environment:
       name: github-pages
