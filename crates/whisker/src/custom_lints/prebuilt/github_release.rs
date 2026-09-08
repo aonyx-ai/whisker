@@ -72,6 +72,26 @@ pub fn configured_repository_host() -> Option<String> {
     repository_host(&base_from(std::env::var(API_VARIABLE).ok()))
 }
 
+/// What asking a repository's releases for one archive turned up
+///
+/// The two empty-handed answers are not the same thing, and only one of
+/// them is worth telling the reader about. `NoMatch` means the releases
+/// were listed and nobody published this archive, which a publisher can
+/// act on. `Unlisted` means whisker could not see the repository at all,
+/// which is what a private repository looks like without a token, and
+/// saying so on every check would be noise nobody can fix.
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum AssetSearch {
+    /// The archive and its digest are both published
+    Found(PrebuiltAsset),
+
+    /// The releases were listed, and none holds this archive
+    NoMatch,
+
+    /// The API does not know this repository
+    Unlisted,
+}
+
 impl GitHubApi {
     /// Builds the client the environment describes
     ///
@@ -116,7 +136,7 @@ impl GitHubApi {
         &self,
         repository: &GitHubRepository,
         name: &AssetName,
-    ) -> anyhow::Result<Option<PrebuiltAsset>> {
+    ) -> anyhow::Result<AssetSearch> {
         let url = format!("{}/repos/{repository}/releases?per_page=100", self.base);
 
         let response = self
@@ -124,7 +144,7 @@ impl GitHubApi {
             .with_context(|| format!("failed to ask {repository} for its releases"))?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
+            return Ok(AssetSearch::Unlisted);
         }
 
         let status = response.status();
@@ -141,7 +161,10 @@ impl GitHubApi {
         let releases: Vec<Release> = serde_json::from_str(&body)
             .with_context(|| format!("failed to read the releases of {repository} as JSON"))?;
 
-        Ok(select_asset(&releases, name))
+        match select_asset(&releases, name) {
+            Some(asset) => Ok(AssetSearch::Found(asset)),
+            None => Ok(AssetSearch::NoMatch),
+        }
     }
 
     /// Downloads `asset` to `path` and returns the digest of what arrived

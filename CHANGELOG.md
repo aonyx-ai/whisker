@@ -12,6 +12,11 @@ and this project adheres to
 
 ### Added
 
+- Whisker says when a git source publishes no prebuilt lints it can load, and
+  names the archive it looked for. The compile that follows costs minutes on
+  every machine, and silence read exactly like a warm cache. A repository
+  whisker cannot see, which is what a private one looks like without a token,
+  stays quiet: nobody reading that can act on it.
 - A `[rules]` table names the rules a project runs. `enable` runs only those
   named, `disable` runs everything else, and a name that no configured lint
   reports is an error rather than a filter that quietly admits everything.

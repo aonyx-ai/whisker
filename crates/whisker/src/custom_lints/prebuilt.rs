@@ -31,7 +31,7 @@ use anyhow::Context as _;
 
 use self::archive::Sha256Digest;
 use self::asset_name::AssetName;
-use self::github_release::{GitHubApi, PrebuiltAsset};
+use self::github_release::{AssetSearch, GitHubApi, PrebuiltAsset};
 use self::github_repository::GitHubRepository;
 use super::abi_tag::AbiTag;
 use super::cache;
@@ -94,7 +94,11 @@ pub fn fetch(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<Option<Path
 
     match download(&repository, &name, &directory) {
         Ok(Installed::Yes) => Ok(Some(directory)),
-        Ok(Installed::Absent) => Ok(None),
+        Ok(Installed::Absent) => {
+            note_absent(source, &name);
+            Ok(None)
+        }
+        Ok(Installed::Unlisted) => Ok(None),
         Err(error) => {
             warn(source, &error);
             Ok(None)
@@ -132,8 +136,39 @@ fn download(
 /// Whether a release had prebuilt lints to install
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum Installed {
+    /// The archive was downloaded, checked, and unpacked
     Yes,
+
+    /// The releases were listed, and nobody published this archive
     Absent,
+
+    /// Whisker could not see the repository, so it asked nothing of it
+    Unlisted,
+}
+
+/// Tells the reader that nobody published lints this whisker can load
+///
+/// Nothing is wrong when this appears, and the check reports exactly what
+/// it would have reported anyway. It costs a compile of every rule in the
+/// source, on every machine and every build agent, which is minutes that
+/// look like whisker being slow rather than like an archive being absent.
+/// Silence there reads the same as a warm cache, so the one case a
+/// publisher can act on says so.
+///
+/// The message names the archive rather than describing it. A publisher
+/// reading it knows the exact file to produce, and the name carries the
+/// commit and this whisker's ABI tag, which are the two things that
+/// decide whether an archive is found.
+///
+/// This is not the same as [`warn`]. That one reports a lookup that
+/// failed and might succeed next time. This one reports a lookup that
+/// worked and found nothing.
+fn note_absent(source: &GitLintSource, name: &AssetName) {
+    eprintln!(
+        "note: no prebuilt lints published for {source} as {}; whisker builds them from source \
+         instead",
+        name.as_str()
+    );
 }
 
 /// Tells the reader that whisker compiles what it hoped to download
@@ -163,8 +198,10 @@ fn install(
     name: &AssetName,
     destination: &Path,
 ) -> anyhow::Result<Installed> {
-    let Some(PrebuiltAsset { archive, sidecar }) = api.find_asset(repository, name)? else {
-        return Ok(Installed::Absent);
+    let PrebuiltAsset { archive, sidecar } = match api.find_asset(repository, name)? {
+        AssetSearch::Found(asset) => asset,
+        AssetSearch::NoMatch => return Ok(Installed::Absent),
+        AssetSearch::Unlisted => return Ok(Installed::Unlisted),
     };
 
     if destination.exists() {

@@ -514,13 +514,18 @@ fn check_with_prebuilt_lints_in_the_cache_asks_nothing() {
     );
 }
 
-/// Pins that a repository nobody built for stays quiet
+/// Pins that a release holding no archive for this whisker is said
 ///
-/// Whisker says nothing and compiles the source, as it did before any of
-/// this existed. A warning here would appear on every check of every
-/// project whose lints are not published.
+/// The compile that follows costs minutes on every machine and every
+/// build agent, and silence there reads exactly like a warm cache. The
+/// releases were listed and nobody published this archive, which is the
+/// one empty-handed case a publisher can act on, so it is named rather
+/// than guessed at.
+///
+/// This is a note and not a warning. Nothing is broken, and the check
+/// reports what it would have reported anyway.
 #[test]
-fn check_without_a_matching_asset_says_nothing() {
+fn check_without_a_matching_asset_names_the_archive_nobody_published() {
     let server = FakeGitHub::start();
     let cache = tempfile::tempdir().expect("temporary directory should be created");
     let target = package(TODO_SOURCE);
@@ -535,10 +540,18 @@ fn check_without_a_matching_asset_says_nothing() {
         .arg(target.path())
         .assert()
         .failure()
+        .stderr(predicate::str::contains(
+            "note: no prebuilt lints published",
+        ))
+        .stderr(predicate::str::contains(REV))
         .stderr(predicate::str::contains("warning: whisker cannot use").not());
 }
 
-/// Pins that a repository whisker cannot list is the same quiet case
+/// Pins that a repository whisker cannot see stays quiet
+///
+/// This is what a private repository looks like without a token, and the
+/// reader can do nothing about it. Naming it on every check would be
+/// noise, so the note is kept for the case a publisher can fix.
 #[test]
 fn check_with_a_repository_the_api_does_not_know_says_nothing() {
     let server = FakeGitHub::start();
@@ -551,6 +564,7 @@ fn check_with_a_repository_the_api_does_not_know_says_nothing() {
         .arg(target.path())
         .assert()
         .failure()
+        .stderr(predicate::str::contains("note: no prebuilt lints").not())
         .stderr(predicate::str::contains("warning: whisker cannot use").not());
 }
 
