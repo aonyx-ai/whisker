@@ -112,7 +112,7 @@ impl WhiskerConfig {
     /// # Examples
     ///
     /// ```ignore
-    /// let names = config.options().names(RULE_ID, "foreign-attributes");
+    /// let names = config.options().names(RULE_ID, "boundary-attributes");
     /// ```
     pub fn options(&self) -> &RuleOptions {
         &self.options
@@ -761,7 +761,7 @@ mod tests {
         let directory = repository();
         write_config(
             directory.path(),
-            "[rules.options.\"lint.repeated-primitive-params\"]\nforeign-attributes =              [\"shard\", \"procedure\"]\n\n[rules.options.\"lint.bool-param\"]\n             foreign-attributes = []\n",
+            "[rules.options.\"lint.repeated-primitive-params\"]\nboundary-attributes =              [\"shard\", \"procedure\"]\n\n[rules.options.\"lint.bool-param\"]\n             boundary-attributes = []\n",
         );
 
         let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
@@ -770,12 +770,12 @@ mod tests {
         assert_eq!(
             options.names(
                 RuleId::new("lint.repeated-primitive-params"),
-                "foreign-attributes"
+                "boundary-attributes"
             ),
             Some(&["shard".to_owned(), "procedure".to_owned()][..])
         );
         assert_eq!(
-            options.names(RuleId::new("lint.bool-param"), "foreign-attributes"),
+            options.names(RuleId::new("lint.bool-param"), "boundary-attributes"),
             Some(&[][..])
         );
     }
@@ -785,7 +785,7 @@ mod tests {
         let directory = repository();
         write_config(
             directory.path(),
-            "[rules.options.\"lint.bool-param\"]\nforeign-attributes = \"shard\"\n",
+            "[rules.options.\"lint.bool-param\"]\nboundary-attributes = \"shard\"\n",
         );
 
         let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");

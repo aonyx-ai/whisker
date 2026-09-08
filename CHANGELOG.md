@@ -16,7 +16,7 @@ and this project adheres to
   named, `disable` runs everything else, and a name that no configured lint
   reports is an error rather than a filter that quietly admits everything.
 - A `[rules.options."<rule>"]` table gives one rule the names it cannot read
-  off the source, such as the attributes that make a signature foreign. A
+  off the source, such as the attributes that mark a system boundary. A
   value is a list of names, and a rule reads its own entry in `configure`.
   Plugins built for an earlier protocol no longer load, because the method is
   new on `LintPass`.

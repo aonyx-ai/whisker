@@ -10,7 +10,7 @@ pub use rule_option::RuleOption;
 /// Every option a project set, for every rule it runs
 ///
 /// A rule cannot always decide a case from the source alone. Whether an
-/// attribute makes a signature foreign depends on which framework wrote
+/// attribute marks a boundary depends on which framework wrote
 /// the attribute, and no rule knows every framework. The project does, so
 /// the project says, and the rule reads what it said.
 ///
@@ -32,11 +32,11 @@ pub use rule_option::RuleOption;
 ///
 /// let options = RuleOptions::new(vec![RuleOption::new(
 ///     "lint.bool-param".to_owned(),
-///     "foreign-attributes".to_owned(),
+///     "boundary-attributes".to_owned(),
 ///     vec!["shard".to_owned()],
 /// )]);
 ///
-/// let names = options.names(RuleId::new("lint.bool-param"), "foreign-attributes");
+/// let names = options.names(RuleId::new("lint.bool-param"), "boundary-attributes");
 ///
 /// assert_eq!(names, Some(&["shard".to_owned()][..]));
 /// ```
@@ -177,12 +177,12 @@ mod tests {
         RuleOptions::new(vec![
             RuleOption::new(
                 "lint.repeated-primitive-params".to_owned(),
-                "foreign-attributes".to_owned(),
+                "boundary-attributes".to_owned(),
                 vec!["shard".to_owned(), "procedure".to_owned()],
             ),
             RuleOption::new(
                 "lint.bool-param".to_owned(),
-                "foreign-attributes".to_owned(),
+                "boundary-attributes".to_owned(),
                 Vec::new(),
             ),
         ])
@@ -199,7 +199,7 @@ mod tests {
     fn names_with_an_empty_list_differs_from_an_absent_option() {
         let options = options();
 
-        let empty = options.names(RuleId::new("lint.bool-param"), "foreign-attributes");
+        let empty = options.names(RuleId::new("lint.bool-param"), "boundary-attributes");
 
         assert_eq!(empty, Some(&[][..]));
         assert_eq!(
@@ -214,7 +214,7 @@ mod tests {
 
         let names = options.names(
             RuleId::new("lint.repeated-primitive-params"),
-            "foreign-attributes",
+            "boundary-attributes",
         );
 
         assert_eq!(
@@ -227,7 +227,7 @@ mod tests {
     fn names_with_another_rules_option_returns_none() {
         let options = options();
 
-        let names = options.names(RuleId::new("lint.derive-order"), "foreign-attributes");
+        let names = options.names(RuleId::new("lint.derive-order"), "boundary-attributes");
 
         assert_eq!(names, None);
     }

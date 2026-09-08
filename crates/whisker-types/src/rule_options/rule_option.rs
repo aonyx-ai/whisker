@@ -10,7 +10,7 @@ use std::mem::offset_of;
 /// declares is refused by [`RuleOptions::validate`] before any pass runs.
 ///
 /// A value is a list of names. Every option the rules ask for today names
-/// things: the attributes that make a signature foreign, the crates a
+/// things: the attributes that mark a boundary, the crates a
 /// module may import. A number and a flag have no form here, so a project
 /// that writes one is told at load rather than having it read as nothing.
 ///
@@ -25,11 +25,11 @@ use std::mem::offset_of;
 ///
 /// let option = RuleOption::new(
 ///     "lint.repeated-primitive-params".to_owned(),
-///     "foreign-attributes".to_owned(),
+///     "boundary-attributes".to_owned(),
 ///     vec!["shard".to_owned(), "procedure".to_owned()],
 /// );
 ///
-/// assert_eq!(option.name(), "foreign-attributes");
+/// assert_eq!(option.name(), "boundary-attributes");
 /// ```
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct RuleOption {
@@ -48,7 +48,7 @@ impl RuleOption {
     ///
     /// let option = RuleOption::new(
     ///     "lint.bool-param".to_owned(),
-    ///     "foreign-attributes".to_owned(),
+    ///     "boundary-attributes".to_owned(),
     ///     vec!["shard".to_owned()],
     /// );
     ///
@@ -67,7 +67,7 @@ impl RuleOption {
     ///
     /// let option = RuleOption::new(
     ///     "lint.bool-param".to_owned(),
-    ///     "foreign-attributes".to_owned(),
+    ///     "boundary-attributes".to_owned(),
     ///     Vec::new(),
     /// );
     ///
@@ -86,11 +86,11 @@ impl RuleOption {
     ///
     /// let option = RuleOption::new(
     ///     "lint.bool-param".to_owned(),
-    ///     "foreign-attributes".to_owned(),
+    ///     "boundary-attributes".to_owned(),
     ///     Vec::new(),
     /// );
     ///
-    /// assert_eq!(option.name(), "foreign-attributes");
+    /// assert_eq!(option.name(), "boundary-attributes");
     /// ```
     pub fn name(&self) -> &str {
         &self.name
@@ -105,7 +105,7 @@ impl RuleOption {
     ///
     /// let option = RuleOption::new(
     ///     "lint.bool-param".to_owned(),
-    ///     "foreign-attributes".to_owned(),
+    ///     "boundary-attributes".to_owned(),
     ///     vec!["shard".to_owned()],
     /// );
     ///
@@ -134,7 +134,7 @@ mod tests {
     fn option() -> RuleOption {
         RuleOption::new(
             "lint.repeated-primitive-params".to_owned(),
-            "foreign-attributes".to_owned(),
+            "boundary-attributes".to_owned(),
             vec!["shard".to_owned(), "procedure".to_owned()],
         )
     }
@@ -152,7 +152,7 @@ mod tests {
 
         let name = option.name();
 
-        assert_eq!(name, "foreign-attributes");
+        assert_eq!(name, "boundary-attributes");
     }
 
     #[test]

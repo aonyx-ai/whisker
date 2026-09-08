@@ -56,13 +56,13 @@ nothing and read exactly like a rule that found no fault.
 ## Configuring a rule
 
 A rule cannot always decide a case from the source alone. Whether an attribute
-makes a signature foreign depends on which framework wrote the attribute, and
-no rule knows every framework. Name what the rule cannot know under the rule
-that reads it:
+marks a system boundary depends on which framework wrote the attribute, and no
+rule knows every framework. Name what the rule cannot know under the rule that
+reads it:
 
 ```toml
 [rules.options."lint.repeated-primitive-params"]
-foreign-attributes = ["shard", "procedure"]
+boundary-attributes = ["shard", "procedure"]
 ```
 
 A value is a list of names, and nothing else. Every option the rules ask for
@@ -78,10 +78,10 @@ A rule reads its options in `configure`, which whisker calls once on each pass
 before that pass sees a node:
 
 ```rust
-impl RustLintPass for NoForeignPrimitives {
+impl RustLintPass for RepeatedPrimitiveParams {
     fn configure(&mut self, options: &RuleOptions) {
-        self.foreign = options
-            .names(RULE_ID, "foreign-attributes")
+        self.boundary_attributes = options
+            .names(RULE_ID, "boundary-attributes")
             .unwrap_or_default()
             .to_vec();
     }
