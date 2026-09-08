@@ -65,7 +65,7 @@ pub fn generate_visitor(
     let trait_name = format!("{language}LintPass");
     let mut output = String::new();
 
-    output.push_str("use whisker_types::{DecoratedNode, Diagnostic};\n\n");
+    output.push_str("use whisker_types::{DecoratedNode, Diagnostic, RuleOptions};\n\n");
 
     output.push_str(&format!(
         "/// Trait for {language} lint rules\n\
@@ -79,6 +79,15 @@ pub fn generate_visitor(
          /// threads at the pass, rather than where it is wrapped.\n\
          pub trait {trait_name}: Send + Sync {{\n"
     ));
+
+    output.push_str(
+        "    /// Applies the project's options to this pass\n\
+         \x20   ///\n\
+         \x20   /// A rule that reads no options leaves this alone. A rule that\n\
+         \x20   /// reads one looks it up under its own id, because the table\n\
+         \x20   /// covers every rule the project configured.\n\
+         \x20   fn configure(&mut self, _options: &RuleOptions) {}\n\n",
+    );
 
     for node in &concrete_nodes {
         let method = method_name(&node.kind);
@@ -230,6 +239,14 @@ mod tests {
         assert!(code.contains("pub trait RustLintPass: Send + Sync {"));
         assert!(code.contains("fn check_source_file("));
         assert!(code.contains("fn check_function_item("));
+    }
+
+    #[test]
+    fn generate_visitor_declares_configure_on_the_trait() {
+        let code = generate_visitor(MINIMAL_JSON, "Rust").expect("should parse");
+
+        assert!(code.contains("fn configure(&mut self, _options: &RuleOptions) {}"));
+        assert!(code.contains("use whisker_types::{DecoratedNode, Diagnostic, RuleOptions};"));
     }
 
     #[test]

@@ -5,9 +5,12 @@ use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
+#[path = "support/configurable_plugin.rs"]
+mod configurable_plugin;
 #[path = "support/protocol_two_plugin.rs"]
 mod protocol_two_plugin;
 
+use configurable_plugin::write_configurable_lint_package;
 use protocol_two_plugin::write_protocol_two_lint_package;
 
 /// Source that trips the example lint and none of the built-ins
@@ -254,18 +257,20 @@ fn check_with_both_rule_lists_fails() {
         .stderr(predicate::str::contains("both"));
 }
 
-/// Pins that a plugin from an older protocol still loads
+/// Pins that a plugin from a protocol whisker dropped is refused
 ///
-/// A protocol is raised when the declaration gains a field, and such a
-/// plugin ends before it. Whisker knows the older layout, so it reads
-/// what the plugin has and treats the rest as absent, and the rules of an
-/// older plugin still run.
+/// A protocol is raised when the declaration gains a field, and whisker
+/// reads such a plugin by taking the fields it has. That holds only while
+/// the vtables stay put. Protocol 4 gave `LintPass` a `configure` method,
+/// which reorders its vtable, and no offset arithmetic can make an older
+/// plugin's vtable readable. The floor therefore rose to meet the current
+/// protocol, and an older plugin is refused rather than called through a
+/// vtable whose shape whisker is guessing at.
 ///
-/// This is why an optional capability belongs in the declaration and not
-/// on a trait: a `#[repr(C)]` struct has offsets whisker can reason
-/// about, and a vtable has none it can measure.
+/// The error names both versions, because the reader has to know which
+/// side to rebuild.
 #[test]
-fn check_with_a_plugin_from_an_older_protocol_loads_it() {
+fn check_with_a_plugin_from_an_older_protocol_refuses_it() {
     let target = package(TODO_SOURCE);
     let lints = tempfile::tempdir().expect("temporary directory should be created");
     write_protocol_two_lint_package(lints.path(), "older_lint", "older.fired");
@@ -276,23 +281,80 @@ fn check_with_a_plugin_from_an_older_protocol_loads_it() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .success()
-        .stderr(predicate::str::contains("warning[older.fired]"));
+        .failure()
+        .stderr(predicate::str::contains("plugin (ABI 2)"))
+        .stderr(predicate::str::contains(format!(
+            "whisker (ABI {})",
+            whisker_types::plugin::ABI_VERSION
+        )));
 }
 
-/// Pins that an older plugin's rules cannot be named
+/// Pins that a rule reads the option the project set for it
 ///
-/// It declares none, so whisker has nothing to check a name against and
-/// says so, rather than accepting a name it cannot honour.
+/// The lint fires on nothing of its own. It flags the macros the
+/// configuration names, so a diagnostic here can only mean the table
+/// reached the pass.
 #[test]
-fn check_naming_a_rule_of_an_older_plugin_fails() {
+fn check_with_an_option_configures_the_rule() {
     let target = package(TODO_SOURCE);
     let lints = tempfile::tempdir().expect("temporary directory should be created");
-    write_protocol_two_lint_package(lints.path(), "older_named", "older.fired");
+    write_configurable_lint_package(lints.path(), "configured_lint", "custom.configured");
     let lint_path = toml::Value::from(lints.path().to_str().expect("the path should be UTF-8"));
     write_config(
         target.path(),
-        &format!("[rules]\ndisable = [\"older.fired\"]\n\n[[lints]]\npath = {lint_path}\n"),
+        &format!(
+            "[[lints]]\npath = {lint_path}\n\n[rules.options.\"custom.configured\"]\n\
+             macros = [\"todo\"]\n"
+        ),
+    );
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("warning[custom.configured]"));
+}
+
+/// Pins that a rule the project configured nothing for still runs
+///
+/// The pass is configured either way, with a table holding nothing for
+/// it, so an unconfigured rule reports what it reports by default rather
+/// than failing to load.
+#[test]
+fn check_without_an_option_leaves_the_rule_at_its_default() {
+    let target = package(TODO_SOURCE);
+    let lints = tempfile::tempdir().expect("temporary directory should be created");
+    write_configurable_lint_package(lints.path(), "unconfigured_lint", "custom.configured");
+    configure_lint(target.path(), lints.path());
+
+    whisker()
+        .env("CARGO_TARGET_DIR", shared_build_directory())
+        .arg("check")
+        .arg(target.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("custom.configured").not());
+}
+
+/// Pins that an option set on a rule nothing reports is refused
+///
+/// An option on a misspelled rule configures nothing and reads exactly
+/// like a rule that took it and found no fault, which is the same reason
+/// `[rules]` refuses a name nothing reports.
+#[test]
+fn check_with_an_option_for_a_rule_no_lint_reports_fails() {
+    let target = package(TODO_SOURCE);
+    let lints = tempfile::tempdir().expect("temporary directory should be created");
+    write_configurable_lint_package(lints.path(), "misnamed_lint", "custom.configured");
+    let lint_path = toml::Value::from(lints.path().to_str().expect("the path should be UTF-8"));
+    write_config(
+        target.path(),
+        &format!(
+            "[[lints]]\npath = {lint_path}\n\n[rules.options.\"custom.mispelled\"]\n\
+             macros = [\"todo\"]\n"
+        ),
     );
 
     whisker()
@@ -301,7 +363,8 @@ fn check_naming_a_rule_of_an_older_plugin_fails() {
         .arg(target.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("older.fired"));
+        .stderr(predicate::str::contains("custom.mispelled"))
+        .stderr(predicate::str::contains("custom.configured"));
 }
 
 /// Pins the error for a repository that cannot be reached

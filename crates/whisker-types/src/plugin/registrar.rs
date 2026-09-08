@@ -27,7 +27,7 @@ pub type LintPassFactory = fn() -> Box<dyn LintPass>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DecoratedNode, Diagnostic};
+    use crate::{DecoratedNode, Diagnostic, RuleOptions};
 
     struct Collecting {
         factories: Vec<fn() -> Box<dyn LintPass>>,
@@ -42,6 +42,8 @@ mod tests {
     struct Quiet;
 
     impl LintPass for Quiet {
+        fn configure(&mut self, _options: &RuleOptions) {}
+
         fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
             Vec::new()
         }

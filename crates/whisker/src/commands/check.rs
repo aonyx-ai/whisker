@@ -10,7 +10,7 @@ use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
 use whisker_rust::RustDecorationProvider;
-use whisker_types::{DecorationProvider, Diagnostic, LintPass, UncoveredFile};
+use whisker_types::{DecorationProvider, Diagnostic, LintPass, RuleOptions, UncoveredFile};
 
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::{ErrorRecovery, Walk};
@@ -46,8 +46,8 @@ pub struct CheckArgs {
 /// of a run, so a rule that is not configured does not run however
 /// complete its own tests are. Nothing is enabled by default, and the
 /// configuration is the whole answer to what a check does.
-fn create_lint_passes(custom_lints: &CustomLints) -> Vec<Box<dyn LintPass>> {
-    custom_lints.instantiate()
+fn create_lint_passes(custom_lints: &CustomLints, options: &RuleOptions) -> Vec<Box<dyn LintPass>> {
+    custom_lints.instantiate(options)
 }
 
 /// The distinct remedies for the files this run could not analyze
@@ -115,10 +115,17 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
     let custom_lints =
         CustomLints::load(&config).context("failed to load the project's custom lints")?;
 
+    let declared = custom_lints.declared();
+
     config
         .rules()
-        .validate(&custom_lints.declared())
+        .validate(&declared)
         .context("failed to read the project's [rules]")?;
+
+    config
+        .options()
+        .validate(&declared)
+        .context("failed to read the project's [rules.options]")?;
 
     let on_error = match keep_going {
         true => WalkErrorPolicy::ReportAndContinue,
@@ -165,7 +172,7 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
             },
         };
 
-        let mut passes = create_lint_passes(&custom_lints);
+        let mut passes = create_lint_passes(&custom_lints, config.options());
 
         match pipeline.run_on_source(&source, file, &providers, &mut passes) {
             Ok(diagnostics) => {

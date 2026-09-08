@@ -123,7 +123,7 @@ mod tests {
 
     use whisker_types::{
         CoverageGap, DecoratedNode, Decoration, DecorationKey, DecorationMap, Diagnostic, Language,
-        ProviderName, RuleId, Severity,
+        ProviderName, RuleId, RuleOptions, Severity,
     };
 
     use super::*;
@@ -189,6 +189,8 @@ mod tests {
     struct ReportMarker;
 
     impl LintPass for ReportMarker {
+        fn configure(&mut self, _options: &RuleOptions) {}
+
         fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
             if node.kind() != "source_file" {
                 return Vec::new();
@@ -307,6 +309,8 @@ mod tests {
     fn run_on_source_with_lint_pass_collects_diagnostics() {
         struct AlwaysWarn;
         impl whisker_types::LintPass for AlwaysWarn {
+            fn configure(&mut self, _options: &whisker_types::RuleOptions) {}
+
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 if node.kind() == "function_item" {
                     vec![Diagnostic::new(
@@ -385,6 +389,8 @@ mod tests {
     fn run_on_source_with_uncovered_file_does_not_run_passes() {
         struct Exploding;
         impl whisker_types::LintPass for Exploding {
+            fn configure(&mut self, _options: &whisker_types::RuleOptions) {}
+
             fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 panic!("lint passes must not run on an uncovered file");
             }

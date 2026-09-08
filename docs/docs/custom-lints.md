@@ -53,6 +53,45 @@ project adopts a rule at a time. Naming both is refused. So is naming a rule
 that no configured lint reports, because a misspelling would otherwise disable
 nothing and read exactly like a rule that found no fault.
 
+## Configuring a rule
+
+A rule cannot always decide a case from the source alone. Whether an attribute
+makes a signature foreign depends on which framework wrote the attribute, and
+no rule knows every framework. Name what the rule cannot know under the rule
+that reads it:
+
+```toml
+[rules.options."lint.repeated-primitive-params"]
+foreign-attributes = ["shard", "procedure"]
+```
+
+A value is a list of names, and nothing else. Every option the rules ask for
+today names things, so a number or a bare string is refused at load rather than
+read as nothing. A rule that no configured lint reports is refused too, for the
+same reason a misspelled name in `enable` is.
+
+Which options a rule reads is the rule's own documentation. Whisker passes the
+whole table to every pass and never checks an option name, so an option a rule
+does not read is silently ignored.
+
+A rule reads its options in `configure`, which whisker calls once on each pass
+before that pass sees a node:
+
+```rust
+impl RustLintPass for NoForeignPrimitives {
+    fn configure(&mut self, options: &RuleOptions) {
+        self.foreign = options
+            .names(RULE_ID, "foreign-attributes")
+            .unwrap_or_default()
+            .to_vec();
+    }
+}
+```
+
+`names` returns `None` when the project set no such option, and `Some` holding
+nothing when it set an empty list. A rule with a default worth keeping can tell
+the two apart.
+
 ## Writing a lint crate
 
 A custom lint crate is a `cdylib` that implements `RustLintPass` and hands its

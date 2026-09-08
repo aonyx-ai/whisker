@@ -154,8 +154,8 @@ finding it cannot justify.
 
 A project names its lint crates in `.config/whisker.toml`. Whisker finds
 that file by climbing from the checked path to the file or to a `.git`
-directory. The file has two keys: `ignore` and `lints`. Each `lints` entry
-names a directory, or a repository pinned to one commit.
+directory. The file has three keys: `ignore`, `lints`, and `rules`. Each
+`lints` entry names a directory, or a repository pinned to one commit.
 
 `whisker check` resolves every entry before it compiles any of them, so a
 typo in the second entry surfaces before the first entry's build. Every
@@ -189,6 +189,19 @@ A directory may hold one package or a workspace of them. Whisker loads
 every dynamic library the build produced, and each one completes its own
 handshake. That is what lets a repository of rules arrive through a single
 entry.
+
+The `rules` table says which of the loaded rules run, and what each one
+reads. `enable` and `disable` filter the diagnostics that reach the
+report. `[rules.options."<rule>"]` holds the options that rule reads, each
+a list of names.
+
+Whisker hands the whole table to every pass. A plugin declares the rules
+of the library, not of one pass, so whisker cannot tell which pass reports
+which rule and cannot cut the table down before it hands it over. A pass
+looks its own entry up under the id it already holds as a constant. That
+is also why an option name is never checked: nothing declares the options
+a rule reads. A rule name is checked, against the same declared set that
+`enable` and `disable` are checked against.
 
 ## Prebuilt lints
 

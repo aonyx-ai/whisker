@@ -31,7 +31,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use whisker_types::DecoratedTree;
+    use whisker_types::{DecoratedTree, RuleOptions};
 
     use super::*;
 
@@ -57,6 +57,8 @@ mod tests {
 
         struct Counter;
         impl LintPass for Counter {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 COUNT.fetch_add(1, Ordering::Relaxed);
                 Vec::new()
@@ -81,6 +83,8 @@ mod tests {
 
     struct CounterPass(usize);
     impl LintPass for CounterPass {
+        fn configure(&mut self, _options: &RuleOptions) {}
+
         fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
             self.0 += 1;
             Vec::new()
@@ -95,6 +99,8 @@ mod tests {
 
         struct KindCounter;
         impl LintPass for KindCounter {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 NESTED_COUNT.fetch_add(1, Ordering::Relaxed);
                 Vec::new()
@@ -118,6 +124,8 @@ mod tests {
 
         struct DepthCounter;
         impl LintPass for DepthCounter {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 DEEP_COUNT.fetch_add(1, Ordering::Relaxed);
                 Vec::new()
@@ -145,6 +153,8 @@ mod tests {
 
         struct CounterA;
         impl LintPass for CounterA {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 PASS_A.fetch_add(1, Ordering::Relaxed);
                 Vec::new()
@@ -153,6 +163,8 @@ mod tests {
 
         struct CounterB;
         impl LintPass for CounterB {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 PASS_B.fetch_add(1, Ordering::Relaxed);
                 Vec::new()
@@ -178,6 +190,8 @@ mod tests {
 
         struct WarnOnFn(&'static str);
         impl LintPass for WarnOnFn {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 if node.kind() == "function_item" {
                     vec![Diagnostic::new(
@@ -208,6 +222,8 @@ mod tests {
 
         struct SpanChecker;
         impl LintPass for SpanChecker {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 vec![Diagnostic::new(
                     RuleId::new("test"),
@@ -251,6 +267,8 @@ mod tests {
             ) {
                 struct CountAll;
                 impl LintPass for CountAll {
+                    fn configure(&mut self, _options: &RuleOptions) {}
+
                     fn check_node(
                         &mut self,
                         node: &DecoratedNode<'_>,
