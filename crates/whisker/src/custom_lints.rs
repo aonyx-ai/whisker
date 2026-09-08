@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use anyhow::Context as _;
 use libloading::Library;
 use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
-use whisker_types::{LintPass, RuleId};
+use whisker_types::{LintPass, RuleId, RuleOptions};
 
 use self::handshake::AbiIdentity;
 use crate::config::{GitLintSource, LintSource, WhiskerConfig};
@@ -84,8 +84,20 @@ impl CustomLints {
     /// Every pass runs. A plugin declares the rules it can report, not
     /// which pass reports which, so a rule a project turned off is
     /// dropped from the report rather than never looked for.
-    pub fn instantiate(&self) -> Vec<Box<dyn LintPass>> {
-        self.factories.iter().map(|factory| factory()).collect()
+    ///
+    /// Every pass is configured before it is returned, and each one gets
+    /// the whole table for the same reason: whisker cannot tell which of
+    /// a plugin's rules a given pass reports, so the pass reads its own
+    /// entry.
+    pub fn instantiate(&self, options: &RuleOptions) -> Vec<Box<dyn LintPass>> {
+        self.factories
+            .iter()
+            .map(|factory| {
+                let mut pass = factory();
+                pass.configure(options);
+                pass
+            })
+            .collect()
     }
 
     /// Returns every rule the loaded plugins declare
@@ -95,9 +107,9 @@ impl CustomLints {
     /// single file, and a name matching none of them is a mistake it can
     /// report rather than a filter that quietly admits everything.
     ///
-    /// A plugin built against protocol 2 declares none, because its
-    /// declaration ends before the field that would say. Its rules still
-    /// run; they just cannot be named.
+    /// A plugin declares the rules of the whole library, not of one pass.
+    /// That is enough to refuse a name nothing reports, and not enough to
+    /// hand one pass the options meant for it.
     pub fn declared(&self) -> BTreeSet<String> {
         self.declared
             .iter()
@@ -345,12 +357,6 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
     artifact::cdylib_artifacts(&stdout, directory)
 }
 
-/// The first protocol version whose declaration names the plugin's rules
-///
-/// Whisker still loads a plugin older than this. It declares no rules, so
-/// a project cannot name them in `[rules]`, and every one of them runs.
-const RULES_FROM: u32 = 3;
-
 /// Opens the built library, performs the handshake, and collects factories
 ///
 /// The loader never forms a `&PluginDeclaration`. A plugin built against
@@ -365,7 +371,10 @@ const RULES_FROM: u32 = 3;
 /// the plugin exported it. This is what makes an appended field cheap:
 /// the offsets of a `#[repr(C)]` struct are knowable per version, and no
 /// step of the read depends on the plugin agreeing about the struct's
-/// size.
+/// size. The current floor happens to equal the current protocol, so
+/// every field a plugin exports is one this version knows; the read stays
+/// field by field, because the floor drops again the next time the
+/// declaration merely grows.
 ///
 /// The loader deliberately leaks the library. The registered factories and
 /// the `&'static str` inside every [`RuleId`] a plugin lint mints point into
@@ -417,14 +426,8 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
     let register = unsafe { (&raw const (*declaration).register).read() };
     register(&mut registrar);
 
-    let rules = match plugin_abi_version >= RULES_FROM {
-        true => {
-            let rules = unsafe { (&raw const (*declaration).rules).read() };
-
-            rules()
-        }
-        false => Vec::new(),
-    };
+    let rules = unsafe { (&raw const (*declaration).rules).read() };
+    let rules = rules();
 
     anyhow::ensure!(
         !registrar.factories.is_empty(),
@@ -632,7 +635,7 @@ mod tests {
 
         let lints = CustomLints::load(&config).expect("should load");
 
-        assert!(lints.instantiate().is_empty());
+        assert!(lints.instantiate(&RuleOptions::default()).is_empty());
     }
 
     #[test]

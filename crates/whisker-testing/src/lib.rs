@@ -219,7 +219,9 @@ impl DiagnosticAssertion<'_> {
 
 #[cfg(test)]
 mod tests {
-    use whisker_types::{DecoratedNode, Decoration, DecorationKey, Diagnostic, RuleId, Severity};
+    use whisker_types::{
+        DecoratedNode, Decoration, DecorationKey, Diagnostic, RuleId, RuleOptions, Severity,
+    };
 
     use super::*;
 
@@ -271,6 +273,8 @@ mod tests {
     fn execute_collects_diagnostics_from_pass() {
         struct FnFinder;
         impl LintPass for FnFinder {
+            fn configure(&mut self, _options: &RuleOptions) {}
+
             fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
                 if node.kind() == "function_item" {
                     vec![Diagnostic::new(

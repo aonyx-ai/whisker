@@ -1,4 +1,4 @@
-use whisker_types::{DecoratedNode, Diagnostic, LintPass};
+use whisker_types::{DecoratedNode, Diagnostic, LintPass, RuleOptions};
 
 use crate::{RustLintPass, dispatch};
 
@@ -35,6 +35,10 @@ impl<P: RustLintPass> RustLintPassAdapter<P> {
 }
 
 impl<P: RustLintPass> LintPass for RustLintPassAdapter<P> {
+    fn configure(&mut self, options: &RuleOptions) {
+        self.inner.configure(options);
+    }
+
     fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
         dispatch(&mut self.inner, node)
     }

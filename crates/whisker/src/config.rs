@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::Context as _;
@@ -5,6 +6,7 @@ use kawauso_project::project::ProjectRoot;
 use kawauso_project::search::Marker;
 use kawauso_project::{Project, Search};
 use serde::Deserialize;
+use whisker_types::{RuleOption, RuleOptions};
 
 mod git_rev;
 mod git_url;
@@ -47,6 +49,7 @@ pub struct WhiskerConfig {
     ignore: Vec<IgnorePattern>,
     lints: Vec<LintSource>,
     rules: RuleFilter,
+    options: RuleOptions,
 }
 
 impl WhiskerConfig {
@@ -62,27 +65,30 @@ impl WhiskerConfig {
     /// );
     /// ```
     pub fn new(root: ProjectRoot, ignore: Vec<IgnorePattern>, lints: Vec<LintSource>) -> Self {
-        Self::with_rules(root, ignore, lints, RuleFilter::All)
+        Self::with_rules(root, ignore, lints, RuleFilter::All, RuleOptions::default())
     }
 
-    /// Creates a configuration that runs only the rules `rules` admits
+    /// Creates a configuration that runs only the rules `rules` admits,
+    /// each reading the options `options` holds for it
     ///
     /// # Examples
     ///
     /// ```ignore
-    /// let config = WhiskerConfig::with_rules(root, ignore, lints, filter);
+    /// let config = WhiskerConfig::with_rules(root, ignore, lints, filter, options);
     /// ```
     pub fn with_rules(
         root: ProjectRoot,
         ignore: Vec<IgnorePattern>,
         lints: Vec<LintSource>,
         rules: RuleFilter,
+        options: RuleOptions,
     ) -> Self {
         Self {
             root,
             ignore,
             lints,
             rules,
+            options,
         }
     }
 
@@ -95,6 +101,21 @@ impl WhiskerConfig {
     /// ```
     pub fn rules(&self) -> &RuleFilter {
         &self.rules
+    }
+
+    /// Returns the options the project set for the rules it runs
+    ///
+    /// The whole table goes to every pass. Whisker knows which rules a
+    /// plugin declares but not which pass reports which, so a pass reads
+    /// its own entry rather than being handed it.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let names = config.options().names(RULE_ID, "boundary-attributes");
+    /// ```
+    pub fn options(&self) -> &RuleOptions {
+        &self.options
     }
 
     /// Loads the configuration that governs `path`
@@ -145,9 +166,14 @@ impl WhiskerConfig {
             return Ok(Self::new(root, Vec::new(), Vec::new()));
         };
 
-        let RulesTable { enable, disable } = rules.clone();
+        let RulesTable {
+            enable,
+            disable,
+            options,
+        } = rules.clone();
         let rules = RuleFilter::new(enable, disable)
             .with_context(|| format!("failed to read {}", project.configuration_path()))?;
+        let options = read_options(options);
 
         let ignore = ignore
             .iter()
@@ -165,7 +191,7 @@ impl WhiskerConfig {
             .collect::<anyhow::Result<Vec<_>>>()
             .with_context(|| format!("failed to read {}", project.configuration_path()))?;
 
-        Ok(Self::with_rules(root, ignore, lints, rules))
+        Ok(Self::with_rules(root, ignore, lints, rules, options))
     }
 
     /// Returns the project directory that anchors the ignore patterns
@@ -259,6 +285,29 @@ struct RulesTable {
 
     #[serde(default)]
     disable: Vec<String>,
+
+    #[serde(default)]
+    options: BTreeMap<String, BTreeMap<String, Vec<String>>>,
+}
+
+/// Flattens the `[rules.options]` tables into one list
+///
+/// The file nests the option names under the rule that reads them, which
+/// is how a person writes them. A rule looks one up by both names at
+/// once, so the flat list is what [`RuleOptions`] holds. Both maps are
+/// ordered, so the list is too, and a configuration reads back the same
+/// way it was written.
+fn read_options(options: BTreeMap<String, BTreeMap<String, Vec<String>>>) -> RuleOptions {
+    let options = options
+        .into_iter()
+        .flat_map(|(rule, options)| {
+            options
+                .into_iter()
+                .map(move |(name, values)| RuleOption::new(rule.clone(), name, values))
+        })
+        .collect();
+
+    RuleOptions::new(options)
 }
 
 /// One `[[lints]]` entry as written on disk
@@ -320,6 +369,7 @@ impl LintEntry {
 #[cfg(test)]
 mod tests {
     use tempfile::TempDir;
+    use whisker_types::RuleId;
 
     use super::*;
 
@@ -704,6 +754,56 @@ mod tests {
             format!("{error:#}").contains("profile"),
             "error should name the key whisker does not recognize: {error:#}"
         );
+    }
+
+    #[test]
+    fn load_with_rule_options_flattens_them_in_order() {
+        let directory = repository();
+        write_config(
+            directory.path(),
+            "[rules.options.\"lint.repeated-primitive-params\"]\nboundary-attributes =              [\"shard\", \"procedure\"]\n\n[rules.options.\"lint.bool-param\"]\n             boundary-attributes = []\n",
+        );
+
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        let options = config.options();
+        assert_eq!(
+            options.names(
+                RuleId::new("lint.repeated-primitive-params"),
+                "boundary-attributes"
+            ),
+            Some(&["shard".to_owned(), "procedure".to_owned()][..])
+        );
+        assert_eq!(
+            options.names(RuleId::new("lint.bool-param"), "boundary-attributes"),
+            Some(&[][..])
+        );
+    }
+
+    #[test]
+    fn load_with_a_scalar_rule_option_returns_error() {
+        let directory = repository();
+        write_config(
+            directory.path(),
+            "[rules.options.\"lint.bool-param\"]\nboundary-attributes = \"shard\"\n",
+        );
+
+        let error = WhiskerConfig::load(directory.path()).expect_err("configuration should fail");
+
+        assert!(
+            format!("{error:#}").contains("invalid type"),
+            "error should name the type it could not read: {error:#}"
+        );
+    }
+
+    #[test]
+    fn load_without_rule_options_holds_none() {
+        let directory = repository();
+        write_config(directory.path(), "ignore = [\"examples/\"]\n");
+
+        let config = WhiskerConfig::load(directory.path()).expect("configuration should load");
+
+        assert!(config.options().options().is_empty());
     }
 
     #[test]

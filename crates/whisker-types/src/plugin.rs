@@ -40,7 +40,8 @@ use std::ffi::CStr;
 
 use crate::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationKey, DecorationMap, Diagnostic,
-    Language, Location, ProviderName, RuleId, Severity, Span, Suggestion, UncoveredFile,
+    Language, Location, ProviderName, RuleId, RuleOption, RuleOptions, Severity, Span, Suggestion,
+    UncoveredFile,
 };
 
 mod declaration;
@@ -67,9 +68,9 @@ pub use registrar::{LintPassFactory, LintRegistrar};
 /// ```
 /// use whisker_types::plugin::ABI_VERSION;
 ///
-/// assert_eq!(ABI_VERSION, 3);
+/// assert_eq!(ABI_VERSION, 4);
 /// ```
-pub const ABI_VERSION: u32 = 3;
+pub const ABI_VERSION: u32 = 4;
 
 /// The oldest protocol whisker still loads
 ///
@@ -81,7 +82,9 @@ pub const ABI_VERSION: u32 = 3;
 /// This range covers the declaration alone. A change to the method list
 /// of [`LintPass`] or [`LintRegistrar`] reorders a vtable, which no
 /// version can make readable, so such a change raises this floor to meet
-/// [`ABI_VERSION`] and refuses everything older.
+/// [`ABI_VERSION`] and refuses everything older. It does today: protocol
+/// 4 gave [`LintPass`] a `configure` method, so 4 is the only protocol
+/// whisker loads until the declaration next gains a field.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
@@ -92,7 +95,7 @@ pub const ABI_VERSION: u32 = 3;
 ///
 /// assert!(MIN_ABI_VERSION <= ABI_VERSION);
 /// ```
-pub const MIN_ABI_VERSION: u32 = 2;
+pub const MIN_ABI_VERSION: u32 = 4;
 
 /// The full identity of the rustc that compiled this crate
 ///
@@ -154,6 +157,8 @@ pub const TYPES_FINGERPRINT: u64 = fingerprint(&[
     Shape::of::<Coverage>(),
     Shape::of::<CoverageGap>(),
     Shape::of::<UncoveredFile>(),
+    Shape::of_fields::<RuleOptions>(crate::rule_options::FIELD_OFFSETS),
+    Shape::of_fields::<RuleOption>(crate::rule_options::OPTION_FIELD_OFFSETS),
     Shape::of::<LintPassFactory>(),
 ]);
 
@@ -233,6 +238,7 @@ mod tests {
             (lint_pass, registrar),
             (
                 vec![
+                    "fn configure(&mut self, options: &RuleOptions);".to_owned(),
                     "fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic>;"
                         .to_owned()
                 ],
