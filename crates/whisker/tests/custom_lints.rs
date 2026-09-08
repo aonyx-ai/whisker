@@ -352,7 +352,7 @@ fn check_with_an_option_for_a_rule_no_lint_reports_fails() {
     write_config(
         target.path(),
         &format!(
-            "[[lints]]\npath = {lint_path}\n\n[rules.options.\"custom.mispelled\"]\n\
+            "[[lints]]\npath = {lint_path}\n\n[rules.options.\"custom.misspelled\"]\n\
              macros = [\"todo\"]\n"
         ),
     );
@@ -363,7 +363,7 @@ fn check_with_an_option_for_a_rule_no_lint_reports_fails() {
         .arg(target.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("custom.mispelled"))
+        .stderr(predicate::str::contains("custom.misspelled"))
         .stderr(predicate::str::contains("custom.configured"));
 }
 

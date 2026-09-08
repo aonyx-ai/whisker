@@ -13,4 +13,4 @@ ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 # protocol, and that commit is not on the rules repository's main branch yet.
 [[lints]]
 git = "https://github.com/aonyx-ai/whisker-aonyx-rules"
-rev = "b1f245b04bafb0ded992204467e1fa2dd6ebc583"
+rev = "545cc5755325523aa0f6cc0e841f14479ec412b7"
