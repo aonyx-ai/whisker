@@ -7,6 +7,10 @@ ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 # Whisker's rules live in their own repository, pinned to one commit. Bumping
 # this is how whisker adopts a new rule or a changed one; until it moves, a
 # check here runs exactly the rules it ran yesterday.
+#
+# The pin is a branch commit for now. A rule built against an earlier whisker
+# no longer loads, so this had to move to the commit that adopts the new
+# protocol, and that commit is not on the rules repository's main branch yet.
 [[lints]]
 git = "https://github.com/aonyx-ai/whisker-aonyx-rules"
-rev = "ffd02b34a39900a84045ff7bc0130885bf9f5732"
+rev = "80d2e16a4232ee07c5f6bdd6a737769e218f390f"
