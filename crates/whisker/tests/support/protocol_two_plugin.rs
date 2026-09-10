@@ -3,14 +3,14 @@ use std::path::Path;
 /// Writes a lint package whose declaration is the one protocol 2 defined
 ///
 /// The package spells the older declaration out itself, as a `#[repr(C)]`
-/// struct ending after `register`, which is exactly the shape a plugin
-/// built before protocol 3 exports. It cannot use whisker's own
-/// [`PluginDeclaration`], because that one has the field this plugin is
-/// meant to lack.
+/// struct ending after `register`. That is the shape a plugin built before
+/// protocol 3 exported. It cannot use whisker's own
+/// [`PluginDeclaration`], because that one has fields this plugin is meant
+/// to lack. The registration function is a stand-in: whisker refuses the
+/// protocol before it reads past the version, so nothing calls it.
 ///
-/// A test uses this to prove that whisker still loads such a plugin. The
-/// rules of an older plugin run; they only cannot be named in `[rules]`,
-/// because it declares none.
+/// A test uses this to prove that whisker refuses such a plugin with an
+/// error that names both protocols.
 ///
 /// [`PluginDeclaration`]: whisker_types::plugin::PluginDeclaration
 ///
@@ -37,7 +37,6 @@ pub fn write_protocol_two_lint_package(directory: &Path, name: &str, rule: &str)
         directory.join("src").join("lib.rs"),
         format!(
             r#"use whisker_rust::RustLintPass;
-use whisker_types::plugin::{{LintPassFactory, LintRegistrar}};
 use whisker_types::{{DecoratedNode, Diagnostic, RuleId, Severity}};
 
 pub struct Flag;
@@ -60,15 +59,13 @@ pub struct DeclarationV2 {{
     pub rustc_version: *const std::ffi::c_char,
     pub types_fingerprint: u64,
     pub language_fingerprint: u64,
-    pub register: fn(&mut dyn LintRegistrar),
+    pub register: fn(),
 }}
 
 unsafe impl Sync for DeclarationV2 {{}}
 
-fn register(registrar: &mut dyn LintRegistrar) {{
-    let factory: LintPassFactory = || Box::new(whisker_rust::RustLintPassAdapter::new(Flag));
-    registrar.register(factory);
-}}
+/// Stands where protocol 2 put its registration function; never called
+fn register() {{}}
 
 #[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]

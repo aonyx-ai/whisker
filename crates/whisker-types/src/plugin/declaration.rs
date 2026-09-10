@@ -1,7 +1,6 @@
 use std::ffi::c_char;
 
-use crate::RuleId;
-use crate::plugin::LintRegistrar;
+use crate::plugin::Loaded;
 
 /// The entry point a custom lint plugin exports
 ///
@@ -18,9 +17,9 @@ use crate::plugin::LintRegistrar;
 ///   pointer rather than a `&CStr`, because a reference's layout is only
 ///   promised within one compiler. The two fingerprints are plain `u64`,
 ///   which needs no such promise.
-/// - [`register`] is a plain Rust function pointer. Calling it hands
-///   `&mut dyn` trait objects across the boundary, which is only sound
-///   once every prior field proved that both images agree on the ABI.
+/// - [`load`] is an `extern "C"` function pointer that hands back values
+///   stabby lays out. Calling it is sound once the fingerprints prove
+///   that both images lay those values out the same way.
 ///
 /// The fields are public rather than accessed through getters, because
 /// this struct is a wire format: the exporting macro constructs it in a
@@ -31,8 +30,8 @@ use crate::plugin::LintRegistrar;
 /// immutable `'static` data in the plugin image.
 ///
 /// [`abi_version`]: PluginDeclaration::abi_version
+/// [`load`]: PluginDeclaration::load
 /// [`rustc_version`]: PluginDeclaration::rustc_version
-/// [`register`]: PluginDeclaration::register
 #[repr(C)]
 pub struct PluginDeclaration {
     /// The plugin's copy of [`ABI_VERSION`]
@@ -59,31 +58,29 @@ pub struct PluginDeclaration {
     /// turns that into a refusal.
     pub language_fingerprint: u64,
 
-    /// Registers the plugin's lint passes with the host
+    /// Hands over everything the plugin exports
     ///
-    /// The host calls this once, after the handshake, with a registrar
-    /// that collects one factory per lint.
-    pub register: fn(&mut dyn LintRegistrar),
-
-    /// Returns every rule this plugin can report
+    /// The host calls this once, after the handshake, and keeps what it
+    /// gets for the life of the process. One call carries the factories
+    /// and the rule list together.
     ///
-    /// A project names the rules it runs, and whisker refuses a name that
-    /// no loaded plugin declares. Without this, a misspelled name would
-    /// disable nothing and say nothing, which reads exactly like a rule
-    /// that found no fault.
+    /// This is the only function the boundary needs. After `dlopen` the
+    /// host holds an address and a name and no stabby value, so the first
+    /// hand-over must be a call whose convention both images agree on
+    /// with no prior agreement. Everything the call returns is stabby's.
     ///
-    /// This is the first field a plugin may lack. A plugin built against
-    /// protocol 2 ends after `register`, so whisker reads this only once
-    /// [`PluginDeclaration::abi_version`] says it is there. Anything
-    /// added later goes on the end for the same reason: a `#[repr(C)]`
-    /// struct has offsets whisker can reason about, and a vtable does
-    /// not, so a capability that some plugins lack belongs here rather
-    /// than on [`LintPass`].
+    /// Anything added later goes inside [`Plugin`] rather than beside it.
+    /// A `#[repr(C)]` struct has offsets whisker can reason about per
+    /// protocol, and a vtable does not.
     ///
-    /// [`LintPass`]: crate::LintPass
-    pub rules: fn() -> Vec<RuleId>,
+    /// [`Plugin`]: crate::plugin::Plugin
+    pub load: extern "C" fn() -> Loaded,
 }
 
+/// The declaration is a `static` a plugin exports, and `rustc_version`
+/// makes it a raw pointer, which is neither [`Send`] nor [`Sync`]. The
+/// pointer names a NUL-terminated string in the plugin's own image, which
+/// lives as long as the library is loaded and which nothing writes.
 unsafe impl Send for PluginDeclaration {}
 unsafe impl Sync for PluginDeclaration {}
 
@@ -98,24 +95,21 @@ mod tests {
         assert_eq!(offset_of!(PluginDeclaration, abi_version), 0);
     }
 
-    /// Pins that protocol 3's field was appended rather than inserted
+    /// Pins that the fields keep the order the protocol was written in
     ///
-    /// A plugin built against protocol 2 exported everything up to
-    /// `register` and nothing after it. Whisker reads those fields at the
-    /// offsets this struct gives, so a field inserted among them would
-    /// move the rest and whisker would read one plugin's data as another
-    /// field. That is silent: the fields are integers and pointers, and a
-    /// wrong one is a wrong answer rather than a crash. A new field goes
-    /// last, and this test fails if one does not.
+    /// Whisker reads each field at the offset this struct gives. A field
+    /// inserted among them would move the rest, and whisker would read one
+    /// plugin's data as another field. That is silent: the fields are
+    /// integers and pointers, and a wrong one is a wrong answer rather than
+    /// a crash. A new field goes last, and this test fails if one does not.
     #[test]
-    fn rules_sits_after_every_field_protocol_two_exported() {
-        let rules = offset_of!(PluginDeclaration, rules);
+    fn load_sits_after_every_other_field() {
+        let load = offset_of!(PluginDeclaration, load);
 
-        assert!(offset_of!(PluginDeclaration, abi_version) < rules);
-        assert!(offset_of!(PluginDeclaration, rustc_version) < rules);
-        assert!(offset_of!(PluginDeclaration, types_fingerprint) < rules);
-        assert!(offset_of!(PluginDeclaration, language_fingerprint) < rules);
-        assert!(offset_of!(PluginDeclaration, register) < rules);
+        assert!(offset_of!(PluginDeclaration, abi_version) < load);
+        assert!(offset_of!(PluginDeclaration, rustc_version) < load);
+        assert!(offset_of!(PluginDeclaration, types_fingerprint) < load);
+        assert!(offset_of!(PluginDeclaration, language_fingerprint) < load);
     }
 
     #[test]

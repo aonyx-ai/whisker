@@ -1,4 +1,7 @@
-use whisker_types::{Checked, Configured, DecoratedNode, LintPass, Panic, RuleOptions};
+use whisker_types::{
+    BoxedLintPass, Checked, Configured, DecoratedNode, LintPass, Panic, RuleOptions,
+    boxed_lint_pass,
+};
 
 use crate::{RustLintPass, dispatch};
 
@@ -11,10 +14,10 @@ use crate::{RustLintPass, dispatch};
 /// appropriate typed method based on its kind.
 ///
 /// The adapter is also the plugin's edge. A rule may panic, and a panic
-/// must not unwind into the host, so each call runs under [`Panic::catch`]
-/// and comes back as a value. A rule keeps writing plain Rust and returning
-/// std's `Vec`; the copy into the list that crosses the boundary happens
-/// here.
+/// must not unwind into the host. Each call therefore runs under
+/// [`Panic::catch`] and comes back as a value. A rule keeps writing plain
+/// Rust and returning std's `Vec`; the copy into the list that crosses the
+/// boundary happens here.
 ///
 /// # Examples
 ///
@@ -37,6 +40,20 @@ impl<P: RustLintPass> RustLintPassAdapter<P> {
     /// Wraps a `RustLintPass` implementation for use with the pipeline
     pub fn new(pass: P) -> Self {
         Self { inner: pass }
+    }
+
+    /// Wraps a rule and boxes it for the plugin boundary
+    ///
+    /// This is what a factory written by [`export_lints!`] hands back to
+    /// whisker: a pass behind a stabby box and a stabby vtable, which the
+    /// host calls without knowing the rule's type.
+    ///
+    /// [`export_lints!`]: crate::export_lints
+    pub fn boxed(pass: P) -> BoxedLintPass
+    where
+        P: 'static,
+    {
+        boxed_lint_pass(Self::new(pass))
     }
 }
 

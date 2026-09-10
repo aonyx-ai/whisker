@@ -64,6 +64,12 @@ and this project adheres to
   built it. A panic inside a rule comes back as a value too, and whisker
   reports the file and node it was checking instead of the process dying.
   The protocol is 5, and a plugin built for an earlier one no longer loads.
+- A plugin hands its lint factories and its rules to whisker through
+  `extern "C"` functions that return values stabby lays out, and each pass
+  crosses the boundary in a stabby box behind a stabby vtable. The
+  registrar is gone. Every allocation that crosses now carries the function
+  that frees it, so a plugin may set its own `#[global_allocator]`. The
+  protocol is 6.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against.
 

@@ -298,11 +298,12 @@ compares the key and hands back a pointer to the value; the plugin casts
 it under the `Decoration` contract, which the language fingerprint backs
 by refusing a plugin whose decoration types differ from the host's.
 
-Layout cannot see the method order of `LintPass` and `LintRegistrar`,
-because a vtable orders its methods by declaration. Those belong to the
-declaration's `ABI_VERSION`. A test scans both traits' source and fails
-when either method list moves, so the test reminds a contributor to bump
-it.
+The factory's identity reaches the pass's vtable and names its methods
+in order, so a method added or moved is refused. It records each method
+as a pointer, not what it takes and returns, so a changed signature
+belongs to the declaration's `ABI_VERSION`. A test scans the trait's
+source and fails when its method list moves, so the test reminds a
+contributor to bump it.
 
 Two kinds of change reach that declaration, and they cost differently. A
 field appended to it is readable by version, because the struct is
@@ -331,11 +332,11 @@ library. A pass catches its own panics at the boundary and hands them
 back as values, because an unwind must not cross between two panic
 runtimes. That catch rests on the plugin unwinding: a plugin built with
 `panic = "abort"` still takes the process down, and nothing checks the
-strategy. A plugin must not set a `#[global_allocator]`, because the host
-frees values the plugin allocated.
+strategy. Every allocation that crosses is stabby's and carries the
+function that frees it, so a plugin may set its own `#[global_allocator]`.
 
 The loader keeps every library loaded for the life of the process. The
-registered factories and every `RuleId` a plugin mints point into the
+factories a plugin hands over and every `RuleId` it mints point into the
 library's image.
 
 ## Workspace layout

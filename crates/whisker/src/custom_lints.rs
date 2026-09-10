@@ -5,8 +5,8 @@ use std::process::{Command, Stdio};
 
 use anyhow::Context as _;
 use libloading::Library;
-use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
-use whisker_types::{LintPass, Panic, RuleId, RuleOptions};
+use whisker_types::plugin::{LintPassFactory, PluginDeclaration, construct};
+use whisker_types::{BoxedLintPass, LintPass, Panic, RuleId, RuleOptions};
 
 use self::handshake::AbiIdentity;
 use crate::config::{GitLintSource, LintSource, WhiskerConfig};
@@ -45,7 +45,7 @@ impl CustomLints {
     ///
     /// Returns an error if a configured source cannot be resolved, is
     /// configured twice, fails to build, does not export a plugin
-    /// declaration, fails the ABI handshake, or registers no lints.
+    /// declaration, fails the ABI handshake, or exports no lints.
     pub fn load(config: &WhiskerConfig) -> anyhow::Result<Self> {
         let host = AbiIdentity::host();
         let mut factories = Vec::new();
@@ -92,15 +92,17 @@ impl CustomLints {
     ///
     /// # Errors
     ///
-    /// Returns an error if a pass panics while it reads the table. The
-    /// plugin caught the panic at its boundary and handed it back, and a
-    /// pass that cannot read its options is a broken setup rather than a
-    /// file to skip.
+    /// Returns an error if a pass panics while it is constructed or while
+    /// it reads the table. The plugin caught the panic at its boundary and
+    /// handed it back. A pass that cannot be built or configured is a
+    /// broken setup rather than a file to skip.
     pub fn instantiate(&self, options: &RuleOptions) -> anyhow::Result<Vec<Box<dyn LintPass>>> {
         self.factories
             .iter()
             .map(|factory| {
-                let mut pass = factory();
+                let constructed: Result<BoxedLintPass, Panic> = construct(factory).into();
+                let pass = constructed.context("a lint pass panicked while it was constructed")?;
+                let mut pass: Box<dyn LintPass> = Box::new(pass);
                 let configured: Result<(), Panic> = pass.configure(options).into();
                 configured.context("a lint pass panicked while reading the project's options")?;
                 Ok(pass)
@@ -302,7 +304,7 @@ fn load_prebuilt(directory: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded>
     load_libraries(&libraries, host)
 }
 
-/// Completes the handshake with each library and collects what registers
+/// Completes the handshake with each library and collects what each exports
 fn load_libraries(libraries: &[PathBuf], host: &AbiIdentity) -> anyhow::Result<Loaded> {
     let mut all = Loaded::default();
 
@@ -384,7 +386,7 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
 /// field by field, because the floor drops again the next time the
 /// declaration merely grows.
 ///
-/// The loader deliberately leaks the library. The registered factories and
+/// The loader deliberately leaks the library. The factories it hands over and
 /// the `&'static str` inside every [`RuleId`] a plugin lint mints point into
 /// the library's image, so unloading it would leave dangling references
 /// behind values that outlive this function. The leak is bounded by the
@@ -393,7 +395,7 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
 /// # Errors
 ///
 /// Returns an error if the library cannot be opened, exports no plugin
-/// declaration, fails the ABI handshake, or registers no lints.
+/// declaration, fails the ABI handshake, or exports no lints.
 ///
 /// [`RuleId`]: whisker_types::RuleId
 fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
@@ -428,27 +430,21 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
     };
     handshake::validate(host, &plugin)?;
 
-    let mut registrar = Collecting {
-        factories: Vec::new(),
-    };
-    let register = unsafe { (&raw const (*declaration).register).read() };
-    register(&mut registrar);
-
-    let rules = unsafe { (&raw const (*declaration).rules).read() };
-    let rules = rules();
+    let load = unsafe { (&raw const (*declaration).load).read() };
+    let loaded: Result<_, Panic> = load().into();
+    let loaded = loaded.context("the plugin panicked while listing what it exports")?;
+    let factories: Vec<LintPassFactory> = loaded.factories.into_iter().collect();
+    let rules: Vec<RuleId> = loaded.rules.into_iter().collect();
 
     anyhow::ensure!(
-        !registrar.factories.is_empty(),
-        "the plugin registered no lints; a plugin that does nothing looks exactly like one that \
+        !factories.is_empty(),
+        "the plugin exported no lints; a plugin that does nothing looks exactly like one that \
          works, so this is treated as a mistake"
     );
 
     std::mem::forget(library);
 
-    Ok(Loaded {
-        factories: registrar.factories,
-        rules,
-    })
+    Ok(Loaded { factories, rules })
 }
 
 /// Reads the protocol version at the head of a plugin declaration
@@ -485,17 +481,6 @@ fn read_declaration_string(field: *const c_char) -> anyhow::Result<String> {
         .context("the plugin declaration is malformed; export lints with export_lints!")?;
 
     Ok(text.to_owned())
-}
-
-/// Gathers the factories a plugin registers
-struct Collecting {
-    factories: Vec<LintPassFactory>,
-}
-
-impl LintRegistrar for Collecting {
-    fn register(&mut self, factory: LintPassFactory) {
-        self.factories.push(factory);
-    }
 }
 
 #[cfg(test)]

@@ -103,7 +103,7 @@ mod tests {
     fn new_is_stable_across_releases() {
         let tag = AbiTag::new(&identity(), "aarch64-apple-darwin");
 
-        assert_eq!(tag.to_string(), "c2266ad91c0f209d-aarch64-apple-darwin");
+        assert_eq!(tag.to_string(), "370a40f203dc510c-aarch64-apple-darwin");
     }
 
     /// A protocol version is not part of the tag
