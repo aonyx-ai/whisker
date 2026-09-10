@@ -70,6 +70,8 @@ and this project adheres to
   registrar is gone. Every allocation that crosses now carries the function
   that frees it, so a plugin may set its own `#[global_allocator]`. The
   protocol is 6.
+- `TYPES_FINGERPRINT` is built from stabby's identities alone. The hash of
+  sizes, alignments, and field offsets that preceded it is gone.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against.
 
