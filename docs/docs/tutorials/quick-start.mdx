@@ -1,7 +1,3 @@
----
-sidebar_position: 0
----
-
 import CodeBlock from "@theme/CodeBlock";
 import DocSummaryBreakCargoToml from "!!raw-loader!@site/../examples/doc_summary_break/Cargo.toml";
 import DocSummaryBreakSource from "!!raw-loader!@site/../examples/doc_summary_break/src/lib.rs";
@@ -20,7 +16,7 @@ curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 The script installs to `~/.local/bin`. Put that on your `PATH` if it is not
 there already.
 
-[Installation][installation] covers the other ways to install whisker,
+[Installation][installation] covers the other ways to install Whisker,
 and which one to choose.
 
 ## Building your first rule
@@ -46,8 +42,7 @@ line.
   {DocSummaryBreakSource}
 </FilteredCodeBlock>
 
-Extensive documentation on building your own lints is available in the [custom
-lints][custom-lints] section.
+[Write a rule][custom-lints] covers the rest of what a lint crate can do.
 
 ## Adding the rule
 
@@ -71,18 +66,17 @@ whisker check .
 ```
 
 This'll take a while as it has to compile a lot of code, so sit tight! It should
-run faster when the cache has landed. Be sure to check out [prebuilt
-lints][prebuilt-lints] if you want to speed this up across machines.
+run faster when the cache has landed. See [prebuilt archives][prebuilt-lints]
+to speed this up across machines.
 
 ## Next steps
 
-- [Custom lints][custom-lints]: more information on custom lints.
+- [Write a rule][custom-lints]: hook a node kind, test it, and give it options.
 - [Configuration][configuration]: the rest of `.config/whisker.toml`.
-- [Checking a project][checking-a-project]: exactly how checking a project with
-  Whisker works.
+- [Runs and outcomes][checking-a-project]: what ends a run, and what fails it.
 
-[installation]: /docs/installation
-[prebuilt-lints]: /docs/prebuilt-lints
-[checking-a-project]: /docs/checking-a-project
-[configuration]: /docs/configuration
-[custom-lints]: /docs/custom-lints
+[installation]: /docs/how-to/install
+[prebuilt-lints]: /docs/reference/prebuilt-archives
+[checking-a-project]: /docs/reference/runs-and-outcomes
+[configuration]: /docs/reference/configuration
+[custom-lints]: /authoring/how-to/write-a-rule

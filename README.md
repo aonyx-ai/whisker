@@ -22,8 +22,8 @@ Download the archive for your platform from the [releases page][releases],
 check it against the `.sha256` beside it, and unpack it:
 
 ```bash
-shasum -a 256 -c whisker-0.1.0-rc.3-aarch64-apple-darwin.tar.gz.sha256
-tar -xzf whisker-0.1.0-rc.3-aarch64-apple-darwin.tar.gz
+shasum -a 256 -c whisker-0.1.0-rc.4-aarch64-apple-darwin.tar.gz.sha256
+tar -xzf whisker-0.1.0-rc.4-aarch64-apple-darwin.tar.gz
 ```
 
 The archive unpacks to a directory that holds the binary, both licenses, and
@@ -52,18 +52,16 @@ Later runs reuse cargo's cache.
 
 The [documentation][docs] covers the rest:
 
-- [Installation][install] — release archives, the GitHub Actions action, and
-  building from source.
-- [Checking a project][checking] — which files whisker inspects, and what
-  makes a run fail.
-- [Configuration][configuration] — where whisker looks for
-  `.config/whisker.toml`, and how to ignore paths.
-- [Custom lints][custom-lints] — run a rule at a time, write your own rules,
-  and the toolchain the plugin boundary demands.
-- [Prebuilt lints][prebuilt-lints] — publish compiled rules so a project
+- [Install Whisker][install] — release archives, the GitHub Actions action,
+  and building from source.
+- [Runs and outcomes][checking] — what ends a run, and what fails it.
+- [Configuration][configuration] — every key of `.config/whisker.toml`.
+- [Write a rule][custom-lints] — hook a node kind, test it, and give it
+  options.
+- [Prebuilt archives][prebuilt-lints] — publish compiled rules so a project
   skips the build.
 
-[ARCHITECTURE.md](ARCHITECTURE.md) describes how whisker works inside.
+[ARCHITECTURE.md](ARCHITECTURE.md) describes how Whisker works inside.
 
 ## License
 
@@ -82,12 +80,12 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
-[checking]: https://aonyx-ai.github.io/whisker/docs/checking-a-project
-[configuration]: https://aonyx-ai.github.io/whisker/docs/configuration
-[custom-lints]: https://aonyx-ai.github.io/whisker/docs/custom-lints
+[checking]: https://aonyx-ai.github.io/whisker/docs/reference/runs-and-outcomes
+[configuration]: https://aonyx-ai.github.io/whisker/docs/reference/configuration
+[custom-lints]: https://aonyx-ai.github.io/whisker/authoring/how-to/write-a-rule
 [docs]: https://aonyx-ai.github.io/whisker/
-[install]: https://aonyx-ai.github.io/whisker/docs/installation
-[prebuilt-lints]: https://aonyx-ai.github.io/whisker/docs/prebuilt-lints
+[install]: https://aonyx-ai.github.io/whisker/docs/how-to/install
+[prebuilt-lints]: https://aonyx-ai.github.io/whisker/docs/reference/prebuilt-archives
 [ra]: https://rust-analyzer.github.io/
 [releases]: https://github.com/aonyx-ai/whisker/releases
 [rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
