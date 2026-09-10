@@ -60,6 +60,14 @@ main() {
     version="$(printf '%s' "${release}" |
         sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 
+    # A network that answers for api.github.com, such as a captive portal or
+    # an inspecting proxy, returns 200 and a page of its own. The parse finds
+    # no name in it, and the download would then ask for version "".
+    if [ -z "${version}" ]; then
+        echo "cannot read a release name from GitHub's answer" >&2
+        exit 1
+    fi
+
     # Archive names carry the version without its leading `v`, as
     # `Cargo.toml` holds it. The same name is the directory the archive
     # unpacks to.
