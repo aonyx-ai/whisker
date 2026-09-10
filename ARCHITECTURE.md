@@ -286,12 +286,11 @@ The fingerprints hash layout. Each names a list of types that cross the
 boundary. A type that stabby lays out contributes the identity stabby
 derives from its report, which covers the name and type of every field,
 so a field that moved or changed type is refused. A type not yet laid out
-that way contributes its size and alignment, and `Diagnostic`,
-`Suggestion`, `Location`, and `DecoratedNode` their field offsets. The
-whisker-rust fingerprint also hashes the generated lint pass trait as
-text, because a trait has no layout a const can read. Doc comments and
-private helpers move nothing, so a plugin stays loadable across most of
-whisker's own churn.
+that way contributes its size and alignment, and `DecoratedNode` its field
+offsets. The whisker-rust fingerprint also hashes the generated lint pass
+trait as text, because a trait has no layout a const can read. Doc
+comments and private helpers move nothing, so a plugin stays loadable
+across most of whisker's own churn.
 
 Layout cannot see the method order of `LintPass` and `LintRegistrar`,
 because a vtable orders its methods by declaration. Those belong to the

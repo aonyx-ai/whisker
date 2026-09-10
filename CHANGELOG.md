@@ -44,10 +44,13 @@ and this project adheres to
 
 ### Changed
 
-- A span names its file through `FilePath`, a path that [stabby][stabby] lays
-  out, so that its layout no longer depends on the compiler. This is the
-  first step toward loading a plugin that another rustc built.
-  `Span::file_arc` is now `Span::file_path`.
+- The values a plugin exchanges with whisker are laid out by [stabby][stabby]:
+  `Diagnostic`, `Span`, `FilePath`, `Location`, `Suggestion`, `RuleId`,
+  `Severity`, `RuleOptions`, and `RuleOption`. Their layout no longer depends
+  on the compiler, which is the first step toward loading a plugin that
+  another rustc built. A span names its file through `FilePath`, and
+  `Span::file_arc` is now `Span::file_path`. `RuleOptions::names` returns
+  owned names.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against. The protocol is 3, and whisker reads every protocol from
   2 upward, so a plugin built before this still loads and its rules still

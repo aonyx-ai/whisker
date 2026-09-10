@@ -1,3 +1,7 @@
+use std::cmp::Ordering;
+
+use stabby::str::Str;
+
 /// Identifies a lint rule
 ///
 /// Each rule has a unique static string identifier following the convention
@@ -8,6 +12,11 @@
 /// therefore still declares its identifier as an associated constant, while
 /// nothing can build one out of a string assembled at runtime.
 ///
+/// The string is held as a [`Str`], stabby's string slice, because the
+/// identifier crosses the plugin boundary. A plugin returns the rules
+/// it declares and stamps one on every diagnostic. Std promises no layout
+/// for a string slice that holds from one compiler to the next.
+///
 /// # Examples
 ///
 /// ```
@@ -17,8 +26,11 @@
 ///
 /// assert_eq!(RULE_ID.as_str(), "lint.wildcard-match-arm");
 /// ```
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub struct RuleId(&'static str);
+///
+/// [`Str`]: stabby::str::Str
+#[stabby::stabby]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+pub struct RuleId(Str<'static>);
 
 impl RuleId {
     /// Returns the identifier for a static rule name
@@ -33,7 +45,7 @@ impl RuleId {
     /// assert_eq!(id.to_string(), "lint.bool-param");
     /// ```
     pub const fn new(id: &'static str) -> Self {
-        Self(id)
+        Self(Str::new(id))
     }
 
     /// Returns the string representation of this rule identifier
@@ -46,13 +58,25 @@ impl RuleId {
     /// assert_eq!(RuleId::new("lint.derive-order").as_str(), "lint.derive-order");
     /// ```
     pub fn as_str(&self) -> &'static str {
-        self.0
+        self.0.as_str()
+    }
+}
+
+impl Ord for RuleId {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl PartialOrd for RuleId {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 impl std::fmt::Display for RuleId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.0)
+        f.write_str(self.as_str())
     }
 }
 
@@ -68,6 +92,15 @@ mod tests {
     }
 
     #[test]
+    fn debug_shows_the_name() {
+        let id = RuleId::new("lint.test");
+
+        let text = format!("{id:?}");
+
+        assert_eq!(text, "RuleId(\"lint.test\")");
+    }
+
+    #[test]
     fn display_matches_inner() {
         let id = RuleId::new("lint.test");
 
@@ -79,6 +112,16 @@ mod tests {
         const RULE_ID: RuleId = RuleId::new("lint.const");
 
         assert_eq!(RULE_ID.as_str(), "lint.const");
+    }
+
+    #[test]
+    fn ordering_follows_the_name() {
+        let first = RuleId::new("lint.a");
+        let second = RuleId::new("lint.b");
+
+        assert!(first < second);
+        assert_eq!(first.partial_cmp(&second), Some(Ordering::Less));
+        assert_eq!(first.cmp(&first), Ordering::Equal);
     }
 
     #[test]

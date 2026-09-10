@@ -52,8 +52,7 @@ impl RustLintPass for {pass} {{
     fn configure(&mut self, options: &RuleOptions) {{
         self.macros = options
             .names(RULE_ID, "macros")
-            .unwrap_or_default()
-            .to_vec();
+            .unwrap_or_default();
     }}
 
     fn check_macro_invocation(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {{
