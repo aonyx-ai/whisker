@@ -31,17 +31,13 @@ use crate::{DecoratedNode, DecorationKey};
 /// makes that read sound. The bound turns a decoration std would lay out
 /// into a compile error rather than a plugin that reads the wrong bytes.
 ///
-/// # Safety
-///
-/// [`KEY`] must name exactly one type definition: no other implementation
-/// anywhere in the process, including one compiled into a custom lint
-/// plugin from the same source, may use an equal key for a different type.
-/// The decoration map erases values on insertion and recovers the concrete
-/// type by key comparison alone, so two types sharing a key would let one
-/// read the other's memory as its own. The derive macro satisfies the
-/// contract by building the key from the type's module path, its name, and
-/// a hash of its definition, and by rejecting generic types, whose single
-/// key would have to cover many layouts.
+/// [`KEY`] should name exactly one type definition. The map finds a value
+/// by key and then asks stabby for it as the requested type, and stabby
+/// compares the stored type's identity and layout report before it casts.
+/// Two types that share a key therefore give each other [`None`], not each
+/// other's memory. The derive macro builds the key from the type's module
+/// path, its name, and a hash of its definition, and rejects generic
+/// types, whose single key would have to cover many layouts.
 ///
 /// # Examples
 ///
@@ -51,7 +47,7 @@ use crate::{DecoratedNode, DecorationKey};
 /// #[stabby::stabby]
 /// struct Signature(stabby::string::String);
 ///
-/// unsafe impl Decoration for Signature {
+/// impl Decoration for Signature {
 ///     const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Signature"));
 ///
 ///     type Ref<'a> = Option<&'a Self>;
@@ -66,7 +62,7 @@ use crate::{DecoratedNode, DecorationKey};
 /// [`IStable`]: stabby::IStable
 /// [`KEY`]: Decoration::KEY
 /// [`Ref`]: Decoration::Ref
-pub unsafe trait Decoration: IStable + Send + Sync + 'static {
+pub trait Decoration: IStable + Send + Sync + 'static {
     /// The name that identifies this type in the decoration map
     ///
     /// The map compares keys where single-image code would compare
@@ -99,7 +95,7 @@ mod tests {
     #[stabby::stabby]
     struct Single(u32);
 
-    unsafe impl Decoration for Single {
+    impl Decoration for Single {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Single"));
 
         type Ref<'a> = Option<&'a Self>;
@@ -112,7 +108,7 @@ mod tests {
     #[stabby::stabby]
     struct Repeated(u32);
 
-    unsafe impl Decoration for Repeated {
+    impl Decoration for Repeated {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Repeated"));
 
         type Ref<'a> = Vec<&'a Self>;

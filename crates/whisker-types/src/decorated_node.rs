@@ -1,6 +1,8 @@
-use std::mem::offset_of;
+use stabby::abi::StableLike;
+use stabby::str::Str;
 
-use crate::{Decoration, DecorationMap, FilePath, Span};
+use crate::ts_node::TsNode;
+use crate::{Decoration, DecorationLookup, FilePath, Span};
 
 /// A tree-sitter node enriched with semantic decorations
 ///
@@ -8,21 +10,30 @@ use crate::{Decoration, DecorationMap, FilePath, Span};
 /// access to the tree-sitter node's structural information (kind, text,
 /// children) and to semantic decorations attached by providers.
 /// Copying one moves borrowed data and nothing else. Every field is a
-/// reference or a `tree_sitter::Node`, which is itself a
-/// `#[repr(transparent)]` wrapper around a C struct of pointers. The
-/// [`FilePath`] sits behind a reference, so a copy reaches no allocation
-/// and moves no refcount.
+/// reference, a function pointer, or a `tree_sitter::Node`, which is
+/// itself a `#[repr(transparent)]` wrapper around a C struct of pointers.
+/// The [`FilePath`] sits behind a reference, so a copy reaches no
+/// allocation and moves no refcount.
 ///
 /// This is `Copy` so that a rule walking siblings and children writes what
 /// it means. Without it, reading a node out of the `Vec` that
 /// [`DecoratedNode::named_children`] returns forces a clone that copies
 /// exactly what a move would and reads as though it costs something.
+///
+/// A node crosses the plugin boundary with every check a pass runs, so
+/// stabby lays it out. The tree-sitter node inside is a C struct that
+/// stabby cannot see into, so [`StableLike`] carries it with a copy of
+/// that struct's layout. A plugin reads decorations through a
+/// [`DecorationLookup`], two borrowed slices it searches itself.
+///
+/// [`StableLike`]: stabby::abi::StableLike
+#[stabby::stabby]
 #[derive(Copy, Clone)]
 pub struct DecoratedNode<'a> {
-    node: tree_sitter::Node<'a>,
-    source: &'a str,
+    node: StableLike<tree_sitter::Node<'a>, TsNode>,
+    source: Str<'a>,
     file: &'a FilePath,
-    decorations: &'a DecorationMap,
+    decorations: DecorationLookup<'a>,
 }
 
 impl<'a> DecoratedNode<'a> {
@@ -31,93 +42,105 @@ impl<'a> DecoratedNode<'a> {
         node: tree_sitter::Node<'a>,
         source: &'a str,
         file: &'a FilePath,
-        decorations: &'a DecorationMap,
+        decorations: DecorationLookup<'a>,
     ) -> Self {
         Self {
-            node,
-            source,
+            node: StableLike::new(node),
+            source: Str::new(source),
             file,
             decorations,
         }
     }
 
+    /// Returns the tree-sitter node this wraps
+    ///
+    /// Stabby cannot tell that the inner type is FFI-safe, so it marks the
+    /// read unsafe. `tree_sitter::Node` is `#[repr(transparent)]` over a
+    /// `#[repr(C)]` struct, so the bytes the host wrote read back as the
+    /// same node under any compiler.
+    fn inner(&self) -> tree_sitter::Node<'a> {
+        unsafe { *self.node.as_ref_unchecked() }
+    }
+
+    /// Wraps another node of the same tree
+    fn sibling(&self, node: tree_sitter::Node<'a>) -> Self {
+        Self {
+            node: StableLike::new(node),
+            ..*self
+        }
+    }
+
     /// Returns the tree-sitter node kind (e.g. `"function_item"`)
-    pub fn kind(&self) -> &str {
-        self.node.kind()
+    pub fn kind(&self) -> &'a str {
+        self.inner().kind()
     }
 
     /// Returns the source text covered by this node
     pub fn text(&self) -> &'a str {
-        &self.source[self.node.byte_range()]
+        &self.source.as_str()[self.inner().byte_range()]
     }
 
     /// Returns the tree-sitter node ID, used as the decoration map key
     pub fn id(&self) -> usize {
-        self.node.id()
+        self.inner().id()
     }
 
     /// Returns a [`Span`] covering this node's byte range
     ///
     /// The file path is reference-counted, so this is a cheap operation.
     pub fn span(&self) -> Span {
-        Span::new(
-            self.file.clone(),
-            self.node.start_byte(),
-            self.node.end_byte(),
-        )
+        let node = self.inner();
+
+        Span::new(self.file.clone(), node.start_byte(), node.end_byte())
     }
 
     /// Returns the number of named children
     pub fn named_child_count(&self) -> usize {
-        self.node.named_child_count()
+        self.inner().named_child_count()
     }
 
     /// Returns the named child at the given index, if it exists
     pub fn named_child(&self, index: u32) -> Option<DecoratedNode<'a>> {
-        self.node
+        self.inner()
             .named_child(index)
-            .map(|child| DecoratedNode::new(child, self.source, self.file, self.decorations))
+            .map(|child| self.sibling(child))
     }
 
     /// Returns a child node by its field name, if it exists
     pub fn child_by_field_name(&self, name: &str) -> Option<DecoratedNode<'a>> {
-        self.node
+        self.inner()
             .child_by_field_name(name)
-            .map(|child| DecoratedNode::new(child, self.source, self.file, self.decorations))
+            .map(|child| self.sibling(child))
     }
 
     /// Returns the total number of children (named and anonymous)
     pub fn child_count(&self) -> usize {
-        self.node.child_count() as usize
+        self.inner().child_count() as usize
     }
 
     /// Returns the child at the given index (named or anonymous)
     pub fn child(&self, index: u32) -> Option<DecoratedNode<'a>> {
-        self.node
-            .child(index)
-            .map(|child| DecoratedNode::new(child, self.source, self.file, self.decorations))
+        self.inner().child(index).map(|child| self.sibling(child))
     }
 
     /// Returns whether this is a named node (as opposed to an anonymous one)
     pub fn is_named(&self) -> bool {
-        self.node.is_named()
+        self.inner().is_named()
     }
 
     /// Returns the parent node, if this is not the root
     pub fn parent(&self) -> Option<DecoratedNode<'a>> {
-        self.node
-            .parent()
-            .map(|parent| DecoratedNode::new(parent, self.source, self.file, self.decorations))
+        self.inner().parent().map(|parent| self.sibling(parent))
     }
 
     /// Retrieves the first decoration of type `T` from this node
     pub fn decoration<T: Decoration>(&self) -> Option<&'a T> {
-        self.decorations.get::<T>(self.node.id())
+        self.decorations.get::<T>(self.id(), 0)
     }
 
     /// Retrieves all decorations of type `T` from this node
     pub fn decorations_of_type<T: Decoration>(&self) -> Vec<&'a T> {
-        self.decorations.get_all::<T>(self.node.id())
+        self.decorations.get_all::<T>(self.id())
     }
 
     /// Reads the decoration `D` from this node
@@ -136,54 +159,41 @@ impl<'a> DecoratedNode<'a> {
 
     /// Returns all named children of this node as a collected vec
     pub fn named_children(&self) -> Vec<DecoratedNode<'a>> {
-        let count: u32 = self.node.named_child_count() as u32;
+        let node = self.inner();
+        let count: u32 = node.named_child_count() as u32;
         (0..count)
-            .filter_map(|i| {
-                self.node.named_child(i).map(|child| {
-                    DecoratedNode::new(child, self.source, self.file, self.decorations)
-                })
-            })
+            .filter_map(|i| node.named_child(i).map(|child| self.sibling(child)))
             .collect()
     }
 
     /// Returns the underlying tree-sitter node
     pub fn raw(&self) -> tree_sitter::Node<'a> {
-        self.node
+        self.inner()
     }
 }
 
 impl std::fmt::Debug for DecoratedNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let node = self.inner();
+
         f.debug_struct("DecoratedNode")
-            .field("kind", &self.kind())
-            .field("start_byte", &self.node.start_byte())
-            .field("end_byte", &self.node.end_byte())
+            .field("kind", &node.kind())
+            .field("start_byte", &node.start_byte())
+            .field("end_byte", &node.end_byte())
             .finish()
     }
 }
 
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] = &[
-    offset_of!(DecoratedNode<'static>, node),
-    offset_of!(DecoratedNode<'static>, source),
-    offset_of!(DecoratedNode<'static>, file),
-    offset_of!(DecoratedNode<'static>, decorations),
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::DecorationKey;
+    use crate::{DecorationKey, DecorationMap};
 
     #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct TestDeco(u32);
 
-    unsafe impl Decoration for TestDeco {
+    impl Decoration for TestDeco {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::TestDeco"));
 
         type Ref<'a> = Option<&'a Self>;
@@ -197,7 +207,7 @@ mod tests {
     #[derive(Eq, PartialEq, Debug)]
     struct Missing;
 
-    unsafe impl Decoration for Missing {
+    impl Decoration for Missing {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Missing"));
 
         type Ref<'a> = Option<&'a Self>;
@@ -211,7 +221,7 @@ mod tests {
     #[derive(Eq, PartialEq, Debug)]
     struct Value(u64);
 
-    unsafe impl Decoration for Value {
+    impl Decoration for Value {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Value"));
 
         type Ref<'a> = Option<&'a Self>;
@@ -248,12 +258,29 @@ mod tests {
     }
 
     #[test]
+    fn decorations_of_type_returns_every_value_in_order() {
+        let source = "fn main() {}";
+        let tree = parse_tree(source);
+        let mut decorations = DecorationMap::new();
+        let node_id = tree.root_node().id();
+        decorations.insert(node_id, TestDeco(1));
+        decorations.insert(node_id, Value(9));
+        decorations.insert(node_id, TestDeco(2));
+        let file = FilePath::from("test.rs");
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
+
+        let found = root.decorations_of_type::<TestDeco>();
+
+        assert_eq!(found, vec![&TestDeco(1), &TestDeco(2)]);
+    }
+
+    #[test]
     fn kind_returns_node_kind() {
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
         let file = FilePath::from("test.rs");
-        let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
 
         assert_eq!(root.kind(), "source_file");
     }
@@ -264,7 +291,7 @@ mod tests {
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
         let file = FilePath::from("test.rs");
-        let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
 
         assert_eq!(root.text(), source);
     }
@@ -275,7 +302,7 @@ mod tests {
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
         let file = FilePath::from("test.rs");
-        let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
         let span = root.span();
 
         assert_eq!(span.start(), 0);
@@ -288,7 +315,7 @@ mod tests {
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
         let file = FilePath::from("test.rs");
-        let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
 
         let first_child = root.named_child(0).expect("should have a child");
         assert_eq!(first_child.kind(), "function_item");
@@ -303,7 +330,7 @@ mod tests {
         decorations.insert(node_id, TestDeco(42));
 
         let file = FilePath::from("test.rs");
-        let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
         let deco = root
             .decoration::<TestDeco>()
             .expect("should find decoration");
@@ -316,7 +343,7 @@ mod tests {
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
         let file = FilePath::from("test.rs");
-        let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
+        let root = DecoratedNode::new(tree.root_node(), source, &file, decorations.lookup());
 
         assert!(root.decoration::<Missing>().is_none());
     }
@@ -336,7 +363,7 @@ mod tests {
                     tree.root_node(),
                     &source,
                     &file,
-                    &decorations,
+                    decorations.lookup(),
                 );
 
                 prop_assert_eq!(root.text(), source.as_str());
@@ -351,7 +378,7 @@ mod tests {
                     tree.root_node(),
                     &source,
                     &file,
-                    &decorations,
+                    decorations.lookup(),
                 );
 
                 prop_assert_eq!(root.span().start(), 0);
@@ -367,7 +394,7 @@ mod tests {
                     tree.root_node(),
                     &source,
                     &file,
-                    &decorations,
+                    decorations.lookup(),
                 );
 
                 prop_assert_eq!(
@@ -388,7 +415,7 @@ mod tests {
                     tree.root_node(),
                     source,
                     &file,
-                    &decorations,
+                    decorations.lookup(),
                 );
 
                 prop_assert!(root.named_child(index).is_none());
@@ -406,7 +433,7 @@ mod tests {
                     tree.root_node(),
                     source,
                     &file,
-                    &decorations,
+                    decorations.lookup(),
                 );
 
                 prop_assert_eq!(root.decoration::<Value>(), Some(&Value(value)));

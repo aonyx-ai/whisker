@@ -1,109 +1,29 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::ptr::NonNull;
+use std::sync::OnceLock;
 
-use crate::{Decoration, DecorationKey};
+use crate::decoration_entry::Entry;
+use crate::{Decoration, DecorationLookup};
 
 /// Storage for per-node decorations on a syntax tree
 ///
 /// A decoration provider attaches semantic annotations to tree-sitter
 /// nodes, and this map holds them. Each node (keyed by its `id()`) can
-/// carry multiple decorations of different types. The map erases each
-/// value's type on insertion and recovers it by comparing
-/// [`Decoration::KEY`]s rather than [`TypeId`]s, because the whisker
-/// binary and a custom lint plugin compile the same decoration types into
-/// different [`TypeId`]s, and a lookup keyed on them would silently come
-/// back empty across that boundary.
+/// carry any number of decorations of different types.
 ///
-/// [`TypeId`]: std::any::TypeId
+/// The entries sit in one list in insertion order. A lookup needs them
+/// grouped by node, so the map seals a sorted list of positions into that
+/// list the first time anyone reads it, and a later insertion drops the
+/// seal. Sealing reads the entries and never moves them, so a shared
+/// borrow is enough to build it.
+///
+/// A plugin searches the sealed index itself. The alternative, handing a
+/// plugin a pointer to a [`HashMap`] and a function of the host's that
+/// reads it, needs a raw pointer and a cast the compiler cannot check.
+///
+/// [`HashMap`]: std::collections::HashMap
 #[derive(Debug, Default)]
 pub struct DecorationMap {
-    entries: HashMap<usize, Vec<ErasedDecoration>>,
-}
-
-struct ErasedDecoration {
-    key: DecorationKey,
-    value: ErasedValue,
-}
-
-impl fmt::Debug for ErasedDecoration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ErasedDecoration")
-            .field("key", &self.key)
-            .finish_non_exhaustive()
-    }
-}
-
-/// An owned decoration with its type erased
-///
-/// [`Box<dyn Any>`] cannot store decorations, because downcasting goes
-/// through [`TypeId`] and a plugin's [`TypeId`] for a type differs from the
-/// host's. The map instead keeps a raw pointer to the boxed value together
-/// with the drop glue it captures at insertion, and [`DecorationMap::get`]
-/// recovers the concrete type from a [`Decoration::KEY`] match, which the
-/// unsafe [`Decoration`] contract makes sufficient.
-///
-/// The `Send` and `Sync` implementations are sound because the only
-/// constructor, [`ErasedValue::new`], requires [`Decoration`], which itself
-/// requires `Send + Sync`.
-///
-/// [`Box<dyn Any>`]: std::any::Any
-/// [`TypeId`]: std::any::TypeId
-struct ErasedValue {
-    ptr: NonNull<()>,
-    drop: unsafe fn(NonNull<()>),
-}
-
-unsafe impl Send for ErasedValue {}
-unsafe impl Sync for ErasedValue {}
-
-impl ErasedValue {
-    fn new<T: Decoration>(value: T) -> Self {
-        let ptr = NonNull::from(Box::leak(Box::new(value))).cast::<()>();
-
-        Self {
-            ptr,
-            drop: drop_boxed::<T>,
-        }
-    }
-
-    /// Returns the stored value as a `T`
-    ///
-    /// # Safety
-    ///
-    /// The caller must know that this value was created from a `T`. The
-    /// map establishes that by comparing [`Decoration::KEY`]s:
-    /// [`DecorationMap::insert`] creates every entry under the inserted
-    /// type's key, and the unsafe [`Decoration`] contract makes a key name
-    /// exactly one type definition.
-    ///
-    /// Where the host and a plugin compiled that definition separately,
-    /// the cast rests on one more fact: that both images laid the
-    /// definition out the same way. Rust promises nothing of the sort
-    /// between compilations, so the plugin handshake establishes it
-    /// instead, refusing any library that a different compiler or a
-    /// different whisker source produced.
-    unsafe fn get_unchecked<T>(&self) -> &T {
-        unsafe { self.ptr.cast::<T>().as_ref() }
-    }
-}
-
-impl Drop for ErasedValue {
-    fn drop(&mut self) {
-        unsafe { (self.drop)(self.ptr) }
-    }
-}
-
-/// Drops the boxed `T` behind an erased pointer
-///
-/// # Safety
-///
-/// `ptr` must have come from [`Box::leak`] on a `Box<T>` and must not be
-/// used again afterwards. [`ErasedValue`] guarantees both: it stores the
-/// pointer next to this function at construction and only calls it from
-/// [`Drop`].
-unsafe fn drop_boxed<T>(ptr: NonNull<()>) {
-    drop(unsafe { Box::from_raw(ptr.cast::<T>().as_ptr()) });
+    entries: Vec<Entry>,
+    sealed: OnceLock<Vec<usize>>,
 }
 
 impl DecorationMap {
@@ -114,22 +34,20 @@ impl DecorationMap {
 
     /// Attaches a decoration to the node with the given tree-sitter node ID
     pub fn insert<T: Decoration>(&mut self, node_id: usize, value: T) {
-        let entry = ErasedDecoration {
-            key: T::KEY,
-            value: ErasedValue::new(value),
-        };
-        self.entries.entry(node_id).or_default().push(entry);
+        self.entries.push(Entry::new(node_id, value));
+        self.sealed.take();
     }
 
     /// Retrieves the first decoration of type `T` attached to the given node
     ///
     /// Returns [`None`] if no decoration of that type exists for this node.
     pub fn get<T: Decoration>(&self, node_id: usize) -> Option<&T> {
-        let decorations = self.entries.get(&node_id)?;
-        decorations
-            .iter()
-            .find(|d| d.key == T::KEY)
-            .map(|d| unsafe { d.value.get_unchecked::<T>() })
+        self.lookup().get::<T>(node_id, 0)
+    }
+
+    /// Retrieves all decorations of type `T` attached to the given node
+    pub fn get_all<T: Decoration>(&self, node_id: usize) -> Vec<&T> {
+        self.lookup().get_all::<T>(node_id)
     }
 
     /// Merges another map into this one
@@ -138,21 +56,24 @@ impl DecorationMap {
     /// first decoration of a type for a node. [`DecorationMap::get_all`]
     /// still returns the merged entries.
     pub fn merge(&mut self, other: DecorationMap) {
-        for (node_id, entries) in other.entries {
-            self.entries.entry(node_id).or_default().extend(entries);
-        }
+        self.entries.extend(other.entries);
+        self.sealed.take();
     }
 
-    /// Retrieves all decorations of type `T` attached to the given node
-    pub fn get_all<T: Decoration>(&self, node_id: usize) -> Vec<&T> {
-        let Some(decorations) = self.entries.get(&node_id) else {
-            return Vec::new();
-        };
-        decorations
-            .iter()
-            .filter(|d| d.key == T::KEY)
-            .map(|d| unsafe { d.value.get_unchecked::<T>() })
-            .collect()
+    /// Returns a handle that reads this map, sealing the index if needed
+    ///
+    /// The handle crosses the plugin boundary inside every
+    /// [`DecoratedNode`], and it borrows this map for as long as it lives.
+    ///
+    /// [`DecoratedNode`]: crate::DecoratedNode
+    pub(crate) fn lookup(&self) -> DecorationLookup<'_> {
+        let order = self.sealed.get_or_init(|| {
+            let mut order: Vec<usize> = (0..self.entries.len()).collect();
+            order.sort_by_key(|&at| self.entries[at].node_id());
+            order
+        });
+
+        DecorationLookup::of(order, &self.entries)
     }
 }
 
@@ -161,13 +82,13 @@ mod tests {
     use stabby::string;
 
     use super::*;
-    use crate::DecoratedNode;
+    use crate::{DecoratedNode, DecorationKey};
 
     #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct TypeInfo(string::String);
 
-    unsafe impl Decoration for TypeInfo {
+    impl Decoration for TypeInfo {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::TypeInfo"));
 
         type Ref<'a> = Option<&'a Self>;
@@ -181,7 +102,7 @@ mod tests {
     #[derive(Eq, PartialEq, Debug)]
     struct Scope(u32);
 
-    unsafe impl Decoration for Scope {
+    impl Decoration for Scope {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Scope"));
 
         type Ref<'a> = Option<&'a Self>;
@@ -221,7 +142,7 @@ mod tests {
         #[derive(Eq, PartialEq, Debug)]
         struct Present;
 
-        unsafe impl Decoration for Present {
+        impl Decoration for Present {
             const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Present"));
 
             type Ref<'a> = Option<&'a Self>;
@@ -354,7 +275,7 @@ mod tests {
         #[derive(Eq, PartialEq, Debug)]
         struct Value(u64);
 
-        unsafe impl Decoration for Value {
+        impl Decoration for Value {
             const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Value"));
 
             type Ref<'a> = Option<&'a Self>;
@@ -368,7 +289,7 @@ mod tests {
         #[derive(Eq, PartialEq, Debug)]
         struct Count(u32);
 
-        unsafe impl Decoration for Count {
+        impl Decoration for Count {
             const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Count"));
 
             type Ref<'a> = Option<&'a Self>;
@@ -382,7 +303,7 @@ mod tests {
         #[derive(Eq, PartialEq, Debug)]
         struct Signed(i64);
 
-        unsafe impl Decoration for Signed {
+        impl Decoration for Signed {
             const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Signed"));
 
             type Ref<'a> = Option<&'a Self>;
@@ -458,7 +379,7 @@ mod tests {
                 right in proptest::collection::vec((any::<usize>(), any::<u32>()), 0..=20),
             ) {
                 fn total(map: &DecorationMap) -> usize {
-                    map.entries.values().map(Vec::len).sum()
+                    map.entries.len()
                 }
 
                 let mut map = DecorationMap::new();

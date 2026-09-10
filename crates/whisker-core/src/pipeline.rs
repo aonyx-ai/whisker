@@ -174,7 +174,7 @@ mod tests {
     #[derive(Debug)]
     struct Marker(Str<'static>);
 
-    unsafe impl Decoration for Marker {
+    impl Decoration for Marker {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Marker"));
 
         type Ref<'a> = Option<&'a Self>;
