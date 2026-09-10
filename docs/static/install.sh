@@ -4,20 +4,29 @@
 #
 #   curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 #
-# The line above runs this in whichever /bin/sh the machine has, and on
-# Debian that is dash, so the script is POSIX shell rather than bash.
+# The line above runs this in whichever /bin/sh the machine has, which is
+# not always bash, so the script is POSIX shell.
 
 set -eu
 
 REPOSITORY="aonyx-ai/whisker"
 
-# Every transfer goes through here. `--proto =https` refuses plain http,
-# also after a redirect, so no hop can move a download onto a channel that
-# someone else can rewrite. The digest needs the same guard as the archive
-# it checks, because a downgrade of both would pass the check.
+# Every transfer goes through here. `--proto =https` covers redirects as
+# well, so no hop can fall back to http and swap the archive and its digest
+# together.
 download() {
     curl --proto '=https' --tlsv1.2 --retry 3 \
         --fail --location --silent --show-error "$@"
+}
+
+# Names every file the script writes, so that nothing has to be removed
+# recursively. `rmdir` refuses a directory holding anything else, so an
+# archive that ever carries more than this leaves a directory behind in
+# `TMPDIR` instead of widening what gets deleted.
+cleanup() {
+    rm -f "${work}/${name}" "${work}/${name}.sha256" \
+        "${work}/${stem}/whisker" "${staged}"
+    rmdir "${work}/${stem}" "${work}" 2> /dev/null || true
 }
 
 main() {
@@ -53,9 +62,9 @@ main() {
     # stops here in that case, not at the download of an archive for a
     # missing version.
     #
-    # The parse is a separate statement because a pipeline reports the
-    # status of its last command. A failed `curl` inside one would let `sed`
-    # report success over an empty version.
+    # The parse is a separate statement because a pipeline reports its last
+    # command's status, which would let `sed` report success over a failed
+    # `curl`.
     release="$(download "https://api.github.com/repos/${REPOSITORY}/releases/latest")"
     version="$(printf '%s' "${release}" |
         sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
@@ -81,7 +90,7 @@ main() {
     mkdir -p "${directory}"
     work="$(mktemp -d "${TMPDIR:-/tmp}/whisker-install.XXXXXX")"
     staged="${directory}/whisker.$$.tmp"
-    trap 'rm -rf "${work}" "${staged}"' EXIT
+    trap cleanup EXIT
 
     echo "Downloading whisker ${version} for ${target}"
     download -o "${work}/${name}" "${base}/${name}"
@@ -95,7 +104,7 @@ main() {
         (cd "${work}" && shasum -a 256 -c "${name}.sha256") > /dev/null
     fi
 
-    tar -xzf "${work}/${name}" -C "${work}"
+    tar -xzf "${work}/${name}" -C "${work}" "${stem}/whisker"
 
     # A rename replaces a running whisker. Linux refuses a copy onto one
     # with ETXTBSY.
