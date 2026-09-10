@@ -9,7 +9,17 @@ use crate::{Decoration, DecorationMap, Span};
 /// This is the primary type that lint rules interact with. It provides
 /// access to the tree-sitter node's structural information (kind, text,
 /// children) and to semantic decorations attached by providers.
-#[derive(Clone)]
+/// Copying one moves borrowed data and nothing else. Every field is a
+/// reference or a `tree_sitter::Node`, which is itself a
+/// `#[repr(transparent)]` wrapper around a C struct of pointers. The
+/// `Arc<Path>` sits behind a reference, so a copy reaches no allocation
+/// and moves no refcount.
+///
+/// This is `Copy` so that a rule walking siblings and children writes what
+/// it means. Without it, reading a node out of the `Vec` that
+/// [`DecoratedNode::named_children`] returns forces a clone that copies
+/// exactly what a move would and reads as though it costs something.
+#[derive(Copy, Clone)]
 pub struct DecoratedNode<'a> {
     node: tree_sitter::Node<'a>,
     source: &'a str,

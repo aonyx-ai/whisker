@@ -138,7 +138,7 @@ fn find_function_by_name<'a>(root: &DecoratedNode<'a>, name: &str) -> Option<Dec
 
 fn find_first_node_of_kind<'a>(node: &DecoratedNode<'a>, kind: &str) -> Option<DecoratedNode<'a>> {
     if node.kind() == kind {
-        return Some(node.clone());
+        return Some(*node);
     }
     for child in node.named_children() {
         if let Some(found) = find_first_node_of_kind(&child, kind) {

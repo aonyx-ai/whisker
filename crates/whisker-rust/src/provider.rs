@@ -437,7 +437,7 @@ fn collect_targets(node: &DecoratedNode<'_>, targets: &mut Vec<Target>) {
         }
         "if_expression" => {
             if let Some(alt) = node.child_by_field_name("alternative") {
-                let block = alt.named_child(0).unwrap_or(alt.clone());
+                let block = alt.named_child(0).unwrap_or(alt);
                 if let Some(branch_range) = text_range_of(&block) {
                     targets.push(Target::IfElse {
                         branch_range,
