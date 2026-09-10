@@ -4,16 +4,32 @@
 #
 #   curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 #
-# This is POSIX shell rather than bash, because the line above pipes it into
-# whichever /bin/sh the machine has, and on Debian that is dash.
+# The line above runs this in whichever /bin/sh the machine has, and on
+# Debian that is dash, so the script is POSIX shell rather than bash.
 
 set -eu
 
 REPOSITORY="aonyx-ai/whisker"
 
+# Every transfer goes through here. `--proto =https` refuses plain http,
+# also after a redirect, so no hop can move a download onto a channel that
+# someone else can rewrite. The digest needs the same guard as the archive
+# it checks, because a downgrade of both would pass the check.
+download() {
+    curl --proto '=https' --tlsv1.2 --retry 3 \
+        --fail --location --silent --show-error "$@"
+}
+
 main() {
     os="$(uname -s)"
     architecture="$(uname -m)"
+
+    # Under Rosetta, uname reports x86_64 on arm64 hardware that runs the
+    # arm64 binary. The kernel answers for the hardware.
+    if [ "${os}-${architecture}" = "Darwin-x86_64" ] &&
+        (sysctl hw.optional.arm64 2> /dev/null || true) | grep -q ': 1'; then
+        architecture="arm64"
+    fi
 
     case "${os}-${architecture}" in
         Linux-x86_64) target="x86_64-unknown-linux-gnu" ;;
@@ -25,28 +41,34 @@ main() {
             ;;
     esac
 
-    # GitHub reserves `releases/latest` for the newest release that is not a
-    # prerelease, and answers 404 while a repository has published only
-    # prereleases. The `--fail` stops here in that case, rather than at the
-    # download of an archive named after a version that does not exist.
+    # The Linux binary links against glibc. On musl it installs, then fails
+    # with "not found", because the interpreter it names is missing.
+    if [ "${os}" = "Linux" ] && ldd --version 2>&1 | grep -qi musl; then
+        echo "whisker publishes no binary for musl systems such as Alpine" >&2
+        exit 1
+    fi
+
+    # `releases/latest` names the newest release that is not a prerelease,
+    # and answers 404 while a repository has only prereleases. `--fail`
+    # stops here in that case, not at the download of an archive for a
+    # missing version.
     #
-    # The parse is a second statement because a shell reports the status of
-    # the last command in a pipeline. A `curl` that failed inside one would
-    # leave `sed` to report success over an empty version.
-    release="$(curl -fLsS \
-        "https://api.github.com/repos/${REPOSITORY}/releases/latest")"
+    # The parse is a separate statement because a pipeline reports the
+    # status of its last command. A failed `curl` inside one would let `sed`
+    # report success over an empty version.
+    release="$(download "https://api.github.com/repos/${REPOSITORY}/releases/latest")"
     version="$(printf '%s' "${release}" |
         sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 
-    # The archive names carry the version without its leading `v`, because
-    # that is what `Cargo.toml` holds. The same name spells the directory
-    # the archive unpacks to.
+    # Archive names carry the version without its leading `v`, as
+    # `Cargo.toml` holds it. The same name is the directory the archive
+    # unpacks to.
     stem="whisker-${version#v}-${target}"
     name="${stem}.tar.gz"
     base="https://github.com/${REPOSITORY}/releases/download/${version}"
 
-    # The staged copy sits in the destination directory and not beside the
-    # download, so that the rename below stays within one filesystem.
+    # The staged copy sits in the destination directory, not beside the
+    # download, so the rename below stays within one filesystem.
     directory="${WHISKER_INSTALL_DIR:-${HOME}/.local/bin}"
     mkdir -p "${directory}"
     work="$(mktemp -d "${TMPDIR:-/tmp}/whisker-install.XXXXXX")"
@@ -54,11 +76,11 @@ main() {
     trap 'rm -rf "${work}" "${staged}"' EXIT
 
     echo "Downloading whisker ${version} for ${target}"
-    curl -fLsS -o "${work}/${name}" "${base}/${name}"
-    curl -fLsS -o "${work}/${name}.sha256" "${base}/${name}.sha256"
+    download -o "${work}/${name}" "${base}/${name}"
+    download -o "${work}/${name}.sha256" "${base}/${name}.sha256"
 
-    # The digest names the archive without a path, so the check runs from the
-    # directory holding both. Linux carries `sha256sum` and macOS `shasum`.
+    # The digest names the archive without a path, so the check runs in the
+    # directory that holds both. Linux ships `sha256sum` and macOS `shasum`.
     if command -v sha256sum > /dev/null 2>&1; then
         (cd "${work}" && sha256sum -c "${name}.sha256") > /dev/null
     else
@@ -67,8 +89,8 @@ main() {
 
     tar -xzf "${work}/${name}" -C "${work}"
 
-    # A rename replaces a whisker that is running. Copying onto one instead
-    # is what Linux refuses with ETXTBSY.
+    # A rename replaces a running whisker. Linux refuses a copy onto one
+    # with ETXTBSY.
     cp "${work}/${stem}/whisker" "${staged}"
     chmod 755 "${staged}"
     mv "${staged}" "${directory}/whisker"
@@ -76,6 +98,6 @@ main() {
     echo "Installed ${directory}/whisker"
 }
 
-# The body is one function that the last line calls, so that a download this
-# shell has read only half of runs nothing at all.
+# The body is one function that the last line calls, so a half-downloaded
+# script runs nothing at all.
 main
