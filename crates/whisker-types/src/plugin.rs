@@ -38,10 +38,12 @@
 
 use std::ffi::CStr;
 
+use stabby::IStable;
+
 use crate::{
     Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationKey, DecorationMap, Diagnostic,
-    Language, Location, ProviderName, RuleId, RuleOption, RuleOptions, Severity, Span, Suggestion,
-    UncoveredFile,
+    FilePath, Language, Location, ProviderName, RuleId, RuleOption, RuleOptions, Severity, Span,
+    Suggestion, UncoveredFile,
 };
 
 mod declaration;
@@ -49,7 +51,7 @@ mod fingerprint;
 mod registrar;
 
 pub use declaration::PluginDeclaration;
-pub use fingerprint::{Shape, fingerprint, seeded_fingerprint};
+pub use fingerprint::{Shape, fingerprint, seeded_fingerprint, stable_fingerprint};
 pub use registrar::{LintPassFactory, LintRegistrar};
 
 /// The version of the plugin declaration protocol itself
@@ -121,8 +123,14 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 /// text detects far too much of it: a doc comment or a private helper
 /// would refuse every plugin in the tree until each was rebuilt, which is
 /// the whole cost of shipping rules as plugins. This hashes what the two
-/// images must actually agree on instead — the size, alignment, and field
-/// offsets of every type that crosses the boundary.
+/// images must actually agree on instead.
+///
+/// A type that stabby lays out contributes the identity stabby derives
+/// from its report. That is a hash over the type's name, its module, and
+/// the name and type of every field, recursively. It refuses a field that
+/// moved, and a field whose type changed to another of the same size. The
+/// types not yet laid out that way contribute their size, alignment, and
+/// field offsets.
 ///
 /// What it does not cover is the shape of [`LintPass`] and
 /// [`LintRegistrar`] themselves. A trait object's vtable orders its
@@ -141,26 +149,36 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 ///
 /// assert_ne!(TYPES_FINGERPRINT, 0);
 /// ```
-pub const TYPES_FINGERPRINT: u64 = fingerprint(&[
-    Shape::of_fields::<Diagnostic>(crate::diagnostic::FIELD_OFFSETS),
-    Shape::of_fields::<Span>(crate::span::FIELD_OFFSETS),
-    Shape::of_fields::<Suggestion>(crate::suggestion::FIELD_OFFSETS),
-    Shape::of_fields::<Location>(crate::location::FIELD_OFFSETS),
-    Shape::of_fields::<DecoratedNode<'static>>(crate::decorated_node::FIELD_OFFSETS),
-    Shape::of::<DecoratedTree>(),
-    Shape::of::<DecorationKey>(),
-    Shape::of::<DecorationMap>(),
-    Shape::of::<RuleId>(),
-    Shape::of::<Severity>(),
-    Shape::of::<Language>(),
-    Shape::of::<ProviderName>(),
-    Shape::of::<Coverage>(),
-    Shape::of::<CoverageGap>(),
-    Shape::of::<UncoveredFile>(),
-    Shape::of_fields::<RuleOptions>(crate::rule_options::FIELD_OFFSETS),
-    Shape::of_fields::<RuleOption>(crate::rule_options::OPTION_FIELD_OFFSETS),
-    Shape::of::<LintPassFactory>(),
-]);
+pub const TYPES_FINGERPRINT: u64 = seeded_fingerprint(
+    STABLE_TYPES_FINGERPRINT,
+    &[
+        Shape::of_fields::<Diagnostic>(crate::diagnostic::FIELD_OFFSETS),
+        Shape::of_fields::<Suggestion>(crate::suggestion::FIELD_OFFSETS),
+        Shape::of_fields::<Location>(crate::location::FIELD_OFFSETS),
+        Shape::of_fields::<DecoratedNode<'static>>(crate::decorated_node::FIELD_OFFSETS),
+        Shape::of::<DecoratedTree>(),
+        Shape::of::<DecorationKey>(),
+        Shape::of::<DecorationMap>(),
+        Shape::of::<RuleId>(),
+        Shape::of::<Severity>(),
+        Shape::of::<Language>(),
+        Shape::of::<ProviderName>(),
+        Shape::of::<Coverage>(),
+        Shape::of::<CoverageGap>(),
+        Shape::of::<UncoveredFile>(),
+        Shape::of_fields::<RuleOptions>(crate::rule_options::FIELD_OFFSETS),
+        Shape::of_fields::<RuleOption>(crate::rule_options::OPTION_FIELD_OFFSETS),
+        Shape::of::<LintPassFactory>(),
+    ],
+);
+
+/// The identities of the boundary types that stabby lays out
+///
+/// Each is the hash stabby computes over a type's report. The list names
+/// every such type, including one that another already reaches through a
+/// field.
+const STABLE_TYPES_FINGERPRINT: u64 =
+    stable_fingerprint(&[<Span as IStable>::ID, <FilePath as IStable>::ID]);
 
 /// Converts a NUL-terminated string literal into a [`&CStr`] at compile time
 ///
@@ -251,11 +269,12 @@ mod tests {
 
     #[test]
     fn types_fingerprint_covers_every_boundary_type() {
-        let one = fingerprint(&[Shape::of::<Diagnostic>()]);
+        let one = stable_fingerprint(&[<FilePath as IStable>::ID]);
 
         let all = TYPES_FINGERPRINT;
 
         assert_ne!(all, one);
+        assert_ne!(all, STABLE_TYPES_FINGERPRINT);
         assert_ne!(all, 0);
     }
 }

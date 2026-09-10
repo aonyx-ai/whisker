@@ -153,12 +153,13 @@ fn collect_sources(diagnostics: &[Diagnostic]) -> anyhow::Result<HashMap<Arc<Pat
     let mut sources = HashMap::new();
 
     for diag in diagnostics {
-        let file = Arc::clone(diag.span().file_arc());
-        if let std::collections::hash_map::Entry::Vacant(entry) = sources.entry(file) {
-            let source = std::fs::read_to_string(entry.key())
-                .with_context(|| format!("reading {}", entry.key().display()))?;
-            entry.insert(source);
+        let file = diag.span().file();
+        if sources.contains_key(file) {
+            continue;
         }
+        let source =
+            std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        sources.insert(Arc::from(file), source);
     }
 
     Ok(sources)

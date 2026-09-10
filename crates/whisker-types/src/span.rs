@@ -1,15 +1,22 @@
-use std::mem::offset_of;
 use std::path::Path;
-use std::sync::Arc;
+
+use crate::FilePath;
 
 /// A byte range within a source file
 ///
 /// Spans identify a contiguous region of source text by file path and byte
 /// offsets. The range is half-open: `[start, end)`. The file path is
 /// reference-counted so that creating spans from a shared source is cheap.
+///
+/// A span crosses the plugin boundary inside every [`Diagnostic`], so
+/// stabby lays it out. Its file is a [`FilePath`], for the reason that
+/// type gives.
+///
+/// [`Diagnostic`]: crate::Diagnostic
+#[stabby::stabby]
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Span {
-    file: Arc<Path>,
+    file: FilePath,
     start: usize,
     end: usize,
 }
@@ -20,7 +27,7 @@ impl Span {
     /// # Panics
     ///
     /// Panics if `start > end`.
-    pub fn new(file: impl Into<Arc<Path>>, start: usize, end: usize) -> Self {
+    pub fn new(file: impl Into<FilePath>, start: usize, end: usize) -> Self {
         let file = file.into();
         assert!(
             start <= end,
@@ -31,11 +38,26 @@ impl Span {
 
     /// Returns the file path this span belongs to
     pub fn file(&self) -> &Path {
-        &self.file
+        self.file.as_path()
     }
 
     /// Returns the shared file path
-    pub fn file_arc(&self) -> &Arc<Path> {
+    ///
+    /// Clone it to build another span in the same file without copying
+    /// the path.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use whisker_types::Span;
+    ///
+    /// let span = Span::new("src/lib.rs", 10, 20);
+    ///
+    /// let narrower = Span::new(span.file_path().clone(), 12, 14);
+    ///
+    /// assert_eq!(narrower.file(), span.file());
+    /// ```
+    pub fn file_path(&self) -> &FilePath {
         &self.file
     }
 
@@ -49,17 +71,6 @@ impl Span {
         self.end
     }
 }
-
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] = &[
-    offset_of!(Span, file),
-    offset_of!(Span, start),
-    offset_of!(Span, end),
-];
 
 #[cfg(test)]
 mod tests {
@@ -101,16 +112,29 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "span start")]
-    fn new_with_inverted_range_panics() {
-        Span::new(PathBuf::from("test.rs"), 20, 10);
+    fn file_path_is_shared_by_a_clone() {
+        let span = Span::new(PathBuf::from("test.rs"), 0, 10);
+
+        let copy = span.clone();
+
+        assert!(std::ptr::eq(copy.file(), span.file()));
     }
 
     #[test]
-    fn file_arc_shares_reference() {
-        let span1 = Span::new(PathBuf::from("test.rs"), 0, 10);
-        let span2 = span1.clone();
-        assert!(Arc::ptr_eq(span1.file_arc(), span2.file_arc()));
+    fn new_accepts_a_shared_file_path() {
+        let span = Span::new(PathBuf::from("test.rs"), 0, 10);
+
+        let narrower = Span::new(span.file_path().clone(), 2, 4);
+
+        assert_eq!(narrower.file(), Path::new("test.rs"));
+        assert_eq!(narrower.start(), 2);
+        assert_eq!(narrower.end(), 4);
+    }
+
+    #[test]
+    #[should_panic(expected = "span start")]
+    fn new_with_inverted_range_panics() {
+        Span::new(PathBuf::from("test.rs"), 20, 10);
     }
 
     mod prop {
