@@ -7,6 +7,11 @@ use whisker_macros::Decoration;
 ///
 /// The provider attaches it to a `use_declaration` whose path has a
 /// qualifier. `use serde;` has none, so it carries no decoration.
+///
+/// A rule reads it out of memory the host allocated, so the discriminant
+/// is a byte, a layout that holds from one compiler to the next.
+#[stabby::stabby]
+#[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Decoration)]
 #[decoration(cardinality = "one")]
 pub enum ImportSource {

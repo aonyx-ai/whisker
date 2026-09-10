@@ -22,15 +22,22 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// # Examples
 ///
+/// A plugin reads a decoration out of memory the host allocated, so
+/// `Decoration` requires a layout stabby fixes. Annotate the type with
+/// `#[stabby::stabby]` and give it fields stabby lays out.
+///
 /// ```
+/// use stabby::string::String;
 /// use whisker_macros::Decoration;
 ///
+/// #[stabby::stabby]
 /// #[derive(Decoration)]
 /// #[decoration(cardinality = "one")]
 /// pub struct ResolvedType {
 ///     display: String,
 /// }
 ///
+/// #[stabby::stabby]
 /// #[derive(Decoration)]
 /// #[decoration(cardinality = "many")]
 /// pub struct TraitImpl {

@@ -6,16 +6,19 @@
 
 use std::path::PathBuf;
 
+use stabby::str::Str;
 use whisker_macros::Decoration;
 use whisker_types::{DecoratedTree, Decoration};
 
+#[stabby::stabby]
 #[derive(Decoration)]
 #[decoration(cardinality = "one")]
-struct ResolvedType(&'static str);
+struct ResolvedType(Str<'static>);
 
+#[stabby::stabby]
 #[derive(Decoration)]
 #[decoration(cardinality = "many")]
-struct TraitImpl(&'static str);
+struct TraitImpl(Str<'static>);
 
 fn parse(source: &str) -> DecoratedTree {
     let mut parser = tree_sitter::Parser::new();
@@ -31,14 +34,16 @@ fn parse(source: &str) -> DecoratedTree {
 fn many_cardinality_reads_back_every_instance_in_order() {
     let mut tree = parse("fn main() {}");
     let id = tree.root_node().id();
-    tree.decorations_mut().insert(id, TraitImpl("Debug"));
-    tree.decorations_mut().insert(id, TraitImpl("Clone"));
+    tree.decorations_mut()
+        .insert(id, TraitImpl(Str::new("Debug")));
+    tree.decorations_mut()
+        .insert(id, TraitImpl(Str::new("Clone")));
 
     let found = tree.root_node().get::<TraitImpl>();
 
     assert_eq!(found.len(), 2);
-    assert_eq!(found[0].0, "Debug");
-    assert_eq!(found[1].0, "Clone");
+    assert_eq!(found[0].0.as_str(), "Debug");
+    assert_eq!(found[1].0.as_str(), "Clone");
 }
 
 #[test]
@@ -54,11 +59,12 @@ fn many_cardinality_when_absent_reads_back_empty() {
 fn one_cardinality_reads_back_a_single_value() {
     let mut tree = parse("fn main() {}");
     let id = tree.root_node().id();
-    tree.decorations_mut().insert(id, ResolvedType("u32"));
+    tree.decorations_mut()
+        .insert(id, ResolvedType(Str::new("u32")));
 
     let found = tree.root_node().get::<ResolvedType>();
 
-    assert_eq!(found.expect("should be present").0, "u32");
+    assert_eq!(found.expect("should be present").0.as_str(), "u32");
 }
 
 #[test]
@@ -75,7 +81,8 @@ fn decorations_are_keyed_per_node() {
     let source = "fn main() {}";
     let mut tree = parse(source);
     let root_id = tree.root_node().id();
-    tree.decorations_mut().insert(root_id, ResolvedType("root"));
+    tree.decorations_mut()
+        .insert(root_id, ResolvedType(Str::new("root")));
 
     let child = tree
         .root_node()
@@ -86,7 +93,8 @@ fn decorations_are_keyed_per_node() {
         tree.root_node()
             .get::<ResolvedType>()
             .expect("root should be decorated")
-            .0,
+            .0
+            .as_str(),
         "root"
     );
     assert!(child.get::<ResolvedType>().is_none());
@@ -96,11 +104,12 @@ fn decorations_are_keyed_per_node() {
 fn lookup_can_be_called_through_the_trait() {
     let mut tree = parse("fn main() {}");
     let id = tree.root_node().id();
-    tree.decorations_mut().insert(id, ResolvedType("u32"));
+    tree.decorations_mut()
+        .insert(id, ResolvedType(Str::new("u32")));
 
     let found = ResolvedType::lookup(&tree.root_node());
 
-    assert_eq!(found.expect("should be present").0, "u32");
+    assert_eq!(found.expect("should be present").0.as_str(), "u32");
 }
 
 /// Two types of one name in two function bodies must stay apart
@@ -111,6 +120,7 @@ fn lookup_can_be_called_through_the_trait() {
 #[test]
 fn same_named_types_in_two_functions_do_not_collide() {
     fn decorate(tree: &mut DecoratedTree) -> u64 {
+        #[stabby::stabby]
         #[derive(Decoration)]
         #[decoration(cardinality = "one")]
         struct Local(u64);
@@ -121,6 +131,7 @@ fn same_named_types_in_two_functions_do_not_collide() {
         tree.root_node().get::<Local>().expect("should read back").0
     }
 
+    #[stabby::stabby]
     #[derive(Decoration)]
     #[decoration(cardinality = "one")]
     struct Local;

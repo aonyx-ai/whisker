@@ -51,6 +51,10 @@ and this project adheres to
   another rustc built. A span names its file through `FilePath`, and
   `Span::file_arc` is now `Span::file_path`. `RuleOptions::names` returns
   owned names.
+- The decorations a plugin reads are laid out by stabby too: `ResolvedType`,
+  `FnSignature`, `AdtFlags`, and `ImportSource`, with the types they hold. A
+  `Decoration` must now be `IStable`, so a decoration std would lay out is a
+  compile error rather than a plugin that reads the wrong bytes.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against. The protocol is 3, and whisker reads every protocol from
   2 upward, so a plugin built before this still loads and its rules still

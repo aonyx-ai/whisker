@@ -121,6 +121,7 @@ pub fn detect_language(path: &Path) -> anyhow::Result<Language> {
 mod tests {
     use std::path::PathBuf;
 
+    use stabby::str::Str;
     use whisker_types::{
         CoverageGap, DecoratedNode, Decoration, DecorationKey, DecorationMap, Diagnostic, Language,
         ProviderName, RuleId, RuleOptions, Severity,
@@ -164,13 +165,14 @@ mod tests {
 
         fn decorate(&self, tree: &DecoratedTree) -> anyhow::Result<Coverage> {
             let mut decorations = DecorationMap::new();
-            decorations.insert(tree.root_node().id(), Marker(self.0));
+            decorations.insert(tree.root_node().id(), Marker(Str::new(self.0)));
             Ok(Coverage::Covered(decorations))
         }
     }
 
+    #[stabby::stabby]
     #[derive(Debug)]
-    struct Marker(&'static str);
+    struct Marker(Str<'static>);
 
     unsafe impl Decoration for Marker {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Marker"));
@@ -201,7 +203,7 @@ mod tests {
             vec![Diagnostic::new(
                 RuleId::new("test.marker"),
                 Severity::Warn,
-                marker.0.into(),
+                marker.0.as_str().into(),
                 node.span(),
             )]
         }

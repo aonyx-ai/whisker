@@ -179,6 +179,7 @@ mod tests {
     use super::*;
     use crate::DecorationKey;
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct TestDeco(u32);
 
@@ -192,6 +193,7 @@ mod tests {
         }
     }
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct Missing;
 
@@ -205,6 +207,7 @@ mod tests {
         }
     }
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct Value(u64);
 

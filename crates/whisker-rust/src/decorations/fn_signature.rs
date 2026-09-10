@@ -1,3 +1,4 @@
+use stabby::option;
 use whisker_macros::Decoration;
 
 use crate::decorations::{ErrorType, ResolvedType, ReturnMode};
@@ -8,11 +9,18 @@ use crate::decorations::{ErrorType, ResolvedType, ReturnMode};
 /// without re-querying the semantic model. Every resolved function gets a
 /// signature, even an empty one. An absent decoration would look like a
 /// function the provider never reached, and those are different facts.
+///
+/// A rule reads it out of memory the host allocated, so stabby lays it
+/// out. Its optional parts are stabby's [`Option`], because std promises
+/// no layout for an `Option` of these types.
+///
+/// [`Option`]: stabby::option::Option
+#[stabby::stabby]
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Decoration)]
 #[decoration(cardinality = "one")]
 pub struct FnSignature {
-    return_type: Option<ResolvedType>,
-    error_type: Option<ErrorType>,
+    return_type: option::Option<ResolvedType>,
+    error_type: option::Option<ErrorType>,
     return_mode: ReturnMode,
 }
 
@@ -24,8 +32,8 @@ impl FnSignature {
         return_mode: ReturnMode,
     ) -> Self {
         Self {
-            return_type,
-            error_type,
+            return_type: return_type.into(),
+            error_type: error_type.into(),
             return_mode,
         }
     }

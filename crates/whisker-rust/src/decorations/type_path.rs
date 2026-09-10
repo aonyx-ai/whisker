@@ -1,4 +1,7 @@
 use std::fmt;
+use std::hash::{Hash, Hasher};
+
+use stabby::{string, vec};
 
 use crate::decorations::TypePathRef;
 
@@ -11,6 +14,9 @@ use crate::decorations::TypePathRef;
 /// The path names the item's definition, not a re-export, so `syn::Error`
 /// appears here as `syn::error::Error`.
 ///
+/// A rule reads the path out of a decoration the host recorded, so stabby
+/// lays it out. Its segments are stabby's `String`s.
+///
 /// # Examples
 ///
 /// ```
@@ -20,11 +26,12 @@ use crate::decorations::TypePathRef;
 ///
 /// assert_eq!(path.to_string(), "syn::error::Error");
 /// ```
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[stabby::stabby]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct TypePath {
-    krate: Box<str>,
-    modules: Box<[Box<str>]>,
-    name: Box<str>,
+    krate: string::String,
+    modules: vec::Vec<string::String>,
+    name: string::String,
 }
 
 impl TypePath {
@@ -45,12 +52,12 @@ impl TypePath {
         M::Item: AsRef<str>,
     {
         Self {
-            krate: Box::from(krate),
+            krate: string::String::from(krate),
             modules: modules
                 .into_iter()
-                .map(|segment| Box::from(segment.as_ref()))
+                .map(|segment| string::String::from(segment.as_ref()))
                 .collect(),
-            name: Box::from(name),
+            name: string::String::from(name),
         }
     }
 
@@ -81,7 +88,7 @@ impl TypePath {
     /// assert_eq!(path.modules().collect::<Vec<_>>(), vec!["error"]);
     /// ```
     pub fn modules(&self) -> impl Iterator<Item = &str> {
-        self.modules.iter().map(AsRef::as_ref)
+        self.modules.iter().map(string::String::as_str)
     }
 
     /// Returns the item's own name
@@ -108,32 +115,50 @@ impl TypePath {
 impl fmt::Display for TypePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.krate)?;
-        for segment in &self.modules {
+        for segment in self.modules() {
             write!(f, "::{segment}")?;
         }
         write!(f, "::{}", self.name)
     }
 }
 
+impl Hash for TypePath {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.krate.hash(state);
+        self.modules.as_slice().hash(state);
+        self.name.hash(state);
+    }
+}
+
 impl PartialEq<TypePathRef<'_>> for TypePath {
     fn eq(&self, other: &TypePathRef<'_>) -> bool {
-        &*self.krate == other.krate()
-            && &*self.name == other.name()
+        self.krate() == other.krate()
+            && self.name() == other.name()
             && self.modules.len() == other.modules().len()
             && self
-                .modules
-                .iter()
+                .modules()
                 .zip(other.modules())
-                .all(|(lhs, rhs)| &**lhs == *rhs)
+                .all(|(lhs, rhs)| lhs == *rhs)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     #[test]
-    fn display_renders_crate_modules_and_name() {
+    fn accessors_return_each_part() {
+        let path = TypePath::new("syn", ["error"], "Error");
+
+        assert_eq!(path.krate(), "syn");
+        assert_eq!(path.modules().collect::<Vec<_>>(), vec!["error"]);
+        assert_eq!(path.name(), "Error");
+    }
+
+    #[test]
+    fn display_joins_segments_with_double_colons() {
         let path = TypePath::new("syn", ["error"], "Error");
 
         let rendered = path.to_string();
@@ -188,6 +213,17 @@ mod tests {
         let matches = path == TypePathRef::new("syn", &["error"], "Error");
 
         assert!(matches);
+    }
+
+    #[test]
+    fn hash_agrees_with_eq() {
+        let mut paths = HashSet::new();
+        paths.insert(TypePath::new("syn", ["error"], "Error"));
+
+        let found = paths.contains(&TypePath::new("syn", ["error"], "Error"));
+
+        assert!(found);
+        assert!(!paths.contains(&TypePath::new("syn", [] as [&str; 0], "Error")));
     }
 
     #[test]
