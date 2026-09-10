@@ -9,16 +9,12 @@ Cargo workspace to point whisker at.
 
 ## Install whisker
 
-Download the archive for your platform from the [releases page][releases],
-check it against the digest published beside it, and unpack it:
-
 ```bash
-shasum -a 256 -c whisker-0.1.0-rc.3-aarch64-apple-darwin.tar.gz.sha256
-tar -xzf whisker-0.1.0-rc.3-aarch64-apple-darwin.tar.gz
+curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 ```
 
-The archive unpacks to a directory that holds the binary, both licenses, and
-the README. Move `whisker` to a directory on your `PATH`.
+The script installs to `~/.local/bin`. Put that on your `PATH` if it is not
+there already.
 
 [Installation](/docs/installation) covers the other ways to install whisker,
 and which one to choose.
@@ -62,5 +58,3 @@ explains what to rebuild.
 - [Configuration](/docs/configuration) — the rest of `.config/whisker.toml`,
   including how to ignore paths.
 - [Custom lints](/docs/custom-lints) — run a rule at a time, or write your own.
-
-[releases]: https://github.com/aonyx-ai/whisker/releases

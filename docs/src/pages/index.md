@@ -13,6 +13,15 @@ tree-sitter's Rust grammar. A rule that needs type information reads
 decorations that whisker computes with [rust-analyzer][ra] before any rule
 runs.
 
+## Install
+
+```bash
+curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
+```
+
+[Installation](/docs/installation) covers Linux, macOS, GitHub Actions, and a
+build from source.
+
 ## Status
 
 Whisker is in early development. Check back soon.
