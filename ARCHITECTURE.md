@@ -336,7 +336,7 @@ plugin packages stay here for the tests that need one.
 decorations, so the provider's output stays under test. Both sit outside
 the workspace and keep their own lockfiles, the way a plugin written
 elsewhere does. The workspace test run builds and loads them through the
-CLI, and `just test-example-lint` and `just test-fixture-lint` run their
+CLI, and `just test-examples` and `just test-fixture-lint` run their
 own tests.
 
 | Crate               | Role                                                                                     |

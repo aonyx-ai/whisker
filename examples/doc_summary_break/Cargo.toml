@@ -1,0 +1,34 @@
+# <
+# Requires a newline after the first line of a docstring.
+#
+# This example exists for the documentation to import. The manifest is what
+# a reader copies, so it names a released whisker rather than the source
+# beside it. CI resolves that release, which is the whole point: it proves
+# the manifest on the page builds against the version it names. Whether the
+# current branch still suits the rule is whisker's own test suite's
+# question, not this package's.
+
+# The empty workspace table keeps this package standalone inside the
+# whisker repository; a plugin in your own project does not need it. It is
+# also what gives this package its own lockfile, and that is the point: a
+# reader copying the manifest resolves it standalone too.
+[workspace]
+# >
+
+[package]
+name = "doc_summary_break"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+whisker-rust = { git = "https://github.com/aonyx-ai/whisker.git", tag = "v0.1.0-rc.4", default-features = false }
+whisker-types = { git = "https://github.com/aonyx-ai/whisker.git", tag = "v0.1.0-rc.4" }
+
+[lib]
+crate-type = ["cdylib"]
+
+# <
+[dev-dependencies]
+whisker-testing = { git = "https://github.com/aonyx-ai/whisker.git", tag = "v0.1.0-rc.4" }
+# >

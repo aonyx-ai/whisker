@@ -1,0 +1,88 @@
+---
+sidebar_position: 0
+---
+
+import CodeBlock from "@theme/CodeBlock";
+import DocSummaryBreakCargoToml from "!!raw-loader!@site/../examples/doc_summary_break/Cargo.toml";
+import DocSummaryBreakSource from "!!raw-loader!@site/../examples/doc_summary_break/src/lib.rs";
+import FilteredCodeBlock from "@site/src/components/FilteredCodeBlock";
+
+# Quick start
+
+This page takes you from nothing to a checked project.
+
+## Install Whisker
+
+```bash
+curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
+```
+
+The script installs to `~/.local/bin`. Put that on your `PATH` if it is not
+there already.
+
+[Installation][installation] covers the other ways to install whisker,
+and which one to choose.
+
+## Building your first rule
+
+Writing a rule in Whisker can be very simple, but we intend for it to be able to
+scale to much more complex lints. Every lint is packaged as a Rust crate, and
+each lint can register multiple rules. Every rule has four important components:
+
+1. Rule struct and documentation.
+2. `LintPass` implementation: the actual logic of the lint.
+3. Rule ID: a string identifying the rule.
+4. Lint registration.
+
+Here's a simple lint that checks if the first line of a Rust `///` docstring is
+immediately followed by a newline. This would ensure the headline is only one
+line.
+
+<FilteredCodeBlock language="toml" title="lints/doc_summary_break/Cargo.toml">
+  {DocSummaryBreakCargoToml}
+</FilteredCodeBlock>
+
+<FilteredCodeBlock language="rust" title="lints/doc_summary_break/src/lib.rs">
+  {DocSummaryBreakSource}
+</FilteredCodeBlock>
+
+Extensive documentation on building your own lints is available in the [custom
+lints][custom-lints] section.
+
+## Adding the rule
+
+Whisker lints are configured through a configuration file inside your repository
+at `.config/whisker.toml`. The most basic configuration for your lint looks like
+this:
+
+```toml title=".config/whisker.toml"
+[[lints]]
+path = "lints/doc_summary_break"
+```
+
+Check out the [configuration][configuration] page for more options.
+
+## Check the project
+
+Now simply run this:
+
+```bash
+whisker check .
+```
+
+This'll take a while as it has to compile a lot of code, so sit tight! It should
+run faster when the cache has landed. Be sure to check out [prebuilt
+lints][prebuilt-lints] if you want to speed this up across machines.
+
+## Next steps
+
+- [Custom lints][custom-lints]: more information on custom lints.
+- [Configuration][configuration]: the rest of `.config/whisker.toml`.
+- [Checking a project][checking-a-project]: exactly how checking a project with
+  Whisker works.
+
+[installation]: /docs/installation
+[prebuilt-lints]: /docs/prebuilt-lints
+[checking-a-project]: /docs/checking-a-project
+[configuration]: /docs/configuration
+[custom-lints]: /docs/custom-lints
