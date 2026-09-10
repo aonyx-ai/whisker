@@ -41,7 +41,7 @@ use std::ffi::CStr;
 use stabby::IStable;
 
 use crate::{
-    DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Location, RuleId,
+    DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Location, Panic, RuleId,
     RuleOption, RuleOptions, Severity, Span, Suggestion,
 };
 
@@ -69,9 +69,9 @@ pub use registrar::{LintPassFactory, LintRegistrar};
 /// ```
 /// use whisker_types::plugin::ABI_VERSION;
 ///
-/// assert_eq!(ABI_VERSION, 4);
+/// assert_eq!(ABI_VERSION, 5);
 /// ```
-pub const ABI_VERSION: u32 = 4;
+pub const ABI_VERSION: u32 = 5;
 
 /// The oldest protocol whisker still loads
 ///
@@ -84,8 +84,9 @@ pub const ABI_VERSION: u32 = 4;
 /// of [`LintPass`] or [`LintRegistrar`] reorders a vtable, which no
 /// version can make readable, so such a change raises this floor to meet
 /// [`ABI_VERSION`] and refuses everything older. It does today: protocol
-/// 4 gave [`LintPass`] a `configure` method, so 4 is the only protocol
-/// whisker loads until the declaration next gains a field.
+/// 5 made the methods of [`LintPass`] `extern "C"` and gave each a result
+/// to hand back, so 5 is the only protocol whisker loads until the
+/// declaration next gains a field.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
@@ -96,7 +97,7 @@ pub const ABI_VERSION: u32 = 4;
 ///
 /// assert!(MIN_ABI_VERSION <= ABI_VERSION);
 /// ```
-pub const MIN_ABI_VERSION: u32 = 4;
+pub const MIN_ABI_VERSION: u32 = 5;
 
 /// The full identity of the rustc that compiled this crate
 ///
@@ -134,9 +135,11 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 /// The list names what a pass receives and what it returns, and nothing
 /// else. A pass receives a [`DecoratedNode`], which reaches its file and
 /// its decorations through a [`FilePath`] and a [`DecorationLookup`], and
-/// the [`RuleOptions`] a project set. It returns [`Diagnostic`]s. The tree,
-/// the decoration map, and the coverage types stay on the host's side of
-/// the boundary, so they are not here.
+/// the [`RuleOptions`] a project set. It returns [`Diagnostic`]s, or the
+/// [`Panic`] that stopped it. The results themselves are stabby's, laid
+/// out by the stabby every plugin shares, so the payloads are what the
+/// list names. The tree, the decoration map, and the coverage types stay
+/// on the host's side of the boundary, so they are not here.
 ///
 /// What it does not cover is the shape of [`LintPass`] and
 /// [`LintRegistrar`] themselves. A trait object's vtable orders its
@@ -170,6 +173,7 @@ const STABLE_TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
     <FilePath as IStable>::ID,
     <RuleOptions as IStable>::ID,
     <RuleOption as IStable>::ID,
+    <Panic as IStable>::ID,
     <Diagnostic as IStable>::ID,
     <Span as IStable>::ID,
     <Suggestion as IStable>::ID,
@@ -234,7 +238,7 @@ mod tests {
 
         body.lines()
             .map(str::trim)
-            .filter(|line| line.starts_with("fn "))
+            .filter(|line| line.starts_with("fn ") || line.starts_with("extern \"C\" fn "))
             .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
             .collect()
     }
@@ -254,8 +258,9 @@ mod tests {
             (lint_pass, registrar),
             (
                 vec![
-                    "fn configure(&mut self, options: &RuleOptions);".to_owned(),
-                    "fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic>;"
+                    "extern \"C\" fn configure(&mut self, options: &RuleOptions) -> Configured;"
+                        .to_owned(),
+                    "extern \"C\" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked;"
                         .to_owned()
                 ],
                 vec!["fn register(&mut self, factory: LintPassFactory);".to_owned()],

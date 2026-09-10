@@ -58,7 +58,9 @@ mod tests {
     use std::path::PathBuf;
 
     use whisker_types::plugin::LintRegistrar;
-    use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, LintPass, RuleId, Severity};
+    use whisker_types::{
+        DecoratedNode, DecoratedTree, Diagnostic, LintPass, Panic, RuleId, Severity,
+    };
 
     use crate::RustLintPass;
     use crate::plugin;
@@ -140,8 +142,9 @@ mod tests {
         let function = tree.root_node().named_child(0).expect("should parse a fn");
 
         let mut pass = collected()[0]();
-        let diagnostics = pass.check_node(&function);
+        let checked: Result<_, Panic> = pass.check_node(&function).into();
 
+        let diagnostics = checked.expect("the pass should not panic");
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(
             diagnostics[0].rule_id(),

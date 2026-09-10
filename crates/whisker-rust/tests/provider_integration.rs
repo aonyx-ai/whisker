@@ -835,7 +835,7 @@ fn anyhow_bare_try_flags_a_bare_try_in_an_anyhow_function() {
         .expect("should find returns_anyhow_result");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(
         flagged_within(&tree, &diagnostics, &func),
@@ -856,7 +856,7 @@ fn anyhow_bare_try_flags_a_bare_try_in_an_async_anyhow_function() {
         .expect("should find returns_anyhow_result_async");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(
         flagged_within(&tree, &diagnostics, &func),
@@ -877,7 +877,7 @@ fn anyhow_bare_try_flags_a_bare_try_in_an_async_trait_method() {
     let func = find_function_by_name(&root, "load_async").expect("should find load_async");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(
         flagged_within(&tree, &diagnostics, &func),
@@ -894,7 +894,7 @@ fn anyhow_bare_try_flags_a_bare_try_on_a_method_call() {
         find_function_by_name(&root, "try_on_method_call").expect("should find try_on_method_call");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(
         flagged_within(&tree, &diagnostics, &func),
@@ -915,7 +915,7 @@ fn anyhow_bare_try_flags_only_the_anyhow_function_among_lookalike_errors() {
     let root = tree.root_node();
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     let anyhow_fn = find_function_by_name(&root, "returns_anyhow_result")
         .expect("should find returns_anyhow_result");
@@ -947,7 +947,7 @@ fn anyhow_bare_try_ignores_a_bare_try_in_an_async_io_function() {
         .expect("should find returns_io_result_async");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
@@ -965,7 +965,7 @@ fn anyhow_bare_try_ignores_a_bare_try_in_an_io_function() {
         find_function_by_name(&root, "returns_io_result").expect("should find returns_io_result");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
@@ -983,7 +983,7 @@ fn anyhow_bare_try_ignores_a_boxed_error() {
         .expect("should find returns_boxed_error");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
@@ -1002,7 +1002,7 @@ fn anyhow_bare_try_ignores_a_generic_error() {
         .expect("should find returns_generic_error");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
@@ -1020,7 +1020,7 @@ fn anyhow_bare_try_ignores_a_local_error_type() {
         .expect("should find returns_local_error_result");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }
@@ -1039,7 +1039,7 @@ fn anyhow_bare_try_ignores_a_try_inside_a_closure() {
         .expect("should find closure_returning_io_result");
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["read()?"]);
 }
@@ -1055,7 +1055,7 @@ fn anyhow_bare_try_over_the_whole_file_reports_only_anyhow_bodies() {
     let tree = parse_and_decorate_fixture(provider);
     let mut passes: Vec<Box<dyn LintPass>> = vec![AnyhowBareTry::into_lint_pass()];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(
         flagged_in_file(&tree, &diagnostics),
@@ -1080,7 +1080,7 @@ fn function_scoped_import_over_the_whole_file_spares_only_variant_imports() {
     let mut passes: Vec<Box<dyn LintPass>> =
         vec![Box::new(RustLintPassAdapter::new(FunctionScopedImport))];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(
         flagged_in_file(&tree, &diagnostics),
@@ -1102,7 +1102,7 @@ fn wildcard_match_arm_flags_a_scrutinee_reached_through_a_field() {
     let mut passes: Vec<Box<dyn LintPass>> =
         vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["_"]);
 }
@@ -1117,7 +1117,7 @@ fn wildcard_match_arm_flags_a_scrutinee_returned_by_a_call() {
     let mut passes: Vec<Box<dyn LintPass>> =
         vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert_eq!(flagged_within(&tree, &diagnostics, &func), vec!["_"]);
 }
@@ -1136,7 +1136,7 @@ fn wildcard_match_arm_ignores_a_scrutinee_that_is_not_an_enum() {
     let mut passes: Vec<Box<dyn LintPass>> =
         vec![Box::new(RustLintPassAdapter::new(WildcardMatchArm))];
 
-    let diagnostics = whisker_core::walk(&tree, &mut passes);
+    let diagnostics = whisker_core::walk(&tree, &mut passes).expect("the walk should not panic");
 
     assert!(flagged_within(&tree, &diagnostics, &func).is_empty());
 }

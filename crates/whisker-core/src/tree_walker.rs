@@ -1,29 +1,43 @@
-use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, LintPass};
+use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, LintPass, Panic};
+
+use crate::PassPanic;
 
 /// Walks a decorated syntax tree and collects diagnostics from lint passes
 ///
 /// Performs a depth-first traversal of all named nodes, calling each lint
 /// pass for every node visited.
-pub fn walk(tree: &DecoratedTree, passes: &mut [Box<dyn LintPass>]) -> Vec<Diagnostic> {
+///
+/// # Errors
+///
+/// Returns a [`PassPanic`] when a pass panics, naming the node it was
+/// checking. The walk stops there, for the reason that type gives.
+pub fn walk(
+    tree: &DecoratedTree,
+    passes: &mut [Box<dyn LintPass>],
+) -> Result<Vec<Diagnostic>, PassPanic> {
     let mut diagnostics = Vec::new();
-    visit_node(&tree.root_node(), passes, &mut diagnostics);
-    diagnostics
+    visit_node(&tree.root_node(), passes, &mut diagnostics)?;
+    Ok(diagnostics)
 }
 
 fn visit_node(
     node: &DecoratedNode<'_>,
     passes: &mut [Box<dyn LintPass>],
     diagnostics: &mut Vec<Diagnostic>,
-) {
+) -> Result<(), PassPanic> {
     if node.is_named() {
         for pass in passes.iter_mut() {
-            diagnostics.extend(pass.check_node(node));
+            let checked: Result<_, Panic> = pass.check_node(node).into();
+            let found = checked.map_err(|panic| PassPanic::new(node.kind(), node.span(), panic))?;
+            diagnostics.extend(found);
         }
     }
 
     for child in node.named_children() {
-        visit_node(&child, passes, diagnostics);
+        visit_node(&child, passes, diagnostics)?;
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -31,7 +45,8 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use whisker_types::{DecoratedTree, RuleOptions};
+    use stabby::vec;
+    use whisker_types::{Checked, Configured, DecoratedTree, RuleOptions};
 
     use super::*;
 
@@ -47,7 +62,7 @@ mod tests {
     #[test]
     fn walk_with_empty_passes_returns_empty() {
         let tree = parse_rust("fn main() {}");
-        let diagnostics = walk(&tree, &mut Vec::new());
+        let diagnostics = walk(&tree, &mut Vec::new()).expect("should walk");
         assert!(diagnostics.is_empty());
     }
 
@@ -57,18 +72,20 @@ mod tests {
 
         struct Counter;
         impl LintPass for Counter {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
                 COUNT.fetch_add(1, Ordering::Relaxed);
-                Vec::new()
+                Checked::Ok(vec::Vec::new())
             }
         }
 
         COUNT.store(0, Ordering::Relaxed);
         let tree = parse_rust("fn main() {}");
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(Counter)];
-        walk(&tree, &mut passes);
+        walk(&tree, &mut passes).expect("should walk");
 
         assert!(COUNT.load(Ordering::Relaxed) > 0);
     }
@@ -77,40 +94,42 @@ mod tests {
     fn walk_on_empty_source_returns_empty() {
         let tree = parse_rust("");
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(CounterPass(0))];
-        let diagnostics = walk(&tree, &mut passes);
+        let diagnostics = walk(&tree, &mut passes).expect("should walk");
         assert!(diagnostics.is_empty());
     }
 
     struct CounterPass(usize);
     impl LintPass for CounterPass {
-        fn configure(&mut self, _options: &RuleOptions) {}
+        extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+            Configured::Ok(())
+        }
 
-        fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+        extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
             self.0 += 1;
-            Vec::new()
+            Checked::Ok(vec::Vec::new())
         }
     }
 
     #[test]
     fn walk_visits_nested_nodes() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
         static NESTED_COUNT: AtomicUsize = AtomicUsize::new(0);
 
         struct KindCounter;
         impl LintPass for KindCounter {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
                 NESTED_COUNT.fetch_add(1, Ordering::Relaxed);
-                Vec::new()
+                Checked::Ok(vec::Vec::new())
             }
         }
 
         NESTED_COUNT.store(0, Ordering::Relaxed);
         let tree = parse_rust("fn main() { let x = 1; }");
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(KindCounter)];
-        walk(&tree, &mut passes);
+        walk(&tree, &mut passes).expect("should walk");
 
         let count = NESTED_COUNT.load(Ordering::Relaxed);
         assert!(count > 1, "should visit multiple nested nodes, got {count}");
@@ -118,24 +137,24 @@ mod tests {
 
     #[test]
     fn walk_visits_deeply_nested_code() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
         static DEEP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
         struct DepthCounter;
         impl LintPass for DepthCounter {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
                 DEEP_COUNT.fetch_add(1, Ordering::Relaxed);
-                Vec::new()
+                Checked::Ok(vec::Vec::new())
             }
         }
 
         DEEP_COUNT.store(0, Ordering::Relaxed);
         let tree = parse_rust("fn f() { if true { if true { if true { let x = 1; } } } }");
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(DepthCounter)];
-        walk(&tree, &mut passes);
+        walk(&tree, &mut passes).expect("should walk");
 
         let count = DEEP_COUNT.load(Ordering::Relaxed);
         assert!(
@@ -146,28 +165,30 @@ mod tests {
 
     #[test]
     fn walk_multiple_passes_each_see_same_nodes() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
         static PASS_A: AtomicUsize = AtomicUsize::new(0);
         static PASS_B: AtomicUsize = AtomicUsize::new(0);
 
         struct CounterA;
         impl LintPass for CounterA {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
                 PASS_A.fetch_add(1, Ordering::Relaxed);
-                Vec::new()
+                Checked::Ok(vec::Vec::new())
             }
         }
 
         struct CounterB;
         impl LintPass for CounterB {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
                 PASS_B.fetch_add(1, Ordering::Relaxed);
-                Vec::new()
+                Checked::Ok(vec::Vec::new())
             }
         }
 
@@ -176,7 +197,7 @@ mod tests {
 
         let tree = parse_rust("fn a() {} fn b() {}");
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(CounterA), Box::new(CounterB)];
-        walk(&tree, &mut passes);
+        walk(&tree, &mut passes).expect("should walk");
 
         let a = PASS_A.load(Ordering::Relaxed);
         let b = PASS_B.load(Ordering::Relaxed);
@@ -190,26 +211,28 @@ mod tests {
 
         struct WarnOnFn(&'static str);
         impl LintPass for WarnOnFn {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
-                if node.kind() == "function_item" {
-                    vec![Diagnostic::new(
+            extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+                let found = match node.kind() == "function_item" {
+                    true => vec![Diagnostic::new(
                         RuleId::new(self.0),
                         Severity::Warn,
                         format!("{} found fn", self.0),
                         node.span(),
-                    )]
-                } else {
-                    Vec::new()
-                }
+                    )],
+                    false => Vec::new(),
+                };
+                Checked::Ok(found.into_iter().collect())
             }
         }
 
         let tree = parse_rust("fn main() {}");
         let mut passes: Vec<Box<dyn LintPass>> =
             vec![Box::new(WarnOnFn("pass.a")), Box::new(WarnOnFn("pass.b"))];
-        let diagnostics = walk(&tree, &mut passes);
+        let diagnostics = walk(&tree, &mut passes).expect("should walk");
 
         assert_eq!(diagnostics.len(), 2);
         assert_eq!(diagnostics[0].rule_id(), RuleId::new("pass.a"));
@@ -222,27 +245,84 @@ mod tests {
 
         struct SpanChecker;
         impl LintPass for SpanChecker {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
-                vec![Diagnostic::new(
-                    RuleId::new("test"),
-                    Severity::Info,
-                    "span check".into(),
-                    node.span(),
-                )]
+            extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+                Checked::Ok(
+                    [Diagnostic::new(
+                        RuleId::new("test"),
+                        Severity::Info,
+                        "span check".into(),
+                        node.span(),
+                    )]
+                    .into_iter()
+                    .collect(),
+                )
             }
         }
 
         let source = "fn main() { let x = 42; }";
         let tree = parse_rust(source);
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(SpanChecker)];
-        let diagnostics = walk(&tree, &mut passes);
+        let diagnostics = walk(&tree, &mut passes).expect("should walk");
 
         for diag in &diagnostics {
             assert!(diag.span().start() <= diag.span().end());
             assert!(diag.span().end() <= source.len());
         }
+    }
+
+    /// A panic stops the walk where it happened and says where that was
+    ///
+    /// Nodes after the panic go unchecked on purpose: the pass is in a
+    /// state its author never meant.
+    #[test]
+    fn walk_with_a_panicking_pass_stops_and_names_the_node() {
+        static AFTER_PANIC: AtomicUsize = AtomicUsize::new(0);
+
+        struct PanicOnFn;
+        impl LintPass for PanicOnFn {
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
+
+            extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+                let kind = node.kind();
+                Panic::catch(move || -> Vec<Diagnostic> {
+                    match kind == "function_item" {
+                        true => panic!("no functions"),
+                        false => Vec::new(),
+                    }
+                })
+                .map(|found| found.into_iter().collect())
+                .into()
+            }
+        }
+
+        struct CountAfter;
+        impl LintPass for CountAfter {
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
+
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
+                AFTER_PANIC.fetch_add(1, Ordering::Relaxed);
+                Checked::Ok(vec::Vec::new())
+            }
+        }
+
+        AFTER_PANIC.store(0, Ordering::Relaxed);
+        let tree = parse_rust("fn main() { let x = 1; }");
+        let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(PanicOnFn), Box::new(CountAfter)];
+
+        let error = walk(&tree, &mut passes).expect_err("the panic should end the walk");
+
+        assert_eq!(error.kind(), "function_item");
+        assert_eq!(error.span().start(), 0);
+        assert_eq!(error.panic().message(), "no functions");
+        assert_eq!(AFTER_PANIC.load(Ordering::Relaxed), 1);
     }
 
     mod prop {
@@ -256,7 +336,7 @@ mod tests {
                 source in "(fn [a-z]+\\(\\) \\{\\}\n){0,5}",
             ) {
                 let tree = parse_rust(&source);
-                let diagnostics = walk(&tree, &mut Vec::new());
+                let diagnostics = walk(&tree, &mut Vec::new()).expect("should walk");
                 prop_assert!(diagnostics.is_empty());
             }
 
@@ -267,18 +347,24 @@ mod tests {
             ) {
                 struct CountAll;
                 impl LintPass for CountAll {
-                    fn configure(&mut self, _options: &RuleOptions) {}
+                    extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                        Configured::Ok(())
+                    }
 
-                    fn check_node(
+                    extern "C" fn check_node(
                         &mut self,
                         node: &DecoratedNode<'_>,
-                    ) -> Vec<Diagnostic> {
-                        vec![Diagnostic::new(
-                            whisker_types::RuleId::new("test"),
-                            whisker_types::Severity::Warn,
-                            "hit".into(),
-                            node.span(),
-                        )]
+                    ) -> Checked {
+                        Checked::Ok(
+                            [Diagnostic::new(
+                                whisker_types::RuleId::new("test"),
+                                whisker_types::Severity::Warn,
+                                "hit".into(),
+                                node.span(),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        )
                     }
                 }
 
@@ -286,12 +372,12 @@ mod tests {
 
                 let mut single_pass: Vec<Box<dyn LintPass>> =
                     vec![Box::new(CountAll)];
-                let single_count = walk(&tree, &mut single_pass).len();
+                let single_count = walk(&tree, &mut single_pass).expect("should walk").len();
 
                 let mut multi_passes: Vec<Box<dyn LintPass>> = (0..num_passes)
                     .map(|_| Box::new(CountAll) as Box<dyn LintPass>)
                     .collect();
-                let multi_count = walk(&tree, &mut multi_passes).len();
+                let multi_count = walk(&tree, &mut multi_passes).expect("should walk").len();
 
                 prop_assert_eq!(multi_count, single_count * num_passes);
             }

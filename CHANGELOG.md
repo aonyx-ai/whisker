@@ -59,10 +59,13 @@ and this project adheres to
   through a call into whisker rather than by walking whisker's map. The
   boundary fingerprint now names only the types a pass receives and
   returns.
+- A pass's methods are `extern "C"` and hand back a value, so a call into a
+  pass no longer depends on the calling convention of the compiler that
+  built it. A panic inside a rule comes back as a value too, and whisker
+  reports the file and node it was checking instead of the process dying.
+  The protocol is 5, and a plugin built for an earlier one no longer loads.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
-  checked against. The protocol is 3, and whisker reads every protocol from
-  2 upward, so a plugin built before this still loads and its rules still
-  run. They only cannot be named.
+  checked against.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.

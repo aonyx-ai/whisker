@@ -38,8 +38,15 @@ pub fn decorate(tree: &mut DecoratedTree, decorations: DecorationMap) {
 }
 
 /// Executes lint passes against a decorated tree and returns diagnostics
+///
+/// # Panics
+///
+/// Panics if a pass panics. The pass catches its own panic at the plugin
+/// boundary and hands it back as a value, which this turns into a test
+/// failure. The message is the one whisker reports, and it names the file,
+/// the node, and the pass's own message.
 pub fn execute(tree: &DecoratedTree, passes: &mut [Box<dyn LintPass>]) -> Vec<Diagnostic> {
-    whisker_core::walk(tree, passes)
+    whisker_core::walk(tree, passes).unwrap_or_else(|error| panic!("{error:#}"))
 }
 
 /// Builder for asserting diagnostic properties
@@ -220,7 +227,8 @@ impl DiagnosticAssertion<'_> {
 #[cfg(test)]
 mod tests {
     use whisker_types::{
-        DecoratedNode, Decoration, DecorationKey, Diagnostic, RuleId, RuleOptions, Severity,
+        Checked, Configured, DecoratedNode, Decoration, DecorationKey, Diagnostic, RuleId,
+        RuleOptions, Severity,
     };
 
     use super::*;
@@ -274,19 +282,21 @@ mod tests {
     fn execute_collects_diagnostics_from_pass() {
         struct FnFinder;
         impl LintPass for FnFinder {
-            fn configure(&mut self, _options: &RuleOptions) {}
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
-                if node.kind() == "function_item" {
-                    vec![Diagnostic::new(
+            extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+                let found = match node.kind() == "function_item" {
+                    true => vec![Diagnostic::new(
                         RuleId::new("test.fn"),
                         Severity::Warn,
                         "found fn".into(),
                         node.span(),
-                    )]
-                } else {
-                    Vec::new()
-                }
+                    )],
+                    false => Vec::new(),
+                };
+                Checked::Ok(found.into_iter().collect())
             }
         }
 
