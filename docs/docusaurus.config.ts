@@ -43,6 +43,22 @@ const config: Config = {
     ],
   ],
 
+  // The rule author's documentation is a second docs instance rather than a
+  // directory inside the first. It carries its own route, so a page's path
+  // never repeats the section it sits in.
+  plugins: [
+    [
+      "@docusaurus/plugin-content-docs",
+      {
+        id: "authoring",
+        path: "authoring",
+        routeBasePath: "authoring",
+        sidebarPath: "./sidebarsAuthoring.ts",
+        editUrl: "https://github.com/aonyx-ai/whisker/tree/main/docs/",
+      },
+    ],
+  ],
+
   themeConfig: {
     colorMode: {
       respectPrefersColorScheme: true,
@@ -55,6 +71,13 @@ const config: Config = {
           sidebarId: "docsSidebar",
           position: "left",
           label: "Docs",
+        },
+        {
+          type: "docSidebar",
+          sidebarId: "authoringSidebar",
+          docsPluginId: "authoring",
+          position: "left",
+          label: "Writing rules",
         },
         {
           href: "https://github.com/aonyx-ai/whisker",
@@ -71,15 +94,15 @@ const config: Config = {
           items: [
             {
               label: "Quick start",
-              to: "/docs/quick-start",
+              to: "/docs/tutorials/quick-start",
             },
             {
               label: "Configuration",
-              to: "/docs/configuration",
+              to: "/docs/reference/configuration",
             },
             {
-              label: "Custom lints",
-              to: "/docs/custom-lints",
+              label: "Write a rule",
+              to: "/authoring/how-to/write-a-rule",
             },
           ],
         },
