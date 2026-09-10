@@ -2,7 +2,8 @@
 members = ["crates/*"]
 exclude = [
   "crates/whisker-rust/tests/fixtures/lints/decoration_probes",
-  "examples/*",
+  "examples/custom_lint",
+  "examples/sample_project",
 ]
 
 # Opt-in to the new feature resolver introduced in Rust 1.85 and Edition 2024.
