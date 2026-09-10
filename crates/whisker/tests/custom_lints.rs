@@ -235,7 +235,7 @@ fn check_with_a_rule_no_lint_reports_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("workspace.frist"))
         .stderr(predicate::str::contains("workspace.first"));
 }
@@ -253,7 +253,7 @@ fn check_with_both_rule_lists_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("both"));
 }
 
@@ -281,7 +281,7 @@ fn check_with_a_plugin_from_an_older_protocol_refuses_it() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("plugin (ABI 2)"))
         .stderr(predicate::str::contains(format!(
             "whisker (ABI {})",
@@ -362,7 +362,7 @@ fn check_with_an_option_for_a_rule_no_lint_reports_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("custom.misspelled"))
         .stderr(predicate::str::contains("custom.configured"));
 }
@@ -388,7 +388,7 @@ fn check_with_a_git_lint_that_cannot_be_fetched_names_the_source() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("failed to check out"))
         .stderr(predicate::str::contains("https://whisker.invalid/rules"))
         .stderr(predicate::str::contains(
@@ -445,7 +445,7 @@ fn check_with_lint_path_that_does_not_exist_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "failed to load the project's custom lints",
         ))
@@ -466,7 +466,7 @@ fn check_with_lint_that_builds_no_cdylib_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("crate-type = [\"cdylib\"]"));
 }
 
@@ -486,7 +486,7 @@ fn check_with_lint_that_exports_no_declaration_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("not a whisker lint plugin"))
         .stderr(predicate::str::contains("export_lints!"));
 }

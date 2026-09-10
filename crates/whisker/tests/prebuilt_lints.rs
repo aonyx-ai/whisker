@@ -325,7 +325,7 @@ fn check_with_a_prebuilt_that_fails_the_handshake_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("incompatible with whisker"))
         .stderr(predicate::str::contains(
             destination.to_string_lossy().into_owned(),
@@ -539,7 +539,7 @@ fn check_without_a_matching_asset_names_the_archive_nobody_published() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "note: no prebuilt lints published",
         ))
@@ -563,7 +563,7 @@ fn check_with_a_repository_the_api_does_not_know_says_nothing() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("note: no prebuilt lints").not())
         .stderr(predicate::str::contains("warning: whisker cannot use").not());
 }
@@ -585,7 +585,7 @@ fn check_with_a_wrong_digest_warns() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("warning: whisker cannot use"))
         .stderr(predicate::str::contains("digest"));
 
@@ -608,7 +608,7 @@ fn check_with_a_failing_release_api_warns() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("warning: whisker cannot use"))
         .stderr(predicate::str::contains("500"));
 }
@@ -702,7 +702,7 @@ fn check_with_a_checkout_already_present_asks_nothing() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure();
+        .code(1);
     let remote = fetched_remote(&cache);
     clone_into(
         &rules,

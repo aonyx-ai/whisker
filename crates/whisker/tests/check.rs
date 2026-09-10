@@ -218,7 +218,7 @@ fn check_directory_without_sources_fails() {
         .arg("check")
         .arg(directory.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -237,7 +237,7 @@ fn check_non_rust_file_fails() {
         .args(["check", "Cargo.toml"])
         .current_dir(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("no grammar for `.toml` files"));
 }
 
@@ -246,7 +246,7 @@ fn check_nonexistent_path_fails() {
     whisker()
         .args(["check", "does/not/exist"])
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("does not exist"));
 }
 
@@ -263,7 +263,7 @@ fn check_orphan_directory_reports_no_coverage() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "no decoration provider covers this file",
         ))
@@ -282,7 +282,7 @@ fn check_orphan_file_reports_no_coverage() {
         .args(["check", "src/stray.rs"])
         .current_dir(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "no decoration provider covers this file",
         ))
@@ -313,7 +313,7 @@ fn check_package_whose_sources_a_gitignore_excludes_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -326,7 +326,7 @@ fn check_package_whose_sources_the_configuration_excludes_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -352,7 +352,7 @@ fn check_package_whose_sources_the_global_gitignore_excludes_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -373,7 +373,7 @@ fn check_package_with_an_unparsable_ignore_file_and_keep_going_reports_it_and_fa
         .args(["check", "--keep-going"])
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "error: failed to read an ignore file",
         ))
@@ -398,7 +398,7 @@ fn check_package_with_an_unparsable_ignore_file_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("failed to discover source files"))
         .stderr(predicate::str::contains("failed to read an ignore file"))
         .stderr(predicate::str::contains("error parsing glob '{a,b'"));
@@ -417,7 +417,7 @@ fn check_package_with_an_unreadable_directory_and_keep_going_reports_it_and_fail
         .args(["check", "--keep-going"])
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "error: failed to read a directory entry",
         ))
@@ -437,7 +437,7 @@ fn check_package_with_an_unreadable_directory_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("failed to discover source files"))
         .stderr(predicate::str::contains("failed to read a directory entry"));
 }
@@ -519,7 +519,7 @@ fn check_with_keep_going_reports_every_orphan_file() {
         .args(["check", "--keep-going"])
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("first_stray.rs"))
         .stderr(predicate::str::contains("second_stray.rs"))
         .stderr(predicate::function(|stderr: &str| error_count(stderr) == 2))
@@ -585,7 +585,7 @@ fn check_without_keep_going_keeps_diagnostics_from_earlier_files() {
         .current_dir(&root)
         .args(["check", "src"])
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("error: src/not_utf8.rs"))
         .stderr(predicate::str::contains(
             "warning[fixture.wildcard-match-arm]",

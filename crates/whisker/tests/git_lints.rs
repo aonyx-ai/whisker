@@ -242,7 +242,7 @@ fn check_with_git_lint_source_at_an_unknown_rev_fails() {
         .arg("check")
         .arg(target.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(ABSENT_REV))
         .stderr(predicate::str::contains(rules.url()));
 }
