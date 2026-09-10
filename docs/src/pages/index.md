@@ -1,17 +1,21 @@
 # Whisker
 
-Whisker is a linting platform built on [tree-sitter][ts]. It lints Rust today.
+Whisker is a language-agnostic linting platform that lets you build
+hyper-specific lints.
 
-Whisker ships no rules of its own. A project configures the ones it wants, and
-those are exactly the ones it runs. Aonyx's own live in
-[whisker-aonyx-rules][rules] and cover what Clippy does not, like derive
-ordering, wildcard match arms, `matches!` macro usage, and the other style
-rules defined in our `CLAUDE.md` files.
+With the dawn of agentic coding, the software development world has (finally)
+become interested in stricter guardrails. Language-specific linting tools are
+limited to community-wide best practice rules, but there are probably more
+specific rules in your projects or organization. Whisker aims to let you build
+lints against those rules, however weird they may be.
 
-A rule implements the `RustLintPass` trait, which whisker generates from
-tree-sitter's Rust grammar. A rule that needs type information reads
-decorations that whisker computes with [rust-analyzer][ra] before any rule
-runs.
+Installing Whisker by itself isn't very valuable, as it _does not_ ship any
+lints. Follow the [quick start][quick-start] to set up the tooling and build
+your first lint.
+
+Whisker does not currently attempt to promise any kind of linting performance.
+We may optimize Whisker later, but for now we're focused on covering all lints
+you may want to build.
 
 ## Install
 
@@ -22,19 +26,9 @@ curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 [Installation](/docs/installation) covers Linux, macOS, GitHub Actions, and a
 build from source.
 
-## Status
-
-Whisker is in early development. Check back soon.
-
 ## Where to start
 
-- **[Quick start](/docs/quick-start)** — install whisker, point it at a set of
-  rules, and check a project.
-- **[Configuration](/docs/configuration)** — what `.config/whisker.toml` holds
-  and where whisker looks for it.
-- **[Custom lints](/docs/custom-lints)** — write your own rules, or run someone
-  else's.
+- **[Quick start][quick-start]**  
+  Install Whisker, point it at a set of rules, and check a project.
 
-[ra]: https://rust-analyzer.github.io/
-[rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
-[ts]: https://tree-sitter.github.io/tree-sitter/
+[quick-start]: /docs/quick-start

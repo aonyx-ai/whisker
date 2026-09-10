@@ -1,0 +1,14 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "linkedProjects": [
+          "Cargo.toml",
+          "examples/custom_lint/Cargo.toml",
+          "examples/doc_summary_break/Cargo.toml",
+          "crates/whisker-rust/tests/fixtures/lints/decoration_probes/Cargo.toml"
+        ]
+      }
+    }
+  }
+}

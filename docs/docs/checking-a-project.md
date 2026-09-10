@@ -8,7 +8,7 @@ sidebar_position: 2
 whisker check .
 ```
 
-## Which files whisker inspects
+## Which files Whisker inspects
 
 Whisker walks the target directory the way `git` and `ripgrep` do. It skips
 hidden files and directories, and it skips anything that `.gitignore`,
@@ -28,9 +28,9 @@ it. The same happens to a file that rust-analyzer excludes from the workspace.
 
 ## What makes a run fail
 
-A directory that whisker cannot read, or an ignore file that it cannot parse,
-ends the run: each one changes which files whisker inspects. A file that
-whisker cannot read or analyze ends the run too. Pass `--keep-going` to report
+A directory that Whisker cannot read, or an ignore file that it cannot parse,
+ends the run: each one changes which files Whisker inspects. A file that
+Whisker cannot read or analyze ends the run too. Pass `--keep-going` to report
 each failure, continue, and still exit non-zero. A diagnostic at the error
 severity also fails the run. Pass `--deny-warnings` to fail on a warning too.
 
