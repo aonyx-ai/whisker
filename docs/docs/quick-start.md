@@ -9,15 +9,12 @@ Cargo workspace to point whisker at.
 
 ## Install whisker
 
-The install script picks the archive for your platform, checks it against the
-digest published beside it, and puts the binary in `~/.local/bin`:
-
 ```bash
 curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 ```
 
-Put `~/.local/bin` on your `PATH` if it is not there already. The rest of this
-page calls `whisker` by name.
+The script installs to `~/.local/bin`. Put that on your `PATH` if it is not
+there already.
 
 [Installation](/docs/installation) covers the other ways to install whisker,
 and which one to choose.
