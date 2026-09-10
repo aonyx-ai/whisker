@@ -18,9 +18,11 @@ const TARGET: &str = env!("WHISKER_TARGET");
 /// of each archive. Whisker can therefore ask for a library that fits
 /// before it downloads one.
 ///
-/// The tag covers what the handshake covers. An archive under this
-/// whisker's tag passes the handshake, and a whisker that no publisher
-/// built for finds no file at all.
+/// An archive under this whisker's tag passes the handshake, and a
+/// whisker that no publisher built for finds no file. The compiler is not
+/// among the inputs:
+/// a library built by any rustc fits, so one archive serves every whisker
+/// built from the same boundary.
 ///
 /// A small digest suffices here. The handshake still decides whether a
 /// library loads, so a collision costs one wasted download.
@@ -50,7 +52,6 @@ impl AbiTag {
     pub(super) fn new(identity: &AbiIdentity, target: &str) -> Self {
         let AbiIdentity {
             abi_version: _,
-            rustc_version,
             types_fingerprint,
             language_fingerprint,
         } = identity;
@@ -64,7 +65,7 @@ impl AbiTag {
         let floor = plugin::MIN_ABI_VERSION;
 
         let key = digest(&format!(
-            "{floor}\n{rustc_version}\n{types_fingerprint:016x}\n{language_fingerprint:016x}"
+            "{floor}\n{types_fingerprint:016x}\n{language_fingerprint:016x}"
         ));
 
         Self(format!("{key}-{target}"))
@@ -84,7 +85,6 @@ mod tests {
     fn identity() -> AbiIdentity {
         AbiIdentity {
             abi_version: 2,
-            rustc_version: "rustc 1.92.0-nightly (0123456 2026-08-11)".to_owned(),
             types_fingerprint: 0x0123_4567_89ab_cdef,
             language_fingerprint: 0xfedc_ba98_7654_3210,
         }
@@ -103,7 +103,7 @@ mod tests {
     fn new_is_stable_across_releases() {
         let tag = AbiTag::new(&identity(), "aarch64-apple-darwin");
 
-        assert_eq!(tag.to_string(), "370a40f203dc510c-aarch64-apple-darwin");
+        assert_eq!(tag.to_string(), "d453b1591b6df506-aarch64-apple-darwin");
     }
 
     /// A protocol version is not part of the tag
@@ -130,19 +130,6 @@ mod tests {
     fn new_separates_identities_that_differ_in_the_language_fingerprint() {
         let other = AbiIdentity {
             language_fingerprint: 1,
-            ..identity()
-        };
-
-        assert_ne!(
-            AbiTag::new(&identity(), "x86_64-unknown-linux-gnu"),
-            AbiTag::new(&other, "x86_64-unknown-linux-gnu")
-        );
-    }
-
-    #[test]
-    fn new_separates_identities_that_differ_in_the_rustc_version() {
-        let other = AbiIdentity {
-            rustc_version: "rustc 1.92.0-nightly (0123456 2026-08-12)".to_owned(),
             ..identity()
         };
 

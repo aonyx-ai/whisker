@@ -169,15 +169,29 @@ test-fixture-lint:
 check-self:
     #!/usr/bin/env -S bash -euo pipefail
     cargo build --release -p whisker
+    ./target/release/whisker check .
 
-    # The rules repository pins a toolchain of its own, and whisker's may
-    # move ahead of it. Rustup would then build those rules with their
-    # toolchain, and the handshake would refuse plugins that whisker had
-    # just built. Whisker passes its environment to the cargo it runs, so
-    # naming the toolchain here builds them with this repository's.
-    #
-    # This belongs to the recipe and not to whisker. Whisker has no business
-    # overriding the toolchain a plugin author chose; the two pins are
-    # coupled only because both repositories are ours.
-    RUSTUP_TOOLCHAIN="$(rustup show active-toolchain | cut -d" " -f1)" \
-        ./target/release/whisker check .
+# Build the example plugin with stable and load it into the nightly-built whisker
+test-plugin-toolchain:
+    #!/usr/bin/env -S bash -euo pipefail
+    # This is the proof behind the plugin boundary: every type that crosses
+    # it is laid out by stabby, so the compiler that built a plugin does not
+    # matter. Whisker passes its environment to the cargo it runs, so naming
+    # stable here builds the example plugin with it, while whisker itself
+    # was built by the nightly `rust-toolchain.toml` names. The handshake
+    # either loads the library or ends the run, and the diagnostic the
+    # example's rule reports on the scratch project proves that the
+    # library ran.
+    cargo build -p whisker
+    rustup toolchain install stable --profile minimal --no-self-update
+    project="$(mktemp -d)"
+    trap 'rm -rf "${project}"' EXIT
+    mkdir -p "${project}/.config" "${project}/src"
+    printf '[package]\nname = "toolchain_probe"\nversion = "0.1.0"\nedition = "2024"\n' > "${project}/Cargo.toml"
+    printf 'pub fn pending() {\n    todo!()\n}\n' > "${project}/src/lib.rs"
+    printf '[[lints]]\npath = "%s/examples/custom_lint"\n' "${PWD}" > "${project}/.config/whisker.toml"
+    output="$(RUSTUP_TOOLCHAIN=stable ./target/debug/whisker check "${project}" 2>&1)" || {
+        echo "${output}"
+        exit 1
+    }
+    grep -q 'custom.no-todo' <<< "${output}"

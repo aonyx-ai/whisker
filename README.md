@@ -59,7 +59,7 @@ The [documentation][docs] covers the rest:
 - [Configuration][configuration] — where whisker looks for
   `.config/whisker.toml`, and how to ignore paths.
 - [Custom lints][custom-lints] — run a rule at a time, write your own rules,
-  and the toolchain the plugin boundary demands.
+  and what the plugin boundary demands.
 - [Prebuilt lints][prebuilt-lints] — publish compiled rules so a project
   skips the build.
 

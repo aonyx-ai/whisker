@@ -15,7 +15,7 @@ pub use whisker_types::Panic;
 use whisker_types::plugin::stable_fingerprint;
 pub use whisker_types::plugin::{
     ABI_VERSION, Constructed, Factories, LintPassFactory, Loaded, MIN_ABI_VERSION, Plugin,
-    PluginDeclaration, RUSTC_VERSION, TYPES_FINGERPRINT, c_str, factory,
+    PluginDeclaration, TYPES_FINGERPRINT, factory,
 };
 
 use crate::decorations::{AdtFlags, FnSignature, ImportSource, ResolvedType};

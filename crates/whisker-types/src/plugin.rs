@@ -1,19 +1,21 @@
 //! Vocabulary for custom lint plugins
 //!
 //! A custom lint plugin is a dynamic library that whisker compiles and
-//! loads at check time, given only a path. Rust has no stable ABI, so a
-//! loaded library is only coherent with the whisker binary when both were
-//! compiled by the same rustc from the same source for every type that
-//! crosses the boundary. This module defines the declaration a plugin
-//! exports and the constants whisker compares to establish exactly that
-//! before it trusts anything else in the library.
+//! loads at check time, given only a path. Rust has no stable ABI of its
+//! own, so stabby lays out every type that crosses the boundary. Those
+//! layouts hold under any compiler. A loaded library is coherent with the
+//! whisker binary when both lay those types out the same way. That is a
+//! property of the source each was built from, not of the rustc that
+//! built it. This module defines the declaration a plugin exports and the
+//! constants whisker compares to establish exactly that before it trusts
+//! anything else in the library.
 //!
 //! The handshake proceeds in order of decreasing layout stability:
 //!
 //! 1. [`PluginDeclaration::abi_version`] sits first in a `#[repr(C)]`
 //!    struct, so it reads correctly whatever else changed.
-//! 2. The rustc version is a C string and the two fingerprints are plain
-//!    integers, all readable across any pair of rustc versions.
+//! 2. The two fingerprints are plain integers, readable under any pair
+//!    of compilers.
 //! 3. Only when every one of them matches the host's own constants may
 //!    [`PluginDeclaration::load`] be called, because what it hands back
 //!    is only meaningful once the two images are known to lay it out the
@@ -26,19 +28,16 @@
 //! `#[global_allocator]`.
 //!
 //! The handshake reaches how both sides lay out the boundary, not the
-//! source they compiled and not the dependency graph each side resolved.
-//! Layout is what unsoundness turns on, and it is far narrower than source
-//! text: a doc comment or a private helper moves nothing, so a plugin
-//! stays loadable across most of whisker's own churn. A plugin's lockfile
-//! picks its own
-//! `tree-sitter`, whose `Node` is a `#[repr(transparent)]` wrapper around
-//! a `#[repr(C)]` struct of the C library, so a patch-level difference
-//! moves no field. It does give each image its own copy of that C
-//! library, and a plugin reads a tree the host parsed through its copy.
-//! Whisker accepts that residual risk rather than pinning every resolved
-//! version a plugin may build against.
-
-use std::ffi::CStr;
+//! source they compiled, not the compiler, and not the dependency graph
+//! each side resolved. Layout is what unsoundness turns on, and it is far
+//! narrower than source text. A doc comment or a private helper moves
+//! nothing, so a plugin stays loadable across most of whisker's own churn.
+//! A plugin's lockfile picks its own `tree-sitter`. Its `Node` is a
+//! `#[repr(transparent)]` wrapper around a `#[repr(C)]` struct of the C
+//! library, so a patch-level difference moves no field. It does give each
+//! image its own copy of that C library, and a plugin reads a tree the
+//! host parsed through its copy. Whisker accepts that residual risk rather
+//! than pinning every resolved version a plugin may build against.
 
 use stabby::IStable;
 
@@ -59,9 +58,8 @@ pub use fingerprint::stable_fingerprint;
 ///
 /// This guards the shape of [`PluginDeclaration`] and the meaning of its
 /// fields, and the signatures of [`LintPass`]'s methods, which no
-/// fingerprint can read back. The rustc version and the two fingerprints
-/// guard everything else. Bump it whenever the declaration struct or
-/// [`LintPass`] changes.
+/// fingerprint can read back. The two fingerprints guard everything else.
+/// Bump it whenever the declaration struct or [`LintPass`] changes.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
@@ -70,9 +68,9 @@ pub use fingerprint::stable_fingerprint;
 /// ```
 /// use whisker_types::plugin::ABI_VERSION;
 ///
-/// assert_eq!(ABI_VERSION, 6);
+/// assert_eq!(ABI_VERSION, 7);
 /// ```
-pub const ABI_VERSION: u32 = 6;
+pub const ABI_VERSION: u32 = 7;
 
 /// The oldest protocol whisker still loads
 ///
@@ -84,9 +82,9 @@ pub const ABI_VERSION: u32 = 6;
 /// This range covers the declaration alone. A change to the method list
 /// of [`LintPass`] reorders a vtable, which no version can make readable,
 /// so such a change raises this floor to meet [`ABI_VERSION`] and refuses
-/// everything older. Protocol 6 hands everything a plugin exports over
-/// through one `load` function, which no earlier protocol supplies. 6 is
-/// therefore the only protocol whisker loads until the declaration next
+/// everything older. Protocol 7 carries no compiler identity in its
+/// declaration, so every field sits where no earlier protocol puts it. 7
+/// is therefore the only protocol whisker loads until the declaration next
 /// gains a field.
 ///
 /// [`LintPass`]: crate::LintPass
@@ -98,24 +96,7 @@ pub const ABI_VERSION: u32 = 6;
 ///
 /// assert!(MIN_ABI_VERSION <= ABI_VERSION);
 /// ```
-pub const MIN_ABI_VERSION: u32 = 6;
-
-/// The full identity of the rustc that compiled this crate
-///
-/// The plugin loader compares the plugin's copy against the host's. The
-/// string carries the commit hash and date, so two nightlies of the same
-/// semantic version do not pass for one another.
-///
-/// # Examples
-///
-/// ```
-/// use whisker_types::plugin::RUSTC_VERSION;
-///
-/// let version = RUSTC_VERSION.to_str().expect("should be UTF-8");
-///
-/// assert!(version.starts_with("rustc"));
-/// ```
-pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\0"));
+pub const MIN_ABI_VERSION: u32 = 7;
 
 /// A fingerprint of how this crate lays out the plugin boundary
 ///
@@ -182,43 +163,9 @@ pub const TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
     <Severity as IStable>::ID,
 ]);
 
-/// Converts a NUL-terminated string literal into a [`&CStr`] at compile time
-///
-/// Language crates use this for their own handshake constants, the way
-/// [`LANGUAGE_FINGERPRINT`] in whisker-rust does.
-///
-/// # Panics
-///
-/// Panics at compile time if `text` contains an interior NUL byte or does
-/// not end with one.
-///
-/// # Examples
-///
-/// ```
-/// use whisker_types::plugin::c_str;
-///
-/// const GREETING: &std::ffi::CStr = c_str("hello\0");
-/// ```
-///
-/// [`&CStr`]: std::ffi::CStr
-/// [`LANGUAGE_FINGERPRINT`]: PluginDeclaration::language_fingerprint
-pub const fn c_str(text: &'static str) -> &'static CStr {
-    match CStr::from_bytes_with_nul(text.as_bytes()) {
-        Ok(text) => text,
-        Err(_) => panic!("the string must end with exactly one NUL byte"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn rustc_version_names_the_compiler() {
-        let version = RUSTC_VERSION.to_str().expect("should be UTF-8");
-
-        assert!(version.starts_with("rustc"), "unexpected: {version}");
-    }
 
     /// Returns each method signature a trait declares, in declaration order
     ///

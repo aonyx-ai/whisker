@@ -71,7 +71,7 @@ fn register() {{}}
 #[allow(non_upper_case_globals)]
 pub static whisker_plugin_declaration: DeclarationV2 = DeclarationV2 {{
     abi_version: 2,
-    rustc_version: whisker_types::plugin::RUSTC_VERSION.as_ptr(),
+    rustc_version: c"rustc 1.0.0 (0000000 2000-01-01)".as_ptr(),
     types_fingerprint: whisker_types::plugin::TYPES_FINGERPRINT,
     language_fingerprint: whisker_rust::plugin::LANGUAGE_FINGERPRINT,
     register,

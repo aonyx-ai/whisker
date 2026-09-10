@@ -72,6 +72,12 @@ and this project adheres to
   protocol is 6.
 - `TYPES_FINGERPRINT` is built from stabby's identities alone. The hash of
   sizes, alignments, and field offsets that preceded it is gone.
+- Whisker loads a plugin regardless of which rustc built it. The handshake no
+  longer compares compiler versions: every type that crosses the boundary is
+  laid out by stabby, so the two fingerprints are the whole handshake.
+  Building a plugin against the whisker revision that loads it is the sure
+  way to match them. The protocol is 7, and the tag that names a prebuilt
+  archive no longer carries a compiler.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against.
 

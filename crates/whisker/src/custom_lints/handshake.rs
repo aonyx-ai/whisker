@@ -4,14 +4,15 @@ use whisker_rust::plugin;
 
 /// The ABI-relevant identity of one side of the plugin boundary
 ///
-/// Rust has no stable ABI, so a plugin and the whisker binary only agree on
-/// the layout of the types that cross between them when the same rustc
-/// compiled both from the same whisker source. This type captures exactly
-/// those facts for one side. [`validate`] compares the two sides.
+/// Rust has no stable ABI of its own, so stabby lays out every type that
+/// crosses the plugin boundary. A plugin and the whisker binary agree on
+/// those layouts when the whisker source each was built from lays them
+/// out the same way. Which rustc built each side does not enter into it.
+/// This type holds those facts for one side, and [`validate`] compares
+/// the two sides.
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct AbiIdentity {
     pub abi_version: u32,
-    pub rustc_version: String,
     pub types_fingerprint: u64,
     pub language_fingerprint: u64,
 }
@@ -21,7 +22,6 @@ impl AbiIdentity {
     pub fn host() -> Self {
         Self {
             abi_version: plugin::ABI_VERSION,
-            rustc_version: plugin::RUSTC_VERSION.to_string_lossy().into_owned(),
             types_fingerprint: plugin::TYPES_FINGERPRINT,
             language_fingerprint: plugin::LANGUAGE_FINGERPRINT,
         }
@@ -54,13 +54,6 @@ pub fn validate(host: &AbiIdentity, plugin: &AbiIdentity) -> Result<(), Handshak
         });
     }
 
-    if host.rustc_version != plugin.rustc_version {
-        return Err(HandshakeMismatch::RustcVersion {
-            host: host.rustc_version.clone(),
-            plugin: plugin.rustc_version.clone(),
-        });
-    }
-
     if host.types_fingerprint != plugin.types_fingerprint {
         return Err(HandshakeMismatch::TypesFingerprint);
     }
@@ -74,22 +67,17 @@ pub fn validate(host: &AbiIdentity, plugin: &AbiIdentity) -> Result<(), Handshak
 
 /// A difference between the plugin's ABI identity and the host's
 ///
-/// Every variant is a refusal to load, because each one means the two
-/// images cannot be assumed to agree on type layout, and a wrong
-/// assumption is undefined behavior rather than a wrong answer. The
+/// Every variant is a refusal to load: the two images may lay a type out
+/// differently, and acting on that difference is undefined behavior. The
 /// fingerprint variants carry no values: the hashes mean nothing to a
-/// reader, while the version strings in the other variants tell the user
-/// what to install.
+/// reader, while the versions in the other variant tell the user which
+/// side to rebuild.
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub enum HandshakeMismatch {
     AbiVersion {
         plugin: u32,
         oldest: u32,
         newest: u32,
-    },
-    RustcVersion {
-        host: String,
-        plugin: String,
     },
     TypesFingerprint,
     LanguageFingerprint,
@@ -113,10 +101,6 @@ impl fmt::Display for HandshakeMismatch {
                     "plugin (ABI {plugin}) incompatible with whisker (ABI {host})"
                 )
             }
-            HandshakeMismatch::RustcVersion { host, plugin } => write!(
-                f,
-                "plugin built by `{plugin}`, whisker by `{host}`; use one toolchain"
-            ),
             HandshakeMismatch::TypesFingerprint => write!(
                 f,
                 "plugin built against another whisker-types; match its whisker pin"
@@ -138,7 +122,6 @@ mod tests {
     fn identity() -> AbiIdentity {
         AbiIdentity {
             abi_version: plugin::ABI_VERSION,
-            rustc_version: "rustc 1.92.0-nightly (0000000 2026-08-11)".into(),
             types_fingerprint: 0xaa,
             language_fingerprint: 0xbb,
         }
@@ -149,7 +132,8 @@ mod tests {
         let host = AbiIdentity::host();
 
         assert_eq!(host.abi_version, plugin::ABI_VERSION);
-        assert!(host.rustc_version.starts_with("rustc"));
+        assert_eq!(host.types_fingerprint, plugin::TYPES_FINGERPRINT);
+        assert_eq!(host.language_fingerprint, plugin::LANGUAGE_FINGERPRINT);
     }
 
     #[test]
@@ -185,7 +169,7 @@ mod tests {
     fn validate_reports_an_unsupported_abi_version_first() {
         let mut plugin = identity();
         plugin.abi_version = plugin::ABI_VERSION + 1;
-        plugin.rustc_version = "rustc 2.0.0".into();
+        plugin.types_fingerprint = 0xcc;
 
         let error = validate(&identity(), &plugin).expect_err("should mismatch");
 
@@ -258,19 +242,6 @@ mod tests {
 
         assert_eq!(error, HandshakeMismatch::LanguageFingerprint);
         assert!(error.to_string().contains("whisker-rust"));
-    }
-
-    #[test]
-    fn validate_reports_a_differing_rustc_version() {
-        let mut plugin = identity();
-        plugin.rustc_version = "rustc 1.93.0-nightly (1111111 2026-09-01)".into();
-
-        let error = validate(&identity(), &plugin).expect_err("should mismatch");
-
-        let message = error.to_string();
-        assert!(message.contains("1.92.0"), "should name both: {message}");
-        assert!(message.contains("1.93.0"), "should name both: {message}");
-        assert!(message.contains("one toolchain"), "unexpected: {message}");
     }
 
     #[test]

@@ -215,9 +215,8 @@ archives. Someone moves the pin or clears the cache to pick them up.
 
 A compile costs a toolchain and several minutes, on every machine and
 every build agent that pins the same commit. A released whisker binary
-also cannot compile lints on most machines. The handshake accepts a
-library only from the rustc that built whisker, and whoever downloaded the
-binary does not have that rustc.
+also lands on machines that have no toolchain at all, and a library built
+elsewhere loads there just the same.
 
 Whisker asks the remote's releases for an archive named
 `<rev>-<tag>.tar.gz`, where the tag is the one `whisker abi` prints. The
@@ -244,7 +243,7 @@ A missing archive never fails the lookup. Whisker says nothing when the
 remote is not on GitHub, when the API answers 404, and when no release
 names an archive for this whisker. That is the ordinary case for a project
 whose rules nobody publishes prebuilt. Whisker then compiles the source,
-and on a machine without the matching toolchain that build fails. Every
+and on a machine without a Rust toolchain that build fails. Every
 other failure prints one line on stderr before the source build:
 
 - an API whisker cannot reach, or one that answers with an error
@@ -263,20 +262,22 @@ every body whisker reads has a size limit.
 
 ## The plugin boundary
 
-Rust has no stable ABI. A loaded library is coherent with the whisker
-binary only when the same rustc compiled both and both lay the boundary
-out the same way. The loader establishes that before it calls anything the
-plugin defines. A `dlopen` runs the library's initializers, so the
-handshake is a compatibility gate, and trust comes from the configuration
-as the previous section says.
+Rust has no stable ABI of its own, so every type that crosses between
+whisker and a plugin is laid out by stabby, whose layouts hold under any
+compiler. A loaded library is coherent with the whisker binary when both
+lay the boundary out the same way, which is a property of the whisker
+source each was built from and not of the rustc that built it. The loader
+establishes that before it calls anything the plugin defines. A `dlopen`
+runs the library's initializers, so the handshake is a compatibility
+gate, and trust comes from the configuration as the previous section
+says.
 
 The plugin exports a declaration. The loader reads its leading protocol
 version through a raw pointer, and only a matching version licenses a
-reference to the whole struct. It then compares, in order, the rustc
-version string and two fingerprints: one for whisker-types and one for
-whisker-rust. The first mismatch refuses the library with an error that
-says what to rebuild. Only then does the loader call the plugin's
-registration function.
+reference to the whole struct. It then compares two fingerprints: one for
+whisker-types and one for whisker-rust. The first mismatch refuses the
+library with an error that says what to rebuild. Only then does the
+loader ask the plugin for its factories and its rules.
 
 The handshake guards against silence. A plugin built against drifted
 source would mostly work, and rules fail open, so a wrong answer would
