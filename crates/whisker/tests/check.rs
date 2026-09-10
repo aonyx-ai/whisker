@@ -218,8 +218,53 @@ fn check_directory_without_sources_fails() {
         .arg("check")
         .arg(directory.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
+}
+
+/// Pins that a run started inside the project reads the ignore patterns
+/// from the project root
+///
+/// The configuration unit tests pin that the search climbs to the project
+/// root. This pins that the CLI gets the benefit, which is what a person
+/// relies on when they check the directory they happen to be standing in.
+///
+/// The pattern names the only file in the package, so the two outcomes
+/// cannot be confused. A run that reads the configuration excludes the
+/// file and reports that it analyzed nothing. A run that misses the
+/// configuration analyzes the file and succeeds.
+#[test]
+fn check_from_a_subdirectory_applies_the_project_ignore_patterns() {
+    let package = package(CLEAN_SOURCE);
+    write_config(package.path(), "ignore = [\"src/lib.rs\"]\n");
+
+    whisker()
+        .args(["check", "."])
+        .current_dir(package.path().join("src"))
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("analyzed no files"));
+}
+
+/// Pins that a run started inside the project loads the lints the project
+/// root configures
+///
+/// A lint that silently stops running is worse than one that fails, since
+/// the check still passes. The source trips `custom.no-todo`, so a run
+/// that misses the configuration loads no lints, reports nothing, and
+/// succeeds.
+#[test]
+fn check_from_a_subdirectory_applies_the_project_lints() {
+    let package = with_no_todo(package(WARNING_SOURCE));
+
+    whisker()
+        .args(["check", "."])
+        .current_dir(package.path().join("src"))
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("warning[custom.no-todo]"));
 }
 
 /// Pins that whisker refuses a file it has no grammar for
@@ -237,7 +282,7 @@ fn check_non_rust_file_fails() {
         .args(["check", "Cargo.toml"])
         .current_dir(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("no grammar for `.toml` files"));
 }
 
@@ -246,7 +291,8 @@ fn check_nonexistent_path_fails() {
     whisker()
         .args(["check", "does/not/exist"])
         .assert()
-        .failure()
+        .code(1)
+        .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("does not exist"));
 }
 
@@ -263,7 +309,8 @@ fn check_orphan_directory_reports_no_coverage() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
+        .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(
             "no decoration provider covers this file",
         ))
@@ -282,7 +329,7 @@ fn check_orphan_file_reports_no_coverage() {
         .args(["check", "src/stray.rs"])
         .current_dir(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "no decoration provider covers this file",
         ))
@@ -300,6 +347,7 @@ fn check_package_directory_succeeds() {
         .arg(package.path())
         .assert()
         .success()
+        .stdout(predicate::str::is_empty())
         .stderr(predicate::str::is_empty());
 }
 
@@ -313,7 +361,7 @@ fn check_package_whose_sources_a_gitignore_excludes_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -326,7 +374,7 @@ fn check_package_whose_sources_the_configuration_excludes_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -352,7 +400,7 @@ fn check_package_whose_sources_the_global_gitignore_excludes_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("analyzed no files"));
 }
 
@@ -373,7 +421,7 @@ fn check_package_with_an_unparsable_ignore_file_and_keep_going_reports_it_and_fa
         .args(["check", "--keep-going"])
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "error: failed to read an ignore file",
         ))
@@ -398,7 +446,7 @@ fn check_package_with_an_unparsable_ignore_file_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("failed to discover source files"))
         .stderr(predicate::str::contains("failed to read an ignore file"))
         .stderr(predicate::str::contains("error parsing glob '{a,b'"));
@@ -417,7 +465,7 @@ fn check_package_with_an_unreadable_directory_and_keep_going_reports_it_and_fail
         .args(["check", "--keep-going"])
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains(
             "error: failed to read a directory entry",
         ))
@@ -437,7 +485,7 @@ fn check_package_with_an_unreadable_directory_fails() {
         .arg("check")
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("failed to discover source files"))
         .stderr(predicate::str::contains("failed to read a directory entry"));
 }
@@ -472,6 +520,104 @@ fn check_single_file_succeeds() {
         .stderr(predicate::str::is_empty());
 }
 
+/// Pins that a key whisker does not recognize ends the run and names itself
+///
+/// The configuration rejects an unknown key rather than dropping it,
+/// because a dropped key looks exactly like one that works. The error has
+/// to name the key, or the author of a typo has nothing to correct.
+#[test]
+fn check_with_a_configuration_naming_an_unknown_key_fails() {
+    let package = package(CLEAN_SOURCE);
+    write_config(package.path(), "nonsense = true\n");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "failed to load the whisker configuration",
+        ))
+        .stderr(predicate::str::contains("nonsense"));
+}
+
+/// Pins that an entry describing no source ends the run and names its
+/// position
+///
+/// The configuration unit tests pin the message. This pins that the
+/// message survives the trip to the user, along with the entry number that
+/// tells them which of several entries to fix.
+#[test]
+fn check_with_a_lint_entry_that_defines_no_source_fails() {
+    let package = package(CLEAN_SOURCE);
+    write_config(package.path(), "[[lints]]\n");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "failed to load the whisker configuration",
+        ))
+        .stderr(predicate::str::contains("failed to read [[lints]] entry 1"))
+        .stderr(predicate::str::contains(
+            "must define either path, or git and rev",
+        ));
+}
+
+/// Pins that a branch name where a revision belongs ends the run before
+/// whisker reaches the network
+///
+/// A branch moves, so a lint pinned to one does not describe a
+/// reproducible check. Whisker refuses it while reading the file, which is
+/// why this test names an unreachable host and still finishes.
+#[test]
+fn check_with_a_lint_entry_whose_rev_is_a_branch_fails() {
+    let package = package(CLEAN_SOURCE);
+    write_config(
+        package.path(),
+        "[[lints]]\ngit = \"https://example.invalid/rules.git\"\nrev = \"main\"\n",
+    );
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "failed to load the whisker configuration",
+        ))
+        .stderr(predicate::str::contains(
+            "git revision \"main\" does not have 40 characters",
+        ));
+}
+
+/// Pins that a configuration file whisker cannot parse ends the run and
+/// points at the line
+///
+/// The error carries the parse position from the TOML reader, so a person
+/// with a large configuration file learns where to look.
+#[test]
+fn check_with_an_unparsable_configuration_fails() {
+    let package = package(CLEAN_SOURCE);
+    write_config(package.path(), "ignore = [\n");
+
+    whisker()
+        .arg("check")
+        .arg(package.path())
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "failed to load the whisker configuration",
+        ))
+        .stderr(predicate::str::contains("TOML parse error at line 1"));
+}
+
 #[test]
 fn check_with_deny_warnings_fails_on_warnings() {
     let package = with_no_todo(package(WARNING_SOURCE));
@@ -481,7 +627,33 @@ fn check_with_deny_warnings_fails_on_warnings() {
         .arg(package.path())
         .assert()
         .code(1)
+        .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("error[custom.no-todo]"));
+}
+
+/// Pins that whisker writes its whole report to stderr and leaves stdout
+/// empty
+///
+/// A caller that pipes whisker into another program reads stdout, so a
+/// report that landed there would corrupt the pipe. This run trips both
+/// writers at once: the renderer prints a diagnostic for `src/lib.rs`, and
+/// the walk prints an error for the file it cannot read. The other
+/// assertions in this file cover one writer each, and this one covers the
+/// pair that a single run prints together.
+#[test]
+fn check_with_diagnostics_and_errors_writes_nothing_to_stdout() {
+    let root = mixed_project("check_writes_nothing_to_stdout");
+
+    whisker()
+        .current_dir(&root)
+        .args(["check", "--keep-going", "src"])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "warning[fixture.wildcard-match-arm]",
+        ))
+        .stderr(predicate::str::contains("error: src/not_utf8.rs"));
 }
 
 /// Pins the exit code to the failure recorded while walking the files, not
@@ -499,6 +671,7 @@ fn check_with_keep_going_and_unreadable_file_fails() {
         .arg(package.path())
         .assert()
         .code(1)
+        .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(
             "stream did not contain valid UTF-8",
         ))
@@ -519,7 +692,7 @@ fn check_with_keep_going_reports_every_orphan_file() {
         .args(["check", "--keep-going"])
         .arg(package.path())
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("first_stray.rs"))
         .stderr(predicate::str::contains("second_stray.rs"))
         .stderr(predicate::function(|stderr: &str| error_count(stderr) == 2))
@@ -570,6 +743,7 @@ fn check_without_deny_warnings_reports_warnings_and_succeeds() {
         .arg(package.path())
         .assert()
         .success()
+        .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains("warning[custom.no-todo]"));
 }
 
@@ -585,7 +759,7 @@ fn check_without_keep_going_keeps_diagnostics_from_earlier_files() {
         .current_dir(&root)
         .args(["check", "src"])
         .assert()
-        .failure()
+        .code(1)
         .stderr(predicate::str::contains("error: src/not_utf8.rs"))
         .stderr(predicate::str::contains(
             "warning[fixture.wildcard-match-arm]",
