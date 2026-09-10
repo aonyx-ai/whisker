@@ -72,7 +72,8 @@ the walk continues past the file and still exits non-zero.
 
 Discovery decides which files reach the pipeline. It walks the target the
 way git and ripgrep do, honors every ignore file, and applies the `ignore`
-patterns from the configuration. The README describes those rules.
+patterns from the configuration. The [file discovery][discovery]
+documentation describes those rules.
 
 ## Language support
 
@@ -141,8 +142,8 @@ A rule implements the generated trait and emits diagnostics with a stable
 rule ID and a severity. Rules ship in lint crates. `export_lints!` takes a
 list, so one crate can carry several rules, and Aonyx keeps one rule per
 crate. Whisker links no rules itself. A check runs exactly the rules its
-configured sources export, and the configuration has no switch for one
-rule inside a source.
+configured sources export, and the `rules` table decides which of those
+reach the report.
 
 Rules that depend on decorations **fail open**. A decoration is only ever
 evidence. Where a decoration is the reason to report, a missing one keeps
@@ -357,6 +358,7 @@ Dependencies flow one way. `whisker-types`, `whisker-codegen`, and
 time. `whisker-testing` rests on `whisker-core`. The CLI ties the platform,
 the language, and the loaded lints together.
 
+[discovery]: https://aonyx-ai.github.io/whisker/docs/reference/file-discovery
 [ra]: https://rust-analyzer.github.io/
 [rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
 [ts]: https://tree-sitter.github.io/tree-sitter/
