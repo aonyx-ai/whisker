@@ -12,6 +12,10 @@ and this project adheres to
 
 ### Added
 
+- `DecoratedNode` is `Copy`. A rule reading a node out of the vector that
+  `named_children` returns no longer clones borrowed data. The
+  plugin ABI tag does not move, so every published archive still loads.
+
 - Whisker says when a git source publishes no prebuilt lints it can load, and
   names the archive it looked for. The compile that follows costs minutes on
   every machine, and silence read exactly like a warm cache. A repository
