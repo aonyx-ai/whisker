@@ -43,7 +43,11 @@ whisker_rust::export_lints![DocSummaryBreak];
 
 // ... and some helper functions for the lint
 
-/// Get the next line as a node, if it's also a docstring.
+/// Returns the line after this one, when this one opens a doc comment
+///
+/// Answers [`None`] for a line that follows another doc line, because only
+/// the first line of a block is a summary. The caller decides whether what
+/// comes back is a doc line at all.
 fn get_next_doc_line<'a>(node: &DecoratedNode<'a>) -> Option<DecoratedNode<'a>> {
     let Some(parent) = node.parent() else {
         return None;
@@ -81,6 +85,46 @@ mod tests {
 
     fn passes() -> Vec<Box<dyn LintPass>> {
         vec![Box::new(RustLintPassAdapter::new(DocSummaryBreak))]
+    }
+
+    /// `////` is a plain comment, not a doc comment, so the summary below it
+    /// starts a block and wants a blank line after it
+    #[test]
+    fn a_summary_under_a_slash_rule_is_flagged() {
+        let tree = parse("////\n/// Adds\n/// The rest.\nfn f() {}", Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_eq!(diagnostics.len(), 1);
+    }
+
+    /// `////` is a comment and not a doc comment, so it ends the block rather
+    /// than continuing it, and the summary above it stands alone
+    #[test]
+    fn a_summary_above_a_slash_rule_is_not_flagged() {
+        let tree = parse("/// Adds\n////\nfn f() {}", Language::Rust);
+
+        let diagnostics = execute(&tree, &mut passes());
+
+        assert_no_diagnostics(&diagnostics);
+    }
+
+    #[test]
+    fn trait_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<DocSummaryBreak>();
+    }
+
+    #[test]
+    fn trait_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<DocSummaryBreak>();
+    }
+
+    #[test]
+    fn trait_unpin() {
+        fn assert_unpin<T: Unpin>() {}
+        assert_unpin::<DocSummaryBreak>();
     }
 
     #[test]
