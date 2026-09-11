@@ -1,3 +1,5 @@
+use stabby::IStable;
+
 use crate::{DecoratedNode, DecorationKey};
 
 /// A semantic annotation that a provider can attach to syntax nodes
@@ -18,10 +20,16 @@ use crate::{DecoratedNode, DecorationKey};
 /// safety obligation mechanically:
 ///
 /// ```ignore
+/// #[stabby::stabby]
 /// #[derive(Decoration)]
 /// #[decoration(cardinality = "one")]
 /// pub struct ResolvedType { /* … */ }
 /// ```
+///
+/// A decoration is [`IStable`]. A plugin reads it out of memory the host
+/// allocated, and only a layout that holds from one compiler to the next
+/// makes that read sound. The bound turns a decoration std would lay out
+/// into a compile error rather than a plugin that reads the wrong bytes.
 ///
 /// # Safety
 ///
@@ -40,7 +48,8 @@ use crate::{DecoratedNode, DecorationKey};
 /// ```
 /// use whisker_types::{DecoratedNode, Decoration, DecorationKey};
 ///
-/// struct Signature(String);
+/// #[stabby::stabby]
+/// struct Signature(stabby::string::String);
 ///
 /// unsafe impl Decoration for Signature {
 ///     const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Signature"));
@@ -54,9 +63,10 @@ use crate::{DecoratedNode, DecorationKey};
 /// ```
 ///
 /// [`DecorationProvider`]: crate::DecorationProvider
+/// [`IStable`]: stabby::IStable
 /// [`KEY`]: Decoration::KEY
 /// [`Ref`]: Decoration::Ref
-pub unsafe trait Decoration: Send + Sync + Sized + 'static {
+pub unsafe trait Decoration: IStable + Send + Sync + 'static {
     /// The name that identifies this type in the decoration map
     ///
     /// The map compares keys where single-image code would compare
@@ -86,6 +96,7 @@ mod tests {
     use super::*;
     use crate::DecoratedTree;
 
+    #[stabby::stabby]
     struct Single(u32);
 
     unsafe impl Decoration for Single {
@@ -98,6 +109,7 @@ mod tests {
         }
     }
 
+    #[stabby::stabby]
     struct Repeated(u32);
 
     unsafe impl Decoration for Repeated {

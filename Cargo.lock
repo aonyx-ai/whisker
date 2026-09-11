@@ -5351,6 +5351,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "proptest",
+ "stabby",
  "tree-sitter",
  "tree-sitter-rust",
  "whisker-types",
@@ -5362,6 +5363,7 @@ version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
+ "stabby",
  "syn 3.0.5",
  "tree-sitter",
  "tree-sitter-rust",
@@ -5391,6 +5393,7 @@ dependencies = [
  "ra_ap_project_model",
  "ra_ap_syntax",
  "ra_ap_vfs",
+ "stabby",
  "tree-sitter",
  "tree-sitter-rust",
  "whisker-codegen",
@@ -5404,6 +5407,7 @@ name = "whisker-testing"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "stabby",
  "tree-sitter",
  "tree-sitter-rust",
  "whisker-core",

@@ -3,6 +3,14 @@
 /// For a plain function, the declared return type holds the error type. For
 /// an `async fn`, the declared type is an opaque future, and the error type
 /// is in the future's output.
+///
+/// A rule reads it out of a [`FnSignature`] the host recorded, so the
+/// discriminant is a byte. That is a layout that holds from one compiler
+/// to the next.
+///
+/// [`FnSignature`]: crate::decorations::FnSignature
+#[stabby::stabby]
+#[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum ReturnMode {
     /// The error type is in the declared return type

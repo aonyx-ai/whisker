@@ -225,6 +225,7 @@ mod tests {
 
     use super::*;
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct Tag(u32);
 

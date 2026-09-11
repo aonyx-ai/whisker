@@ -1,3 +1,4 @@
+use stabby::string;
 use whisker_macros::Decoration;
 
 /// Resolved type information attached to a tree-sitter node
@@ -5,6 +6,9 @@ use whisker_macros::Decoration;
 /// Decoration providers populate this on match scrutinees, `else`
 /// clauses, and `?` operands. Rules access it via
 /// `node.decoration::<ResolvedType>()`.
+///
+/// A rule reads it out of memory the host allocated, so stabby lays it
+/// out and the rendered name is stabby's `String`.
 ///
 /// # Examples
 ///
@@ -16,10 +20,11 @@ use whisker_macros::Decoration;
 /// assert_eq!(ty.display(), "MyEnum");
 /// assert!(ty.is_enum());
 /// ```
+#[stabby::stabby]
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Decoration)]
 #[decoration(cardinality = "one")]
 pub struct ResolvedType {
-    display: String,
+    display: string::String,
     is_enum: bool,
     is_never: bool,
     is_result: bool,
@@ -30,7 +35,7 @@ impl ResolvedType {
     /// Creates a new resolved type
     pub fn new(display: String) -> Self {
         Self {
-            display,
+            display: string::String::from(display.as_str()),
             is_enum: false,
             is_never: false,
             is_result: false,

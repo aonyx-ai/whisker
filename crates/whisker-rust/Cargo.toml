@@ -29,6 +29,7 @@ ra_ap_load-cargo = { workspace = true, optional = true }
 ra_ap_project_model = { workspace = true, optional = true }
 ra_ap_syntax = { workspace = true, optional = true }
 ra_ap_vfs = { workspace = true, optional = true }
+stabby.workspace = true
 tree-sitter.workspace = true
 tree-sitter-rust.workspace = true
 whisker-macros.workspace = true

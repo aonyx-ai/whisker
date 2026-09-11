@@ -158,11 +158,14 @@ impl DecorationMap {
 
 #[cfg(test)]
 mod tests {
+    use stabby::string;
+
     use super::*;
     use crate::DecoratedNode;
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
-    struct TypeInfo(String);
+    struct TypeInfo(string::String);
 
     unsafe impl Decoration for TypeInfo {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::TypeInfo"));
@@ -174,6 +177,7 @@ mod tests {
         }
     }
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct Scope(u32);
 
@@ -213,6 +217,7 @@ mod tests {
 
     #[test]
     fn get_retrieves_a_zero_sized_decoration() {
+        #[stabby::stabby]
         #[derive(Eq, PartialEq, Debug)]
         struct Present;
 
@@ -345,6 +350,7 @@ mod tests {
 
         use super::*;
 
+        #[stabby::stabby]
         #[derive(Eq, PartialEq, Debug)]
         struct Value(u64);
 
@@ -358,6 +364,7 @@ mod tests {
             }
         }
 
+        #[stabby::stabby]
         #[derive(Eq, PartialEq, Debug)]
         struct Count(u32);
 
@@ -371,6 +378,7 @@ mod tests {
             }
         }
 
+        #[stabby::stabby]
         #[derive(Eq, PartialEq, Debug)]
         struct Signed(i64);
 

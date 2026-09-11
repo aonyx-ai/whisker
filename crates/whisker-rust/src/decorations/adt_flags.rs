@@ -6,7 +6,11 @@ use whisker_macros::Decoration;
 /// Provides additional information about the ADT that rules need for
 /// decisions like whether a wildcard match arm is acceptable.
 ///
+/// A rule reads it out of memory the host allocated, so stabby lays it
+/// out.
+///
 /// [`ResolvedType`]: crate::decorations::ResolvedType
+#[stabby::stabby]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Decoration)]
 #[decoration(cardinality = "one")]
 pub struct AdtFlags {

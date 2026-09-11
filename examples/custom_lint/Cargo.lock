@@ -366,6 +366,7 @@ dependencies = [
 name = "whisker-rust"
 version = "0.1.0"
 dependencies = [
+ "stabby",
  "tree-sitter",
  "tree-sitter-rust",
  "whisker-codegen",

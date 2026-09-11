@@ -8,8 +8,14 @@ use crate::decorations::{TypePath, TypePathRef};
 /// `Box<dyn Error>` is [`ErrorType::Named`] with the path
 /// `alloc::boxed::Box`, because `Box` is the ADT in the `E` slot.
 ///
+/// A rule reads it out of a [`FnSignature`] the host recorded, so the
+/// discriminant is a byte and stabby lays the payload out.
+///
+/// [`FnSignature`]: crate::decorations::FnSignature
 /// [`Result<T, E>`]: std::result::Result
 /// [`TypePath`]: crate::decorations::TypePath
+#[stabby::stabby]
+#[repr(u8)]
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum ErrorType {
     /// The error is an ADT, identified by where it is defined

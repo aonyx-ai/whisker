@@ -12,6 +12,7 @@ whisker-types.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+stabby.workspace = true
 tree-sitter-rust.workspace = true
 
 [lints]

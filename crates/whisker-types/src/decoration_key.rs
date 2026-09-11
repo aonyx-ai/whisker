@@ -1,3 +1,5 @@
+use stabby::str::Str;
+
 /// Identifies a decoration type across separately compiled crate graphs
 ///
 /// The decoration map stores type-erased values and must decide, at
@@ -16,6 +18,11 @@
 /// type's module path, its name, and a hash of its definition, so two
 /// types stay apart even where a module path and a name coincide.
 ///
+/// The name is held as a [`Str`], stabby's string slice, because a key
+/// crosses the plugin boundary with every lookup a plugin makes. Std
+/// promises no layout for a string slice that holds from one compiler to
+/// the next.
+///
 /// # Examples
 ///
 /// ```
@@ -27,9 +34,11 @@
 /// ```
 ///
 /// [`Decoration`]: crate::Decoration
+/// [`Str`]: stabby::str::Str
 /// [`TypeId`]: std::any::TypeId
+#[stabby::stabby]
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub struct DecorationKey(&'static str);
+pub struct DecorationKey(Str<'static>);
 
 impl DecorationKey {
     /// Creates a key from the name that identifies a decoration type
@@ -42,7 +51,7 @@ impl DecorationKey {
     /// const KEY: DecorationKey = DecorationKey::new("my_crate::Signature");
     /// ```
     pub const fn new(name: &'static str) -> Self {
-        Self(name)
+        Self(Str::new(name))
     }
 
     /// Returns the name this key was created from
@@ -57,7 +66,7 @@ impl DecorationKey {
     /// assert_eq!(key.as_str(), "my_crate::Signature");
     /// ```
     pub const fn as_str(&self) -> &'static str {
-        self.0
+        self.0.as_str()
     }
 }
 

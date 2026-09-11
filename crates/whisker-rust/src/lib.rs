@@ -369,6 +369,7 @@ mod tests {
 
         use super::*;
 
+        #[stabby::stabby]
         #[derive(Eq, PartialEq, Debug, Decoration)]
         #[decoration(cardinality = "one")]
         struct Tag(u32);

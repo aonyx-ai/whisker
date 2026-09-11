@@ -78,6 +78,7 @@ mod tests {
     use super::*;
     use crate::{Decoration, DecorationKey};
 
+    #[stabby::stabby]
     #[derive(Eq, PartialEq, Debug)]
     struct Tag(u32);
 
