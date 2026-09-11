@@ -53,7 +53,7 @@ mod fingerprint;
 
 pub use declaration::PluginDeclaration;
 pub use factory::{Constructed, Factories, LintPassFactory, Loaded, Plugin, construct, factory};
-pub use fingerprint::{Shape, fingerprint, seeded_fingerprint, stable_fingerprint};
+pub use fingerprint::stable_fingerprint;
 
 /// The version of the plugin declaration protocol itself
 ///
@@ -126,10 +126,11 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 /// the whole cost of shipping rules as plugins. This hashes what the two
 /// images must actually agree on instead.
 ///
-/// A type that stabby lays out contributes the identity stabby derives
-/// from its report. That is a hash over the type's name, its module, and
-/// the name and type of every field, recursively. It refuses a field that
-/// moved, and a field whose type changed to another of the same size.
+/// Stabby lays out every type that crosses, and each contributes the
+/// identity stabby derives from its report. That is a hash over the
+/// type's name, its module, and the name and type of every field,
+/// recursively. It refuses a field that moved, and a field whose type
+/// changed to another of the same size.
 ///
 /// The list names every value that crosses, and nothing else. A pass
 /// receives a [`DecoratedNode`], which reaches its file and its

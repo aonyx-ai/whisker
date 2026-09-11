@@ -283,14 +283,13 @@ source would mostly work, and rules fail open, so a wrong answer would
 pass unnoticed. The handshake turns it into a refusal.
 
 The fingerprints hash layout. Each names a list of types that cross the
-boundary. A type that stabby lays out contributes the identity stabby
-derives from its report, which covers the name and type of every field,
-so a field that moved or changed type is refused. The factory function
-pointer, which stabby does not lay out yet, contributes its size and
-alignment. The whisker-rust fingerprint also hashes the generated lint
-pass trait as text, because a trait has no layout a const can read. Doc
-comments and private helpers move nothing, so a plugin stays loadable
-across most of whisker's own churn.
+boundary, and every one of them is laid out by stabby. Each contributes
+the identity stabby derives from its report, which covers the name and
+type of every field, so a field that moved or changed type is refused.
+The whisker-rust fingerprint also hashes the generated lint pass trait as
+text, because a trait has no layout a const can read. Doc comments and
+private helpers move nothing, so a plugin stays loadable across most of
+whisker's own churn.
 
 A node reaches the host's decorations through a call rather than a
 reference to the map, so no std collection crosses the boundary. The host
