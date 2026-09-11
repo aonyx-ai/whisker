@@ -28,7 +28,12 @@ pub struct TsNode {
     tree: *const c_void,
 }
 
+// SAFETY: nothing constructs a `TsNode`, so no value of it is ever sent
+// or shared. The implementations exist so that the `PhantomData` inside
+// `StableLike` does not strip `Send` and `Sync` from `DecoratedNode`,
+// which `tree_sitter::Node` has.
 unsafe impl Send for TsNode {}
+// SAFETY: as for `Send` above.
 unsafe impl Sync for TsNode {}
 
 #[cfg(test)]

@@ -120,6 +120,8 @@ fn fixture_repository_ignores_an_ambient_git_environment() {
     let index_before = std::fs::read(git_dir.join("index")).expect("the index should be readable");
     let config_before =
         std::fs::read(git_dir.join("config")).expect("the config should be readable");
+    // SAFETY: nextest runs each test in its own process, so no other
+    // thread reads the environment while this writes it.
     unsafe {
         std::env::set_var("GIT_DIR", &git_dir);
         std::env::set_var("GIT_INDEX_FILE", git_dir.join("index"));
@@ -127,6 +129,7 @@ fn fixture_repository_ignores_an_ambient_git_environment() {
 
     let rules = repository_with_one_lint("fixture.no-todo");
 
+    // SAFETY: as for the two `set_var` calls above.
     unsafe {
         std::env::remove_var("GIT_DIR");
         std::env::remove_var("GIT_INDEX_FILE");
