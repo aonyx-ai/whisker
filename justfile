@@ -22,6 +22,7 @@ pre-commit-inner:
 
 pre-commit:
     just pre-commit-inner
+    just check-self
 
 # Check that dependencies have compatible open-source licenses and trusted sources
 check-dependencies:
