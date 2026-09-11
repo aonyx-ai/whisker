@@ -9,4 +9,4 @@ ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 # check here runs exactly the rules it ran yesterday.
 [[lints]]
 git = "https://github.com/aonyx-ai/whisker-aonyx-rules"
-rev = "1f8d02571e8b83eb20e0751835fd1c29f1f00655"
+rev = "dcada3d08d8610562381ca68db9a2e6c3b67a862"

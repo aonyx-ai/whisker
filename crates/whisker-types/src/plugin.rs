@@ -152,22 +152,15 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 pub const TYPES_FINGERPRINT: u64 = seeded_fingerprint(
     STABLE_TYPES_FINGERPRINT,
     &[
-        Shape::of_fields::<Diagnostic>(crate::diagnostic::FIELD_OFFSETS),
-        Shape::of_fields::<Suggestion>(crate::suggestion::FIELD_OFFSETS),
-        Shape::of_fields::<Location>(crate::location::FIELD_OFFSETS),
         Shape::of_fields::<DecoratedNode<'static>>(crate::decorated_node::FIELD_OFFSETS),
         Shape::of::<DecoratedTree>(),
         Shape::of::<DecorationKey>(),
         Shape::of::<DecorationMap>(),
-        Shape::of::<RuleId>(),
-        Shape::of::<Severity>(),
         Shape::of::<Language>(),
         Shape::of::<ProviderName>(),
         Shape::of::<Coverage>(),
         Shape::of::<CoverageGap>(),
         Shape::of::<UncoveredFile>(),
-        Shape::of_fields::<RuleOptions>(crate::rule_options::FIELD_OFFSETS),
-        Shape::of_fields::<RuleOption>(crate::rule_options::OPTION_FIELD_OFFSETS),
         Shape::of::<LintPassFactory>(),
     ],
 );
@@ -177,8 +170,17 @@ pub const TYPES_FINGERPRINT: u64 = seeded_fingerprint(
 /// Each is the hash stabby computes over a type's report. The list names
 /// every such type, including one that another already reaches through a
 /// field.
-const STABLE_TYPES_FINGERPRINT: u64 =
-    stable_fingerprint(&[<Span as IStable>::ID, <FilePath as IStable>::ID]);
+const STABLE_TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
+    <Diagnostic as IStable>::ID,
+    <Span as IStable>::ID,
+    <FilePath as IStable>::ID,
+    <Suggestion as IStable>::ID,
+    <Location as IStable>::ID,
+    <RuleId as IStable>::ID,
+    <Severity as IStable>::ID,
+    <RuleOptions as IStable>::ID,
+    <RuleOption as IStable>::ID,
+]);
 
 /// Converts a NUL-terminated string literal into a [`&CStr`] at compile time
 ///
@@ -269,7 +271,7 @@ mod tests {
 
     #[test]
     fn types_fingerprint_covers_every_boundary_type() {
-        let one = stable_fingerprint(&[<FilePath as IStable>::ID]);
+        let one = stable_fingerprint(&[<Diagnostic as IStable>::ID]);
 
         let all = TYPES_FINGERPRINT;
 

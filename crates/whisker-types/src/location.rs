@@ -1,4 +1,4 @@
-use std::mem::offset_of;
+use stabby::string;
 
 use crate::Span;
 
@@ -7,16 +7,25 @@ use crate::Span;
 /// Used for origin and related annotations on diagnostics. The message
 /// describes the role this location plays in the diagnostic (e.g. "defined
 /// here" or "first occurrence").
+///
+/// A location crosses the plugin boundary inside a [`Diagnostic`], so
+/// stabby lays it out and the message is stabby's `String`.
+///
+/// [`Diagnostic`]: crate::Diagnostic
+#[stabby::stabby]
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Location {
     span: Span,
-    message: String,
+    message: string::String,
 }
 
 impl Location {
     /// Creates a location with the given span and descriptive message
     pub fn new(span: Span, message: String) -> Self {
-        Self { span, message }
+        Self {
+            span,
+            message: string::String::from(message.as_str()),
+        }
     }
 
     /// Returns the span of this location
@@ -29,14 +38,6 @@ impl Location {
         &self.message
     }
 }
-
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] =
-    &[offset_of!(Location, span), offset_of!(Location, message)];
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
-use std::mem::offset_of;
+use std::hash::{Hash, Hasher};
+
+use stabby::vec;
 
 use crate::RuleId;
 
@@ -18,7 +20,8 @@ pub use rule_option::RuleOption;
 /// would read. Whisker knows which rules a plugin declares but not which
 /// pass reports which, so it cannot cut the table down before it hands it
 /// over. A pass therefore names its own rule in the lookup, which it
-/// already holds as a constant.
+/// already holds as a constant. Because the table crosses, stabby lays it
+/// out and its list is stabby's rather than std's.
 ///
 /// A table that names a rule no loaded plugin declares is refused by
 /// [`RuleOptions::validate`]. An option name is not checked, because
@@ -38,11 +41,12 @@ pub use rule_option::RuleOption;
 ///
 /// let names = options.names(RuleId::new("lint.bool-param"), "boundary-attributes");
 ///
-/// assert_eq!(names, Some(&["shard".to_owned()][..]));
+/// assert_eq!(names, Some(vec!["shard".to_owned()]));
 /// ```
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+#[stabby::stabby]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct RuleOptions {
-    options: Vec<RuleOption>,
+    options: vec::Vec<RuleOption>,
 }
 
 impl RuleOptions {
@@ -63,7 +67,9 @@ impl RuleOptions {
     /// assert!(options.options().is_empty());
     /// ```
     pub fn new(options: Vec<RuleOption>) -> Self {
-        Self { options }
+        Self {
+            options: options.into_iter().collect(),
+        }
     }
 
     /// Returns the names `rule` was given for the option `option`
@@ -74,6 +80,11 @@ impl RuleOptions {
     /// two differ, so a rule with a non-empty default can tell an empty
     /// list from silence.
     ///
+    /// The names come back owned. The table keeps them in stabby's
+    /// `String`, and a rule keeps what it reads for the whole file. A copy
+    /// at this one call therefore costs less than a type every rule would
+    /// have to name.
+    ///
     /// # Examples
     ///
     /// ```
@@ -83,11 +94,11 @@ impl RuleOptions {
     ///
     /// assert_eq!(options.names(RuleId::new("lint.bool-param"), "unset"), None);
     /// ```
-    pub fn names(&self, rule: RuleId, option: &str) -> Option<&[String]> {
+    pub fn names(&self, rule: RuleId, option: &str) -> Option<Vec<String>> {
         self.options
             .iter()
             .find(|candidate| candidate.rule() == rule.as_str() && candidate.name() == option)
-            .map(RuleOption::values)
+            .map(|candidate| candidate.values().map(str::to_owned).collect())
     }
 
     /// Returns every option in the table
@@ -152,21 +163,16 @@ impl RuleOptions {
     }
 }
 
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] = &[offset_of!(RuleOptions, options)];
-
-/// The offsets of every field of [`RuleOption`], in declaration order
-///
-/// [`RuleOptions`] holds them behind a [`Vec`], so the handshake has to
-/// hash the element's layout as well as the table's own.
-pub(crate) const OPTION_FIELD_OFFSETS: &[usize] = rule_option::FIELD_OFFSETS;
+impl Hash for RuleOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.options.as_slice().hash(state);
+    }
+}
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     fn declared(names: &[&str]) -> BTreeSet<String> {
@@ -189,10 +195,13 @@ mod tests {
     }
 
     #[test]
-    fn field_offsets_covers_every_field() {
-        let offsets = FIELD_OFFSETS;
+    fn hash_agrees_with_eq() {
+        let mut tables = HashSet::new();
+        tables.insert(options());
 
-        assert_eq!(offsets.len(), 1);
+        let found = tables.contains(&options());
+
+        assert!(found);
     }
 
     #[test]
@@ -201,7 +210,7 @@ mod tests {
 
         let empty = options.names(RuleId::new("lint.bool-param"), "boundary-attributes");
 
-        assert_eq!(empty, Some(&[][..]));
+        assert_eq!(empty, Some(Vec::new()));
         assert_eq!(
             options.names(RuleId::new("lint.bool-param"), "absent"),
             None
@@ -219,7 +228,7 @@ mod tests {
 
         assert_eq!(
             names,
-            Some(&["shard".to_owned(), "procedure".to_owned()][..])
+            Some(vec!["shard".to_owned(), "procedure".to_owned()])
         );
     }
 
@@ -233,10 +242,12 @@ mod tests {
     }
 
     #[test]
-    fn option_field_offsets_covers_every_field() {
-        let offsets = OPTION_FIELD_OFFSETS;
+    fn options_returns_every_option_in_order() {
+        let options = options();
 
-        assert_eq!(offsets.len(), 3);
+        let rules: Vec<&str> = options.options().iter().map(RuleOption::rule).collect();
+
+        assert_eq!(rules, ["lint.repeated-primitive-params", "lint.bool-param"]);
     }
 
     #[test]

@@ -772,11 +772,11 @@ mod tests {
                 RuleId::new("lint.repeated-primitive-params"),
                 "boundary-attributes"
             ),
-            Some(&["shard".to_owned(), "procedure".to_owned()][..])
+            Some(vec!["shard".to_owned(), "procedure".to_owned()])
         );
         assert_eq!(
             options.names(RuleId::new("lint.bool-param"), "boundary-attributes"),
-            Some(&[][..])
+            Some(Vec::new())
         );
     }
 

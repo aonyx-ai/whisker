@@ -82,8 +82,7 @@ impl RustLintPass for RepeatedPrimitiveParams {
     fn configure(&mut self, options: &RuleOptions) {
         self.boundary_attributes = options
             .names(RULE_ID, "boundary-attributes")
-            .unwrap_or_default()
-            .to_vec();
+            .unwrap_or_default();
     }
 }
 ```

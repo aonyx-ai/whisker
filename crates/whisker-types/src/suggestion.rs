@@ -1,4 +1,4 @@
-use std::mem::offset_of;
+use stabby::string;
 
 use crate::Span;
 
@@ -6,11 +6,17 @@ use crate::Span;
 ///
 /// Represents a machine-applicable fix: replace the text at `span` with
 /// `replacement`. An empty replacement means "delete this span".
+///
+/// A suggestion crosses the plugin boundary inside a [`Diagnostic`], so
+/// stabby lays it out and its strings are stabby's `String`.
+///
+/// [`Diagnostic`]: crate::Diagnostic
+#[stabby::stabby]
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct Suggestion {
     span: Span,
-    replacement: String,
-    message: String,
+    replacement: string::String,
+    message: string::String,
 }
 
 impl Suggestion {
@@ -18,8 +24,8 @@ impl Suggestion {
     pub fn new(span: Span, replacement: String, message: String) -> Self {
         Self {
             span,
-            replacement,
-            message,
+            replacement: string::String::from(replacement.as_str()),
+            message: string::String::from(message.as_str()),
         }
     }
 
@@ -38,17 +44,6 @@ impl Suggestion {
         &self.message
     }
 }
-
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] = &[
-    offset_of!(Suggestion, span),
-    offset_of!(Suggestion, replacement),
-    offset_of!(Suggestion, message),
-];
 
 #[cfg(test)]
 mod tests {

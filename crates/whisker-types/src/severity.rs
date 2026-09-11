@@ -1,4 +1,12 @@
 /// Severity level for a diagnostic
+///
+/// The discriminant is a byte. A severity crosses the plugin boundary
+/// inside every [`Diagnostic`], and an undeclared representation has no
+/// layout that holds from one compiler to the next.
+///
+/// [`Diagnostic`]: crate::Diagnostic
+#[stabby::stabby]
+#[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum Severity {
     /// A help message

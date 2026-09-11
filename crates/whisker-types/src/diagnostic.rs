@@ -1,4 +1,4 @@
-use std::mem::offset_of;
+use stabby::{string, vec};
 
 use crate::{Location, RuleId, Severity, Span, Suggestion};
 
@@ -8,15 +8,25 @@ use crate::{Location, RuleId, Severity, Span, Suggestion};
 /// identifies a specific issue found in source code, with a severity, a
 /// primary span, and optional supplementary information like origin
 /// locations, related locations, and suggested fixes.
+///
+/// A diagnostic is what a plugin hands back across the plugin boundary.
+/// Stabby lays it out, and its strings and lists are stabby's `String` and
+/// `Vec`. The message is copied in from what a caller passes, because
+/// stabby's `String` cannot adopt an allocation std made.
+/// A plugin allocates each diagnostic and whisker frees it, which is sound
+/// because every allocation stabby makes carries its own release function.
+/// The severity is one byte and sits last, so it puts no padding between
+/// the pointer-sized fields before it.
+#[stabby::stabby]
 #[derive(Clone, Debug)]
 pub struct Diagnostic {
     rule_id: RuleId,
-    severity: Severity,
-    message: String,
+    message: string::String,
     span: Span,
-    origins: Vec<Location>,
-    related: Vec<Location>,
-    suggestions: Vec<Suggestion>,
+    origins: vec::Vec<Location>,
+    related: vec::Vec<Location>,
+    suggestions: vec::Vec<Suggestion>,
+    severity: Severity,
 }
 
 impl Diagnostic {
@@ -24,12 +34,12 @@ impl Diagnostic {
     pub fn new(rule_id: RuleId, severity: Severity, message: String, span: Span) -> Self {
         Self {
             rule_id,
-            severity,
-            message,
+            message: string::String::from(message.as_str()),
             span,
-            origins: Vec::new(),
-            related: Vec::new(),
-            suggestions: Vec::new(),
+            origins: vec::Vec::new(),
+            related: vec::Vec::new(),
+            suggestions: vec::Vec::new(),
+            severity,
         }
     }
 
@@ -115,21 +125,6 @@ impl Diagnostic {
     }
 }
 
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] = &[
-    offset_of!(Diagnostic, rule_id),
-    offset_of!(Diagnostic, severity),
-    offset_of!(Diagnostic, message),
-    offset_of!(Diagnostic, span),
-    offset_of!(Diagnostic, origins),
-    offset_of!(Diagnostic, related),
-    offset_of!(Diagnostic, suggestions),
-];
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -172,6 +167,22 @@ mod tests {
         assert_eq!(diag.message(), "test message");
         assert_eq!(diag.span().start(), 0);
         assert_eq!(diag.span().end(), 10);
+    }
+
+    #[test]
+    fn clone_copies_every_field() {
+        let origin = Location::new(
+            Span::new(PathBuf::from("other.rs"), 5, 15),
+            "defined here".into(),
+        );
+        let diag = test_diagnostic().with_origin(origin);
+
+        let copy = diag.clone();
+
+        assert_eq!(copy.rule_id(), diag.rule_id());
+        assert_eq!(copy.message(), diag.message());
+        assert_eq!(copy.span(), diag.span());
+        assert_eq!(copy.origins(), diag.origins());
     }
 
     #[test]

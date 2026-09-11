@@ -1,12 +1,14 @@
-use std::mem::offset_of;
+use std::hash::{Hash, Hasher};
+
+use stabby::{string, vec};
 
 /// One option a project set for one rule
 ///
 /// A rule reads the values through [`RuleOptions::names`] rather than
 /// reaching for an option directly, so this is what a host builds and a
-/// rule rarely names. The rule it belongs to is a [`String`] and not a
-/// [`RuleId`], because the name comes from a configuration file and
-/// [`RuleId`] admits only a `&'static str`. A name that no loaded rule
+/// rule rarely names. The rule it belongs to is an owned string, because
+/// the name comes from a configuration file and [`RuleId`] admits only a
+/// `&'static str`. A name that no loaded rule
 /// declares is refused by [`RuleOptions::validate`] before any pass runs.
 ///
 /// A value is a list of names. Every option the rules ask for today names
@@ -14,7 +16,13 @@ use std::mem::offset_of;
 /// module may import. A number and a flag have no form here, so a project
 /// that writes one is told at load rather than having it read as nothing.
 ///
+/// The option crosses the plugin boundary inside [`RuleOptions`]. Stabby
+/// lays it out, and its strings and list are stabby's `String` and `Vec`.
+/// The constructor copies what it is given, and the accessors hand
+/// out borrowed `str`s, so nothing outside this crate names those types.
+///
 /// [`RuleId`]: crate::RuleId
+/// [`RuleOptions`]: crate::RuleOptions
 /// [`RuleOptions::names`]: crate::RuleOptions::names
 /// [`RuleOptions::validate`]: crate::RuleOptions::validate
 ///
@@ -31,11 +39,12 @@ use std::mem::offset_of;
 ///
 /// assert_eq!(option.name(), "boundary-attributes");
 /// ```
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+#[stabby::stabby]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct RuleOption {
-    rule: String,
-    name: String,
-    values: Vec<String>,
+    rule: string::String,
+    name: string::String,
+    values: vec::Vec<string::String>,
 }
 
 impl RuleOption {
@@ -52,10 +61,17 @@ impl RuleOption {
     ///     vec!["shard".to_owned()],
     /// );
     ///
-    /// assert_eq!(option.values(), ["shard"]);
+    /// assert_eq!(option.values().collect::<Vec<_>>(), ["shard"]);
     /// ```
     pub fn new(rule: String, name: String, values: Vec<String>) -> Self {
-        Self { rule, name, values }
+        Self {
+            rule: string::String::from(rule.as_str()),
+            name: string::String::from(name.as_str()),
+            values: values
+                .iter()
+                .map(|value| string::String::from(value.as_str()))
+                .collect(),
+        }
     }
 
     /// Returns the rule that reads this option
@@ -96,7 +112,7 @@ impl RuleOption {
         &self.name
     }
 
-    /// Returns the names this option holds
+    /// Returns the names this option holds, in the order they were written
     ///
     /// # Examples
     ///
@@ -109,26 +125,25 @@ impl RuleOption {
     ///     vec!["shard".to_owned()],
     /// );
     ///
-    /// assert_eq!(option.values().len(), 1);
+    /// assert_eq!(option.values().count(), 1);
     /// ```
-    pub fn values(&self) -> &[String] {
-        &self.values
+    pub fn values(&self) -> impl Iterator<Item = &str> {
+        self.values.iter().map(string::String::as_str)
     }
 }
 
-/// The offsets of every field, in declaration order
-///
-/// The plugin handshake hashes these so a plugin that places a field
-/// somewhere else is refused rather than trusted. They live beside the
-/// struct, because a field added there has to be added here too.
-pub(crate) const FIELD_OFFSETS: &[usize] = &[
-    offset_of!(RuleOption, rule),
-    offset_of!(RuleOption, name),
-    offset_of!(RuleOption, values),
-];
+impl Hash for RuleOption {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.rule.hash(state);
+        self.name.hash(state);
+        self.values.as_slice().hash(state);
+    }
+}
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
 
     fn option() -> RuleOption {
@@ -140,10 +155,13 @@ mod tests {
     }
 
     #[test]
-    fn field_offsets_covers_every_field() {
-        let offsets = FIELD_OFFSETS;
+    fn hash_agrees_with_eq() {
+        let mut options = HashSet::new();
+        options.insert(option());
 
-        assert_eq!(offsets.len(), 3);
+        let found = options.contains(&option());
+
+        assert!(found);
     }
 
     #[test]
@@ -186,7 +204,7 @@ mod tests {
     fn values_returns_every_name() {
         let option = option();
 
-        let values = option.values();
+        let values: Vec<&str> = option.values().collect();
 
         assert_eq!(values, ["shard", "procedure"]);
     }
