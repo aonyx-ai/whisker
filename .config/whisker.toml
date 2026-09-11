@@ -4,6 +4,12 @@
 # purpose.
 ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
 
+# Every lint builds against the whisker in this directory, not against the
+# whisker its own manifest names. The rules repository pins a whisker commit
+# so that it can build on its own, and this overrides that pin, so a check
+# here runs the rules against the working tree.
+whisker-source = "."
+
 # Whisker's rules live in their own repository, pinned to one commit. Bumping
 # this is how whisker adopts a new rule or a changed one; until it moves, a
 # check here runs exactly the rules it ran yesterday.
