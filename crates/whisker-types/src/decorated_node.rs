@@ -1,8 +1,6 @@
 use std::mem::offset_of;
-use std::path::Path;
-use std::sync::Arc;
 
-use crate::{Decoration, DecorationMap, Span};
+use crate::{Decoration, DecorationMap, FilePath, Span};
 
 /// A tree-sitter node enriched with semantic decorations
 ///
@@ -12,7 +10,7 @@ use crate::{Decoration, DecorationMap, Span};
 /// Copying one moves borrowed data and nothing else. Every field is a
 /// reference or a `tree_sitter::Node`, which is itself a
 /// `#[repr(transparent)]` wrapper around a C struct of pointers. The
-/// `Arc<Path>` sits behind a reference, so a copy reaches no allocation
+/// [`FilePath`] sits behind a reference, so a copy reaches no allocation
 /// and moves no refcount.
 ///
 /// This is `Copy` so that a rule walking siblings and children writes what
@@ -23,7 +21,7 @@ use crate::{Decoration, DecorationMap, Span};
 pub struct DecoratedNode<'a> {
     node: tree_sitter::Node<'a>,
     source: &'a str,
-    file: &'a Arc<Path>,
+    file: &'a FilePath,
     decorations: &'a DecorationMap,
 }
 
@@ -32,7 +30,7 @@ impl<'a> DecoratedNode<'a> {
     pub fn new(
         node: tree_sitter::Node<'a>,
         source: &'a str,
-        file: &'a Arc<Path>,
+        file: &'a FilePath,
         decorations: &'a DecorationMap,
     ) -> Self {
         Self {
@@ -63,7 +61,7 @@ impl<'a> DecoratedNode<'a> {
     /// The file path is reference-counted, so this is a cheap operation.
     pub fn span(&self) -> Span {
         Span::new(
-            Arc::clone(self.file),
+            self.file.clone(),
             self.node.start_byte(),
             self.node.end_byte(),
         )
@@ -178,8 +176,6 @@ pub(crate) const FIELD_OFFSETS: &[usize] = &[
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
     use crate::DecorationKey;
 
@@ -253,7 +249,7 @@ mod tests {
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
-        let file: Arc<Path> = PathBuf::from("test.rs").into();
+        let file = FilePath::from("test.rs");
         let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
 
         assert_eq!(root.kind(), "source_file");
@@ -264,7 +260,7 @@ mod tests {
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
-        let file: Arc<Path> = PathBuf::from("test.rs").into();
+        let file = FilePath::from("test.rs");
         let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
 
         assert_eq!(root.text(), source);
@@ -275,7 +271,7 @@ mod tests {
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
-        let file: Arc<Path> = PathBuf::from("test.rs").into();
+        let file = FilePath::from("test.rs");
         let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
         let span = root.span();
 
@@ -288,7 +284,7 @@ mod tests {
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
-        let file: Arc<Path> = PathBuf::from("test.rs").into();
+        let file = FilePath::from("test.rs");
         let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
 
         let first_child = root.named_child(0).expect("should have a child");
@@ -303,7 +299,7 @@ mod tests {
         let node_id = tree.root_node().id();
         decorations.insert(node_id, TestDeco(42));
 
-        let file: Arc<Path> = PathBuf::from("test.rs").into();
+        let file = FilePath::from("test.rs");
         let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
         let deco = root
             .decoration::<TestDeco>()
@@ -316,7 +312,7 @@ mod tests {
         let source = "fn main() {}";
         let tree = parse_tree(source);
         let decorations = DecorationMap::new();
-        let file: Arc<Path> = PathBuf::from("test.rs").into();
+        let file = FilePath::from("test.rs");
         let root = DecoratedNode::new(tree.root_node(), source, &file, &decorations);
 
         assert!(root.decoration::<Missing>().is_none());
@@ -332,7 +328,7 @@ mod tests {
             fn root_text_equals_source(source in "(fn [a-z]+\\(\\) \\{\\}\n){0,5}") {
                 let tree = parse_tree(&source);
                 let decorations = DecorationMap::new();
-                let file: Arc<Path> = PathBuf::from("test.rs").into();
+                let file = FilePath::from("test.rs");
                 let root = DecoratedNode::new(
                     tree.root_node(),
                     &source,
@@ -347,7 +343,7 @@ mod tests {
             fn root_span_covers_full_source(source in "(fn [a-z]+\\(\\) \\{\\}\n){0,5}") {
                 let tree = parse_tree(&source);
                 let decorations = DecorationMap::new();
-                let file: Arc<Path> = PathBuf::from("test.rs").into();
+                let file = FilePath::from("test.rs");
                 let root = DecoratedNode::new(
                     tree.root_node(),
                     &source,
@@ -363,7 +359,7 @@ mod tests {
             fn named_child_count_matches_named_children_len(source in "\\PC{0,200}") {
                 let tree = parse_tree(&source);
                 let decorations = DecorationMap::new();
-                let file: Arc<Path> = PathBuf::from("test.rs").into();
+                let file = FilePath::from("test.rs");
                 let root = DecoratedNode::new(
                     tree.root_node(),
                     &source,
@@ -384,7 +380,7 @@ mod tests {
                 let source = "fn main() {}";
                 let tree = parse_tree(source);
                 let decorations = DecorationMap::new();
-                let file: Arc<Path> = PathBuf::from("test.rs").into();
+                let file = FilePath::from("test.rs");
                 let root = DecoratedNode::new(
                     tree.root_node(),
                     source,
@@ -402,7 +398,7 @@ mod tests {
                 let mut decorations = DecorationMap::new();
                 decorations.insert(tree.root_node().id(), Value(value));
 
-                let file: Arc<Path> = PathBuf::from("test.rs").into();
+                let file = FilePath::from("test.rs");
                 let root = DecoratedNode::new(
                     tree.root_node(),
                     source,

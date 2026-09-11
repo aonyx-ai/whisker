@@ -1,7 +1,6 @@
 use std::path::Path;
-use std::sync::Arc;
 
-use crate::{DecoratedNode, DecorationMap};
+use crate::{DecoratedNode, DecorationMap, FilePath};
 
 /// A parsed syntax tree with an overlay of semantic decorations
 ///
@@ -14,13 +13,13 @@ use crate::{DecoratedNode, DecorationMap};
 pub struct DecoratedTree {
     tree: tree_sitter::Tree,
     source: String,
-    file: Arc<Path>,
+    file: FilePath,
     decorations: DecorationMap,
 }
 
 impl DecoratedTree {
     /// Creates a decorated tree from a parsed tree-sitter tree
-    pub fn new(tree: tree_sitter::Tree, source: String, file: impl Into<Arc<Path>>) -> Self {
+    pub fn new(tree: tree_sitter::Tree, source: String, file: impl Into<FilePath>) -> Self {
         Self {
             tree,
             source,
@@ -59,7 +58,7 @@ impl DecoratedTree {
 
     /// Returns the file path
     pub fn file(&self) -> &Path {
-        &self.file
+        self.file.as_path()
     }
 }
 

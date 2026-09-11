@@ -44,6 +44,10 @@ and this project adheres to
 
 ### Changed
 
+- A span names its file through `FilePath`, a path that [stabby][stabby] lays
+  out, so that its layout no longer depends on the compiler. This is the
+  first step toward loading a plugin that another rustc built.
+  `Span::file_arc` is now `Span::file_path`.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against. The protocol is 3, and whisker reads every protocol from
   2 upward, so a plugin built before this still loads and its rules still
@@ -66,3 +70,4 @@ and this project adheres to
 
 [kawauso]: https://crates.io/crates/kawauso-project
 [rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
+[stabby]: https://crates.io/crates/stabby
