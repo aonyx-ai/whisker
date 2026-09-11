@@ -264,9 +264,9 @@ fn check_with_both_rule_lists_fails() {
 /// so the refusal can only come from the version itself.
 ///
 /// The error names both sides, because the reader has to know which one
-/// to rebuild. It names the plugin's protocol exactly here; how whisker
-/// spells its own, which is a range once one exists, is pinned by the
-/// unit tests on `HandshakeMismatch`.
+/// to rebuild. This test pins the plugin's protocol exactly. The unit
+/// tests on `HandshakeMismatch` pin how whisker spells its own, which
+/// becomes a range once whisker reads more than one protocol.
 #[test]
 fn check_with_a_plugin_from_another_protocol_refuses_it() {
     let target = package(TODO_SOURCE);

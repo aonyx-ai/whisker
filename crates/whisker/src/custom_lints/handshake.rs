@@ -114,10 +114,10 @@ mod tests {
         }
     }
 
-    /// Returns a version no whisker at [`plugin::ABI_VERSION`] reads
+    /// Returns a version that a whisker at [`plugin::ABI_VERSION`] refuses
     ///
-    /// A later major is refused in either era, so this holds whatever
-    /// the constant moves to.
+    /// Whisker refuses a later major in either era. This helper
+    /// therefore holds whatever value the constant moves to.
     fn unreadable() -> AbiVersion {
         AbiVersion {
             major: plugin::ABI_VERSION.major + 1,
@@ -180,9 +180,9 @@ mod tests {
         );
     }
 
-    /// The oldest protocol whisker reads is accepted. From 1.0 that is an
+    /// Whisker accepts the oldest protocol it reads. From 1.0 that is an
     /// older minor, whose declaration ends sooner in a shape whisker
-    /// knows; before 1.0 it is this version itself.
+    /// knows. Before 1.0 it is this version itself.
     #[test]
     fn validate_accepts_the_oldest_supported_abi_version() {
         let mut plugin = identity();

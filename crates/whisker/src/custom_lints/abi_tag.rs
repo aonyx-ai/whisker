@@ -17,15 +17,15 @@ const TARGET: &str = env!("WHISKER_TARGET");
 /// Whisker can therefore ask for a library that fits before it downloads
 /// one.
 ///
-/// An archive under this whisker's tag passes the handshake. One case
-/// escapes that. A later whisker built the archive, and the protocol
-/// grew in between. The tag carries the floor, and the handshake refuses
-/// a plugin newer than the whisker that reads it. Before 1.0 the floor
-/// is the whole version, so a tag names one protocol exactly.
+/// An archive under this whisker's tag passes the handshake, with one
+/// exception: a later whisker built it, and the protocol grew in
+/// between. The tag carries the floor, and the handshake refuses a
+/// plugin newer than the whisker that reads it. Before 1.0 the floor is
+/// the whole version, so a tag names one protocol exactly.
 ///
-/// A whisker that no publisher built for finds no file at all. The
-/// compiler is not among the inputs. A library built by any rustc fits,
-/// so one archive serves every whisker built from the same boundary.
+/// The tag leaves the compiler out, so a library any rustc built fits,
+/// and one archive serves every whisker built from the same boundary. A
+/// whisker that no publisher built for finds no file at all.
 ///
 /// A small digest suffices here. The handshake still decides whether a
 /// library loads, so a collision costs one wasted download.
@@ -61,11 +61,8 @@ impl AbiTag {
 
         // The floor rather than the version whisker writes. Whisker reads
         // every protocol from the floor upward, so two whiskers sharing
-        // one accept each other's archives. From 1.0 a minor therefore
-        // does not strand what a publisher already built, and a major
-        // does, which is the point: that is when older plugins stop
-        // loading. Before 1.0 the floor is the version itself, so every
-        // release asks for its own archives.
+        // one accept each other's archives. Before 1.0 the floor is the
+        // version itself, so every release asks for its own archives.
         let floor = abi_version.floor();
 
         let key = digest(&format!(
@@ -102,9 +99,7 @@ mod tests {
     ///
     /// Whisker stops finding every archive that carries the old tag if
     /// this derivation changes. The test fails first, so whoever changes
-    /// it knows to republish. The floor is one of the inputs, so the
-    /// value here moves with the one version change that is meant to
-    /// strand what publishers built.
+    /// it knows to republish.
     #[test]
     fn new_is_stable_across_releases() {
         let tag = AbiTag::new(&identity(), "aarch64-apple-darwin");
@@ -116,8 +111,7 @@ mod tests {
     ///
     /// Whisker reads every protocol from the floor upward, so two
     /// whiskers that share a major accept each other's archives. A minor
-    /// must therefore not strand what a publisher has already built; a
-    /// major does, which is what the major is for.
+    /// must therefore not strand what a publisher already built.
     #[test]
     fn new_ignores_a_minor_from_one_point_zero_onward() {
         let other = AbiIdentity {
@@ -134,7 +128,7 @@ mod tests {
     /// Before 1.0 a minor is part of the tag
     ///
     /// Nothing is promised there, so a plugin loads only on the whisker
-    /// it was built for and each release asks for archives of its own.
+    /// it was built for.
     #[test]
     fn new_separates_minors_before_one_point_zero() {
         let first = AbiIdentity {

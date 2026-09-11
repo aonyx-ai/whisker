@@ -506,16 +506,14 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
 ///
 /// `declaration` must be the address of a loaded library's
 /// `whisker_plugin_declaration` static, which is at least as large as an
-/// [`AbiVersion`]. Every protocol writes one there, and a library that
-/// carries something smaller under that name was not written by
-/// `export_lints!`.
+/// [`AbiVersion`]. Every protocol writes one there, and `export_lints!`
+/// writes every declaration whisker loads.
 unsafe fn abi_version(declaration: *const PluginDeclaration) -> AbiVersion {
     // SAFETY: every protocol puts `abi_version` first, and it is eight
-    // bytes wide. The `abi_version_sits_at_offset_zero` test pins the
-    // offset and `major_sits_first_and_the_pair_is_eight_bytes` pins the
-    // width, so the leading eight bytes of any declaration are this
-    // field. Any bit pattern of them is a valid `AbiVersion`, because it
-    // holds two `u32`.
+    // bytes wide; the `abi_version_sits_at_offset_zero` and
+    // `major_sits_first_and_the_pair_is_eight_bytes` tests pin both. Any
+    // bit pattern of those bytes is a valid `AbiVersion`, which holds two
+    // `u32`.
     unsafe { declaration.cast::<AbiVersion>().read_unaligned() }
 }
 

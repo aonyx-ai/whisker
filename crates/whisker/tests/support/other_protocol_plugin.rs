@@ -5,13 +5,13 @@ use std::path::Path;
 /// The package spells the head of the declaration out itself, as a
 /// `#[repr(C)]` struct holding the version and nothing after it. That is
 /// the least a plugin of any protocol exports. The package depends on no
-/// whisker crate, so whisker meets a library it can read no further than
-/// the version of.
+/// whisker crate, so the library carries nothing past the version for
+/// whisker to read.
 ///
 /// A test uses this to prove two things at once. Whisker refuses such a
-/// plugin with an error that names both protocols. It also reaches that
-/// refusal from the version alone, because no fingerprint follows the
-/// version here for a loader to read.
+/// plugin with an error that names both protocols. Whisker also reaches
+/// that refusal from the version alone, because no fingerprint follows
+/// the version here.
 ///
 /// # Panics
 ///

@@ -66,14 +66,13 @@ pub struct AbiVersion {
 impl AbiVersion {
     /// Returns the oldest version a whisker at this one still reads
     ///
-    /// From 1.0 that is the major, because every minor of one major is
-    /// readable by a whisker at any later minor of it. Before 1.0 it is
-    /// the version itself, which is what "nothing is promised yet" means
-    /// in practice.
+    /// From 1.0 that is the major. A whisker at a later minor of one
+    /// major reads every earlier minor of it. Before 1.0 it is the
+    /// version itself, so a whisker reads only its own version.
     ///
-    /// A publisher of prebuilt lints is the other reader of this. The tag
-    /// that names an archive carries the floor, so the archives built for
-    /// one whisker serve every whisker that reads them.
+    /// A publisher of prebuilt lints also reads this. The tag that names
+    /// an archive carries the floor, so archives built for one whisker
+    /// serve every whisker that reads them.
     ///
     /// # Examples
     ///
@@ -200,8 +199,8 @@ mod tests {
     /// Pins the layout every protocol is read through
     ///
     /// Whisker reads these bytes before it knows which protocol wrote
-    /// them. A field that moved would be read as the other one, and a
-    /// plugin would claim a version it never named.
+    /// them, so a field that moved would make a plugin claim a version
+    /// it never named.
     #[test]
     fn major_sits_first_and_the_pair_is_eight_bytes() {
         assert_eq!(offset_of!(AbiVersion, major), 0);

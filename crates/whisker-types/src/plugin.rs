@@ -59,15 +59,14 @@ pub use fingerprint::stable_fingerprint;
 
 /// The version of the plugin declaration protocol this crate speaks
 ///
-/// This guards the shape of [`PluginDeclaration`] and the meaning of its
-/// fields, and the signatures of [`LintPass`]'s methods, which no
-/// fingerprint can read back. The two fingerprints guard everything else.
-/// Raise it whenever the declaration struct or [`LintPass`] changes.
+/// This guards three things no fingerprint can read back: the shape of
+/// [`PluginDeclaration`], the meaning of its fields, and the signatures
+/// of [`LintPass`]'s methods. The two fingerprints guard everything
+/// else. Raise this whenever the declaration struct or [`LintPass`]
+/// changes.
 ///
-/// [`AbiVersion`] carries which component to raise, and which plugins
-/// each one leaves behind. Whisker is before 1.0, so every change to the
-/// boundary raises the minor and every plugin is rebuilt against the
-/// whisker that loads it. The major starts to mean something at 1.0.
+/// [`AbiVersion`] says which component to raise, and which plugins that
+/// leaves behind.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
