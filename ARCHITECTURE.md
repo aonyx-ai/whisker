@@ -305,20 +305,27 @@ belongs to the declaration's `ABI_VERSION`. A test scans the trait's
 source and fails when its method list moves, so the test reminds a
 contributor to bump it.
 
-Two kinds of change reach that declaration, and they cost differently. A
+`ABI_VERSION` is a major and a minor, and the two say different things.
+Two kinds of change reach the declaration, and they cost differently. A
 field appended to it is readable by version, because the struct is
 `#[repr(C)]` and whisker knows where each version's fields end. A plugin
-that stops sooner offers less rather than being refused. A method added
-to either trait is not readable that way, because whisker cannot measure
-a vtable. So an optional capability belongs in the declaration, and
-`MIN_ABI_VERSION` names the oldest layout whisker still reads. Raising
-`ABI_VERSION` alone keeps older plugins loading; raising the floor is what
-stops them, and only a vtable change needs that.
+that stops sooner offers less rather than being refused, so such a change
+raises the minor. A method added to the pass trait is not readable that
+way, because whisker cannot measure a vtable, so such a change raises the
+major and every older plugin stops loading. An optional capability
+therefore belongs in the declaration rather than on the trait.
 
-The tag a publisher names an archive with carries the floor rather than
-the version, for the same reason. Two whiskers that read the same
-protocols accept each other's archives, so a protocol that only appends a
-field does not strand what a publisher already built.
+Major 0 is the exception, and whisker is in it. Nothing is promised
+before 1.0: a plugin loads only on the whisker it was built for, and
+every change to the boundary costs one minor. From 1.0 the major carries
+the promise, and a plugin built for any minor of it keeps loading.
+
+The tag a publisher names an archive with carries the floor of that
+range rather than the version, for the same reason. Two whiskers that
+read the same protocols accept each other's archives, so from 1.0 a
+protocol that only appends a field does not strand what a publisher
+already built. Before 1.0 the floor is the version itself, so each
+release asks for archives of its own.
 
 The fingerprints stop at whisker's own layout. A contributor maintains
 each list of types by hand. A fieldless enum keeps its size and alignment

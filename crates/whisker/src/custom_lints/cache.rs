@@ -190,6 +190,8 @@ fn present(value: Option<OsString>) -> Option<OsString> {
 
 #[cfg(test)]
 mod tests {
+    use whisker_rust::plugin::AbiVersion;
+
     use super::*;
     use crate::config::{GitRev, GitUrl};
     use crate::custom_lints::handshake::AbiIdentity;
@@ -212,7 +214,7 @@ mod tests {
     fn tag(types: u64, target: &str) -> AbiTag {
         AbiTag::new(
             &AbiIdentity {
-                abi_version: 2,
+                abi_version: AbiVersion { major: 0, minor: 1 },
                 types_fingerprint: types,
                 language_fingerprint: 0,
             },

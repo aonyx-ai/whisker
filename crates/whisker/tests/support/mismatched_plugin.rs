@@ -31,7 +31,7 @@ pub fn write_mismatched_lint_package(directory: &Path, name: &str) {
     .expect("the manifest should be written");
     std::fs::write(
         directory.join("src").join("lib.rs"),
-        r#"use whisker_types::plugin::{Factories, Loaded, Plugin, PluginDeclaration};
+        r#"use whisker_types::plugin::{AbiVersion, Factories, Loaded, Plugin, PluginDeclaration};
 
 /// Exports nothing, because the handshake refuses this library first
 extern "C" fn load() -> Loaded {
@@ -41,10 +41,13 @@ extern "C" fn load() -> Loaded {
     })
 }
 
+/// A protocol no whisker at this one reads, in either era
+const REFUSED: AbiVersion = AbiVersion { major: whisker_types::plugin::ABI_VERSION.major + 1, minor: 0 };
+
 #[unsafe(no_mangle)]
 #[allow(non_upper_case_globals)]
 pub static whisker_plugin_declaration: PluginDeclaration = PluginDeclaration {
-    abi_version: whisker_types::plugin::ABI_VERSION + 1,
+    abi_version: REFUSED,
     types_fingerprint: whisker_types::plugin::TYPES_FINGERPRINT,
     language_fingerprint: 0,
     load,

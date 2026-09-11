@@ -12,8 +12,9 @@
 //!
 //! The handshake proceeds in order of decreasing layout stability:
 //!
-//! 1. [`PluginDeclaration::abi_version`] sits first in a `#[repr(C)]`
-//!    struct, so it reads correctly whatever else changed.
+//! 1. [`PluginDeclaration::abi_version`] is a pair of bare integers at
+//!    offset zero of a `#[repr(C)]` struct, so it reads correctly
+//!    whatever else changed.
 //! 2. The two fingerprints are plain integers, readable under any pair
 //!    of compilers.
 //! 3. Only when every one of them matches the host's own constants may
@@ -46,57 +47,38 @@ use crate::{
     Panic, RuleId, RuleOption, RuleOptions, Severity, Span, Suggestion,
 };
 
+mod abi_version;
 mod declaration;
 mod factory;
 mod fingerprint;
 
+pub use abi_version::AbiVersion;
 pub use declaration::PluginDeclaration;
 pub use factory::{Constructed, Factories, LintPassFactory, Loaded, Plugin, construct, factory};
 pub use fingerprint::stable_fingerprint;
 
-/// The version of the plugin declaration protocol itself
+/// The version of the plugin declaration protocol this crate speaks
 ///
 /// This guards the shape of [`PluginDeclaration`] and the meaning of its
 /// fields, and the signatures of [`LintPass`]'s methods, which no
 /// fingerprint can read back. The two fingerprints guard everything else.
-/// Bump it whenever the declaration struct or [`LintPass`] changes.
+/// Raise it whenever the declaration struct or [`LintPass`] changes.
+///
+/// [`AbiVersion`] carries which component to raise, and which plugins
+/// each one leaves behind. Whisker is before 1.0, so every change to the
+/// boundary raises the minor and every plugin is rebuilt against the
+/// whisker that loads it. The major starts to mean something at 1.0.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
 /// # Examples
 ///
 /// ```
-/// use whisker_types::plugin::ABI_VERSION;
+/// use whisker_types::plugin::{ABI_VERSION, AbiVersion};
 ///
-/// assert_eq!(ABI_VERSION, 7);
+/// assert_eq!(ABI_VERSION, AbiVersion { major: 0, minor: 1 });
 /// ```
-pub const ABI_VERSION: u32 = 7;
-
-/// The oldest protocol whisker still loads
-///
-/// A protocol is raised when the declaration gains a field, and a plugin
-/// written before it simply ends sooner. Whisker knows the layout of
-/// every version in this range, so it reads what such a plugin has and
-/// treats the rest as absent.
-///
-/// This range covers the declaration alone. A change to the method list
-/// of [`LintPass`] reorders a vtable, which no version can make readable,
-/// so such a change raises this floor to meet [`ABI_VERSION`] and refuses
-/// everything older. Protocol 7 carries no compiler identity in its
-/// declaration, so every field sits where no earlier protocol puts it. 7
-/// is therefore the only protocol whisker loads until the declaration next
-/// gains a field.
-///
-/// [`LintPass`]: crate::LintPass
-///
-/// # Examples
-///
-/// ```
-/// use whisker_types::plugin::{ABI_VERSION, MIN_ABI_VERSION};
-///
-/// assert!(MIN_ABI_VERSION <= ABI_VERSION);
-/// ```
-pub const MIN_ABI_VERSION: u32 = 7;
+pub const ABI_VERSION: AbiVersion = AbiVersion { major: 0, minor: 1 };
 
 /// A fingerprint of how this crate lays out the plugin boundary
 ///

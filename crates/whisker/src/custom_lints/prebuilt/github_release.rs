@@ -375,6 +375,8 @@ fn present(value: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use whisker_rust::plugin::AbiVersion;
+
     use super::*;
     use crate::config::GitRev;
     use crate::custom_lints::AbiTag;
@@ -385,7 +387,7 @@ mod tests {
     fn name() -> AssetName {
         let tag = AbiTag::new(
             &AbiIdentity {
-                abi_version: 2,
+                abi_version: AbiVersion { major: 0, minor: 1 },
                 types_fingerprint: 0,
                 language_fingerprint: 0,
             },

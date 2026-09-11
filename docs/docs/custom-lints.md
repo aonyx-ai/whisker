@@ -113,6 +113,12 @@ error that says what to rebuild. In practice: pin the plugin's whisker
 dependencies to the revision your whisker was built from, which is the one sure
 way to match both. The toolchain is yours to choose.
 
+The handshake also compares a protocol version, which says how often you have
+to rebuild. Whisker is before 1.0, so the answer is every release: a plugin
+loads only on the whisker it was built for. From 1.0 the major carries the
+promise. A plugin built against whisker 1.0 keeps loading on every 1.x, and
+only a 2.0 asks you to rebuild.
+
 That check covers whisker's own boundary. The rest of the graph your plugin's
 lockfile resolves lies outside it. Commit that lockfile and keep it in step
 with the whisker you build against, the way [`examples/custom_lint`][example]

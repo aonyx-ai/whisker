@@ -14,7 +14,7 @@ use stabby::IStable;
 pub use whisker_types::Panic;
 use whisker_types::plugin::stable_fingerprint;
 pub use whisker_types::plugin::{
-    ABI_VERSION, Constructed, Factories, LintPassFactory, Loaded, MIN_ABI_VERSION, Plugin,
+    ABI_VERSION, AbiVersion, Constructed, Factories, LintPassFactory, Loaded, Plugin,
     PluginDeclaration, TYPES_FINGERPRINT, factory,
 };
 

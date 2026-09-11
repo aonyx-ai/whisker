@@ -54,6 +54,8 @@ impl fmt::Display for AssetName {
 
 #[cfg(test)]
 mod tests {
+    use whisker_rust::plugin::AbiVersion;
+
     use super::*;
     use crate::custom_lints::handshake::AbiIdentity;
 
@@ -62,7 +64,7 @@ mod tests {
     fn tag() -> AbiTag {
         AbiTag::new(
             &AbiIdentity {
-                abi_version: 2,
+                abi_version: AbiVersion { major: 0, minor: 1 },
                 types_fingerprint: 0,
                 language_fingerprint: 0,
             },

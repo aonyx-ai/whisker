@@ -7,11 +7,11 @@ use tempfile::TempDir;
 
 #[path = "support/configurable_plugin.rs"]
 mod configurable_plugin;
-#[path = "support/protocol_two_plugin.rs"]
-mod protocol_two_plugin;
+#[path = "support/other_protocol_plugin.rs"]
+mod other_protocol_plugin;
 
 use configurable_plugin::write_configurable_lint_package;
-use protocol_two_plugin::write_protocol_two_lint_package;
+use other_protocol_plugin::write_other_protocol_lint_package;
 
 /// Source that trips the example lint and none of the built-ins
 const TODO_SOURCE: &str = "pub fn later() {\n    todo!()\n}\n";
@@ -257,23 +257,21 @@ fn check_with_both_rule_lists_fails() {
         .stderr(predicate::str::contains("both"));
 }
 
-/// Pins that a plugin from a protocol whisker dropped is refused
+/// Pins that a plugin from a protocol whisker does not read is refused
 ///
-/// A protocol is raised when the declaration gains a field, and whisker
-/// reads such a plugin by taking the fields it has. That holds only while
-/// the vtables stay put. Protocol 4 gave `LintPass` a `configure` method,
-/// which reorders its vtable, and no offset arithmetic can make an older
-/// plugin's vtable readable. The floor therefore rose to meet the current
-/// protocol, and an older plugin is refused rather than called through a
-/// vtable whose shape whisker is guessing at.
+/// Whisker is before 1.0, so a plugin's protocol has to equal the
+/// binary's. The fixture names 0.0 and carries nothing after the version,
+/// so the refusal can only come from the version itself.
 ///
-/// The error names both versions, because the reader has to know which
-/// side to rebuild.
+/// The error names both sides, because the reader has to know which one
+/// to rebuild. It names the plugin's protocol exactly here; how whisker
+/// spells its own, which is a range once one exists, is pinned by the
+/// unit tests on `HandshakeMismatch`.
 #[test]
-fn check_with_a_plugin_from_an_older_protocol_refuses_it() {
+fn check_with_a_plugin_from_another_protocol_refuses_it() {
     let target = package(TODO_SOURCE);
     let lints = tempfile::tempdir().expect("temporary directory should be created");
-    write_protocol_two_lint_package(lints.path(), "older_lint", "older.fired");
+    write_other_protocol_lint_package(lints.path(), "other_lint");
     configure_lint(target.path(), lints.path());
 
     whisker()
@@ -282,11 +280,8 @@ fn check_with_a_plugin_from_an_older_protocol_refuses_it() {
         .arg(target.path())
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("plugin (ABI 2)"))
-        .stderr(predicate::str::contains(format!(
-            "whisker (ABI {})",
-            whisker_types::plugin::ABI_VERSION
-        )));
+        .stderr(predicate::str::contains("plugin (ABI 0.0)"))
+        .stderr(predicate::str::contains("incompatible with whisker (ABI "));
 }
 
 /// Pins that a rule reads the option the project set for it
