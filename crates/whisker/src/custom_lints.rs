@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::Context as _;
 use libloading::Library;
-use whisker_types::plugin::{LintPassFactory, PluginDeclaration, construct};
+use whisker_types::plugin::{AbiVersion, LintPassFactory, PluginDeclaration, construct};
 use whisker_types::{BoxedLintPass, LintPass, Panic, RuleId, RuleOptions};
 
 use self::handshake::AbiIdentity;
@@ -408,7 +408,7 @@ fn build(
 /// The loader never forms a `&PluginDeclaration`. A plugin built against
 /// an older protocol exports a shorter static, and a reference asserts
 /// that the whole of the current struct is there and holds a valid value
-/// of every field. Both claims are false for such a plugin, and `rules`
+/// of every field. Both claims are false for such a plugin, and `load`
 /// is a function pointer, so the compiler may assume it is not null. That
 /// is undefined behavior whether or not the field is ever read.
 ///
@@ -417,10 +417,10 @@ fn build(
 /// the plugin exported it. This is what makes an appended field cheap:
 /// the offsets of a `#[repr(C)]` struct are knowable per version, and no
 /// step of the read depends on the plugin agreeing about the struct's
-/// size. The current floor happens to equal the current protocol, so
-/// every field a plugin exports is one this version knows; the read stays
-/// field by field, because the floor drops again the next time the
-/// declaration merely grows.
+/// size. Whisker is before 1.0, where a plugin's version has to equal
+/// this binary's, so every field a plugin exports is one this version
+/// knows. The read stays field by field, because from 1.0 an older minor
+/// loads and ends sooner.
 ///
 /// The loader deliberately leaks the library. The factories it hands over and
 /// the `&'static str` inside every [`RuleId`] a plugin lint mints point into
@@ -456,11 +456,10 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
     // SAFETY: `declaration` is the address `dlsym` gave for the loaded
     // library's `whisker_plugin_declaration` static.
     let plugin_abi_version = unsafe { abi_version(declaration) };
-    if !handshake::supported(plugin_abi_version) {
+    if !host.abi_version.accepts(plugin_abi_version) {
         return Err(handshake::HandshakeMismatch::AbiVersion {
             plugin: plugin_abi_version,
-            oldest: whisker_rust::plugin::MIN_ABI_VERSION,
-            newest: whisker_rust::plugin::ABI_VERSION,
+            host: host.abi_version,
         }
         .into());
     }
@@ -506,12 +505,16 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
 /// # Safety
 ///
 /// `declaration` must be the address of a loaded library's
-/// `whisker_plugin_declaration` static.
-unsafe fn abi_version(declaration: *const PluginDeclaration) -> u32 {
-    // SAFETY: every protocol puts `abi_version` first, which the
-    // `abi_version_sits_at_offset_zero` test pins, so the first four
-    // bytes of any declaration are this field.
-    unsafe { declaration.cast::<u32>().read_unaligned() }
+/// `whisker_plugin_declaration` static, which is at least as large as an
+/// [`AbiVersion`]. Every protocol writes one there, and `export_lints!`
+/// writes every declaration whisker loads.
+unsafe fn abi_version(declaration: *const PluginDeclaration) -> AbiVersion {
+    // SAFETY: every protocol puts `abi_version` first, and it is eight
+    // bytes wide; the `abi_version_sits_at_offset_zero` and
+    // `major_sits_first_and_the_pair_is_eight_bytes` tests pin both. Any
+    // bit pattern of those bytes is a valid `AbiVersion`, which holds two
+    // `u32`.
+    unsafe { declaration.cast::<AbiVersion>().read_unaligned() }
 }
 
 #[cfg(test)]
@@ -549,15 +552,17 @@ mod tests {
     fn abi_version_reads_a_declaration_that_ends_after_the_version() {
         #[repr(C)]
         struct Truncated {
-            abi_version: u32,
+            abi_version: AbiVersion,
         }
-        let truncated = Truncated { abi_version: 7 };
+        let truncated = Truncated {
+            abi_version: AbiVersion { major: 3, minor: 4 },
+        };
 
         // SAFETY: `Truncated` holds the one field `abi_version` reads,
         // which is what this test pins about a shorter declaration.
         let version = unsafe { abi_version((&raw const truncated).cast::<PluginDeclaration>()) };
 
-        assert_eq!(version, 7);
+        assert_eq!(version, AbiVersion { major: 3, minor: 4 });
     }
 
     #[test]

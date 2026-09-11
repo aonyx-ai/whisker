@@ -1,6 +1,6 @@
 use std::fmt;
 
-use whisker_rust::plugin;
+use whisker_rust::plugin::{self, AbiVersion};
 
 /// The ABI-relevant identity of one side of the plugin boundary
 ///
@@ -12,7 +12,7 @@ use whisker_rust::plugin;
 /// the two sides.
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub struct AbiIdentity {
-    pub abi_version: u32,
+    pub abi_version: AbiVersion,
     pub types_fingerprint: u64,
     pub language_fingerprint: u64,
 }
@@ -28,14 +28,6 @@ impl AbiIdentity {
     }
 }
 
-/// Reports whether whisker knows the layout of a plugin's declaration
-///
-/// Whisker reads every version in this range, so a plugin older than the
-/// current protocol loads and offers less rather than being refused.
-pub fn supported(version: u32) -> bool {
-    (plugin::MIN_ABI_VERSION..=plugin::ABI_VERSION).contains(&version)
-}
-
 /// Accepts a plugin only when its identity matches the host's
 ///
 /// The checks run in the order the declaration's fields become
@@ -46,11 +38,10 @@ pub fn supported(version: u32) -> bool {
 ///
 /// Returns the first [`HandshakeMismatch`] between the two identities.
 pub fn validate(host: &AbiIdentity, plugin: &AbiIdentity) -> Result<(), HandshakeMismatch> {
-    if !supported(plugin.abi_version) {
+    if !host.abi_version.accepts(plugin.abi_version) {
         return Err(HandshakeMismatch::AbiVersion {
             plugin: plugin.abi_version,
-            oldest: plugin::MIN_ABI_VERSION,
-            newest: plugin::ABI_VERSION,
+            host: host.abi_version,
         });
     }
 
@@ -75,9 +66,8 @@ pub fn validate(host: &AbiIdentity, plugin: &AbiIdentity) -> Result<(), Handshak
 #[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub enum HandshakeMismatch {
     AbiVersion {
-        plugin: u32,
-        oldest: u32,
-        newest: u32,
+        plugin: AbiVersion,
+        host: AbiVersion,
     },
     TypesFingerprint,
     LanguageFingerprint,
@@ -86,19 +76,16 @@ pub enum HandshakeMismatch {
 impl fmt::Display for HandshakeMismatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            HandshakeMismatch::AbiVersion {
-                plugin,
-                oldest,
-                newest,
-            } => {
-                let host = match oldest == newest {
-                    true => format!("{newest}"),
-                    false => format!("{oldest}-{newest}"),
+            HandshakeMismatch::AbiVersion { plugin, host } => {
+                let floor = host.floor();
+                let accepted = match floor == *host {
+                    true => format!("{host}"),
+                    false => format!("{floor}-{host}"),
                 };
 
                 write!(
                     f,
-                    "plugin (ABI {plugin}) incompatible with whisker (ABI {host})"
+                    "plugin (ABI {plugin}) incompatible with whisker (ABI {accepted})"
                 )
             }
             HandshakeMismatch::TypesFingerprint => write!(
@@ -124,6 +111,17 @@ mod tests {
             abi_version: plugin::ABI_VERSION,
             types_fingerprint: 0xaa,
             language_fingerprint: 0xbb,
+        }
+    }
+
+    /// Returns a version that a whisker at [`plugin::ABI_VERSION`] refuses
+    ///
+    /// Whisker refuses a later major in either era. This helper
+    /// therefore holds whatever value the constant moves to.
+    fn unreadable() -> AbiVersion {
+        AbiVersion {
+            major: plugin::ABI_VERSION.major + 1,
+            minor: 0,
         }
     }
 
@@ -168,7 +166,7 @@ mod tests {
     #[test]
     fn validate_reports_an_unsupported_abi_version_first() {
         let mut plugin = identity();
-        plugin.abi_version = plugin::ABI_VERSION + 1;
+        plugin.abi_version = unreadable();
         plugin.types_fingerprint = 0xcc;
 
         let error = validate(&identity(), &plugin).expect_err("should mismatch");
@@ -176,29 +174,21 @@ mod tests {
         assert_eq!(
             error,
             HandshakeMismatch::AbiVersion {
-                plugin: plugin::ABI_VERSION + 1,
-                oldest: plugin::MIN_ABI_VERSION,
-                newest: plugin::ABI_VERSION,
+                plugin: unreadable(),
+                host: plugin::ABI_VERSION,
             }
         );
     }
 
-    /// A plugin from an older protocol is loaded rather than refused. Its
-    /// declaration ends sooner, and whisker knows that shape.
+    /// Whisker accepts the oldest protocol it reads. From 1.0 that is an
+    /// older minor, whose declaration ends sooner in a shape whisker
+    /// knows. Before 1.0 it is this version itself.
     #[test]
     fn validate_accepts_the_oldest_supported_abi_version() {
         let mut plugin = identity();
-        plugin.abi_version = plugin::MIN_ABI_VERSION;
+        plugin.abi_version = plugin::ABI_VERSION.floor();
 
         validate(&identity(), &plugin).expect("should accept");
-    }
-
-    #[test]
-    fn supported_spans_the_versions_whisker_can_read() {
-        assert!(!supported(plugin::MIN_ABI_VERSION - 1));
-        assert!(supported(plugin::MIN_ABI_VERSION));
-        assert!(supported(plugin::ABI_VERSION));
-        assert!(!supported(plugin::ABI_VERSION + 1));
     }
 
     /// The host side names every protocol whisker reads, not just the
@@ -207,29 +197,28 @@ mod tests {
     #[test]
     fn an_abi_mismatch_names_the_range_whisker_reads() {
         let error = HandshakeMismatch::AbiVersion {
-            plugin: 7,
-            oldest: 2,
-            newest: 3,
+            plugin: AbiVersion { major: 0, minor: 9 },
+            host: AbiVersion { major: 1, minor: 2 },
         };
 
         assert_eq!(
             error.to_string(),
-            "plugin (ABI 7) incompatible with whisker (ABI 2-3)"
+            "plugin (ABI 0.9) incompatible with whisker (ABI 1.0-1.2)"
         );
     }
 
     /// A whisker that reads one protocol names one, not a range of one.
+    /// Every whisker before 1.0 is such a whisker.
     #[test]
     fn an_abi_mismatch_names_one_version_when_that_is_all_whisker_reads() {
         let error = HandshakeMismatch::AbiVersion {
-            plugin: 7,
-            oldest: 3,
-            newest: 3,
+            plugin: AbiVersion { major: 0, minor: 2 },
+            host: AbiVersion { major: 0, minor: 1 },
         };
 
         assert_eq!(
             error.to_string(),
-            "plugin (ABI 7) incompatible with whisker (ABI 3)"
+            "plugin (ABI 0.2) incompatible with whisker (ABI 0.1)"
         );
     }
 

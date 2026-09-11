@@ -76,8 +76,13 @@ and this project adheres to
   longer compares compiler versions: every type that crosses the boundary is
   laid out by stabby, so the two fingerprints are the whole handshake.
   Building a plugin against the whisker revision that loads it is the sure
-  way to match them. The protocol is 7, and the tag that names a prebuilt
-  archive no longer carries a compiler.
+  way to match them. The tag that names a prebuilt archive no longer carries
+  a compiler.
+- The plugin protocol is a major and a minor, and whisker ships at 0.1.
+  `MIN_ABI_VERSION` is gone: the floor follows from the version. Before 1.0
+  a plugin loads only on the whisker it was built for, so the boundary is
+  free to move. From 1.0 a plugin built for any minor of a major loads on
+  every later minor of it, and only a major asks for a rebuild.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against.
 

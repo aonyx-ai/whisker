@@ -1,15 +1,15 @@
-use crate::plugin::Loaded;
+use crate::plugin::{AbiVersion, Loaded};
 
 /// The entry point a custom lint plugin exports
 ///
 /// A plugin exports exactly one static of this type under the symbol name
-/// `whisker_plugin_declaration`; the `export_lints!` macro in whisker-rust
-/// writes it. The loader reads the fields in declaration order and stops at
-/// the first mismatch, because each field's readability rests on
-/// progressively stronger assumptions:
+/// `whisker_plugin_declaration`. The `export_lints!` macro in whisker-rust
+/// writes it. The loader reads the fields in declaration order and stops
+/// at the first mismatch. Each field needs more agreement between the two
+/// images than the field before it:
 ///
-/// - [`abi_version`] is a bare integer at offset zero of a `#[repr(C)]`
-///   struct, readable whatever else changed.
+/// - [`abi_version`] is a pair of bare integers at offset zero of a
+///   `#[repr(C)]` struct. The loader reads it whatever else changed.
 /// - [`types_fingerprint`] and [`language_fingerprint`] are plain `u64`,
 ///   readable under any pair of compilers.
 /// - [`load`] is an `extern "C"` function pointer that hands back values
@@ -29,7 +29,7 @@ pub struct PluginDeclaration {
     /// The plugin's copy of [`ABI_VERSION`]
     ///
     /// [`ABI_VERSION`]: crate::plugin::ABI_VERSION
-    pub abi_version: u32,
+    pub abi_version: AbiVersion,
 
     /// The plugin's copy of [`TYPES_FINGERPRINT`]
     ///

@@ -1,7 +1,5 @@
 use std::fmt;
 
-use whisker_rust::plugin;
-
 use super::digest::digest;
 use super::handshake::AbiIdentity;
 
@@ -13,16 +11,21 @@ const TARGET: &str = env!("WHISKER_TARGET");
 
 /// Names the whisker binary that a prebuilt lint library has to fit
 ///
-/// The tag holds a digest of every value [`super::handshake`] compares,
-/// then the platform. A publisher of prebuilt lints puts it in the name
-/// of each archive. Whisker can therefore ask for a library that fits
-/// before it downloads one.
+/// The tag holds a digest of the two fingerprints [`super::handshake`]
+/// compares and the floor of the protocol it reads, then the platform. A
+/// publisher of prebuilt lints puts it in the name of each archive.
+/// Whisker can therefore ask for a library that fits before it downloads
+/// one.
 ///
-/// An archive under this whisker's tag passes the handshake, and a
-/// whisker that no publisher built for finds no file. The compiler is not
-/// among the inputs:
-/// a library built by any rustc fits, so one archive serves every whisker
-/// built from the same boundary.
+/// An archive under this whisker's tag passes the handshake, with one
+/// exception: a later whisker built it, and the protocol grew in
+/// between. The tag carries the floor, and the handshake refuses a
+/// plugin newer than the whisker that reads it. Before 1.0 the floor is
+/// the whole version, so a tag names one protocol exactly.
+///
+/// The tag leaves the compiler out, so a library any rustc built fits,
+/// and one archive serves every whisker built from the same boundary. A
+/// whisker that no publisher built for finds no file at all.
 ///
 /// A small digest suffices here. The handshake still decides whether a
 /// library loads, so a collision costs one wasted download.
@@ -51,18 +54,16 @@ impl AbiTag {
     /// input to the digest.
     pub(super) fn new(identity: &AbiIdentity, target: &str) -> Self {
         let AbiIdentity {
-            abi_version: _,
+            abi_version,
             types_fingerprint,
             language_fingerprint,
         } = identity;
 
-        // The floor rather than the version whisker writes. Whisker loads
+        // The floor rather than the version whisker writes. Whisker reads
         // every protocol from the floor upward, so two whiskers sharing
-        // one accept each other's archives, and raising the version alone
-        // does not strand what a publisher already built. Raising the
-        // floor does, which is the point: that is when older plugins stop
-        // loading.
-        let floor = plugin::MIN_ABI_VERSION;
+        // one accept each other's archives. Before 1.0 the floor is the
+        // version itself, so every release asks for its own archives.
+        let floor = abi_version.floor();
 
         let key = digest(&format!(
             "{floor}\n{types_fingerprint:016x}\n{language_fingerprint:016x}"
@@ -80,11 +81,15 @@ impl fmt::Display for AbiTag {
 
 #[cfg(test)]
 mod tests {
+    use whisker_rust::plugin::AbiVersion;
+
     use super::*;
 
+    /// An identity from after 1.0, where a minor and a major differ in
+    /// what they strand
     fn identity() -> AbiIdentity {
         AbiIdentity {
-            abi_version: 2,
+            abi_version: AbiVersion { major: 1, minor: 4 },
             types_fingerprint: 0x0123_4567_89ab_cdef,
             language_fingerprint: 0xfedc_ba98_7654_3210,
         }
@@ -94,33 +99,61 @@ mod tests {
     ///
     /// Whisker stops finding every archive that carries the old tag if
     /// this derivation changes. The test fails first, so whoever changes
-    /// it knows to republish. The floor is one of the inputs, so the value
-    /// here moves when [`MIN_ABI_VERSION`] does, which is the one change
-    /// that is meant to strand what publishers built.
-    ///
-    /// [`MIN_ABI_VERSION`]: whisker_rust::plugin::MIN_ABI_VERSION
+    /// it knows to republish.
     #[test]
     fn new_is_stable_across_releases() {
         let tag = AbiTag::new(&identity(), "aarch64-apple-darwin");
 
-        assert_eq!(tag.to_string(), "d453b1591b6df506-aarch64-apple-darwin");
+        assert_eq!(tag.to_string(), "b7d58f06e26e0a22-aarch64-apple-darwin");
     }
 
-    /// A protocol version is not part of the tag
+    /// From 1.0 a minor is not part of the tag
     ///
-    /// Whisker loads every protocol from the floor upward, so two
-    /// whiskers that share a floor accept each other's archives. Raising
-    /// the version alone must therefore not strand what a publisher has
-    /// already built; raising the floor does, which is what the floor is
-    /// for.
+    /// Whisker reads every protocol from the floor upward, so two
+    /// whiskers that share a major accept each other's archives. A minor
+    /// must therefore not strand what a publisher already built.
     #[test]
-    fn new_ignores_the_protocol_a_whisker_writes() {
+    fn new_ignores_a_minor_from_one_point_zero_onward() {
         let other = AbiIdentity {
-            abi_version: identity().abi_version + 1,
+            abi_version: AbiVersion { major: 1, minor: 9 },
             ..identity()
         };
 
         assert_eq!(
+            AbiTag::new(&identity(), "x86_64-unknown-linux-gnu"),
+            AbiTag::new(&other, "x86_64-unknown-linux-gnu")
+        );
+    }
+
+    /// Before 1.0 a minor is part of the tag
+    ///
+    /// Nothing is promised there, so a plugin loads only on the whisker
+    /// it was built for.
+    #[test]
+    fn new_separates_minors_before_one_point_zero() {
+        let first = AbiIdentity {
+            abi_version: AbiVersion { major: 0, minor: 1 },
+            ..identity()
+        };
+        let second = AbiIdentity {
+            abi_version: AbiVersion { major: 0, minor: 2 },
+            ..identity()
+        };
+
+        assert_ne!(
+            AbiTag::new(&first, "x86_64-unknown-linux-gnu"),
+            AbiTag::new(&second, "x86_64-unknown-linux-gnu")
+        );
+    }
+
+    #[test]
+    fn new_separates_identities_that_differ_in_the_major() {
+        let other = AbiIdentity {
+            abi_version: AbiVersion { major: 2, minor: 4 },
+            ..identity()
+        };
+
+        assert_ne!(
             AbiTag::new(&identity(), "x86_64-unknown-linux-gnu"),
             AbiTag::new(&other, "x86_64-unknown-linux-gnu")
         );
