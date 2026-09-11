@@ -10,12 +10,18 @@
 ///
 /// The macro writes the `whisker_plugin_declaration` static that whisker's
 /// loader looks up, filling in the handshake constants of the whisker
-/// crates this plugin was compiled against. Each lint is registered as a
-/// factory, because passes are stateful and the check command constructs a
-/// fresh set for every file. The factories are plain function pointers, so
-/// each expression must construct its lint from nothing; an expression
-/// that captures its surroundings does not compile.
+/// crates this plugin was compiled against. Each lint becomes a factory,
+/// because passes are stateful and the check command constructs a fresh
+/// set for every file. The factories are plain function pointers, so each
+/// expression must construct its lint from nothing; an expression that
+/// captures its surroundings does not compile.
 ///
+/// Every function the macro exports is `extern "C"` and runs the plugin's
+/// own code under [`Panic::catch`]. A panic in a constructor, in the
+/// listing of the factories, or in a rule's declaration therefore comes
+/// back to whisker as a value rather than unwinding across the boundary.
+///
+/// [`Panic::catch`]: crate::plugin::Panic::catch
 /// [`RustLintPass`]: crate::RustLintPass
 #[macro_export]
 macro_rules! export_lints {
@@ -28,26 +34,29 @@ macro_rules! export_lints {
                 rustc_version: $crate::plugin::RUSTC_VERSION.as_ptr(),
                 types_fingerprint: $crate::plugin::TYPES_FINGERPRINT,
                 language_fingerprint: $crate::plugin::LANGUAGE_FINGERPRINT,
-                register: __whisker_register,
-                rules: __whisker_rules,
+                load: __whisker_load,
             };
 
         #[doc(hidden)]
-        fn __whisker_rules() -> ::std::vec::Vec<$crate::RuleId> {
-            let mut rules = ::std::vec::Vec::new();
-            $(
-                rules.extend($crate::DeclaresRules::rules(&$lint));
-            )+
-            rules
-        }
-
-        #[doc(hidden)]
-        fn __whisker_register(registrar: &mut dyn $crate::plugin::LintRegistrar) {
-            $(
-                registrar.register(|| {
-                    ::std::boxed::Box::new($crate::RustLintPassAdapter::new($lint))
-                });
-            )+
+        extern "C" fn __whisker_load() -> $crate::plugin::Loaded {
+            $crate::plugin::Panic::catch(|| {
+                let mut factories = $crate::plugin::Factories::new();
+                let mut rules = ::std::vec::Vec::new();
+                $(
+                    factories.push($crate::plugin::factory(|| {
+                        $crate::plugin::Panic::catch(|| {
+                            $crate::RustLintPassAdapter::boxed($lint)
+                        })
+                        .into()
+                    }));
+                    rules.extend($crate::DeclaresRules::rules(&$lint));
+                )+
+                $crate::plugin::Plugin {
+                    factories,
+                    rules: rules.into_iter().collect(),
+                }
+            })
+            .into()
         }
     };
 }
@@ -57,9 +66,9 @@ mod tests {
     use std::ffi::CStr;
     use std::path::PathBuf;
 
-    use whisker_types::plugin::LintRegistrar;
+    use stabby::closure::Call0Dyn;
     use whisker_types::{
-        DecoratedNode, DecoratedTree, Diagnostic, LintPass, Panic, RuleId, Severity,
+        BoxedLintPass, DecoratedNode, DecoratedTree, Diagnostic, LintPass, Panic, RuleId, Severity,
     };
 
     use crate::RustLintPass;
@@ -96,22 +105,16 @@ mod tests {
 
     export_lints![FlagEveryFunction, QuietLint];
 
-    struct Collecting {
-        factories: Vec<fn() -> Box<dyn LintPass>>,
+    fn loaded() -> plugin::Plugin {
+        let loaded: Result<_, Panic> = (whisker_plugin_declaration.load)().into();
+
+        loaded.expect("loading the plugin should not panic")
     }
 
-    impl LintRegistrar for Collecting {
-        fn register(&mut self, factory: fn() -> Box<dyn LintPass>) {
-            self.factories.push(factory);
-        }
-    }
+    fn built(index: usize) -> BoxedLintPass {
+        let constructed: Result<_, Panic> = loaded().factories[index].call().into();
 
-    fn collected() -> Vec<fn() -> Box<dyn LintPass>> {
-        let mut registrar = Collecting {
-            factories: Vec::new(),
-        };
-        (whisker_plugin_declaration.register)(&mut registrar);
-        registrar.factories
+        constructed.expect("construction should not panic")
     }
 
     #[test]
@@ -129,20 +132,15 @@ mod tests {
     }
 
     #[test]
-    fn register_yields_one_factory_per_lint() {
-        assert_eq!(collected().len(), 2);
-    }
-
-    #[test]
-    fn registered_factories_build_working_passes() {
+    fn factories_build_working_passes() {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&crate::language()).unwrap();
         let tree = parser.parse("fn main() {}", None).unwrap();
         let tree = DecoratedTree::new(tree, "fn main() {}".into(), PathBuf::from("test.rs"));
         let function = tree.root_node().named_child(0).expect("should parse a fn");
+        let mut pass = built(0);
 
-        let mut pass = collected()[0]();
-        let checked: Result<_, Panic> = pass.check_node(&function).into();
+        let checked: Result<_, Panic> = LintPass::check_node(&mut pass, &function).into();
 
         let diagnostics = checked.expect("the pass should not panic");
         assert_eq!(diagnostics.len(), 1);
@@ -150,5 +148,21 @@ mod tests {
             diagnostics[0].rule_id(),
             RuleId::new("test.flag-every-function")
         );
+    }
+
+    #[test]
+    fn load_yields_one_factory_per_lint() {
+        let factories = loaded().factories;
+
+        assert_eq!(factories.len(), 2);
+    }
+
+    #[test]
+    fn load_yields_every_declared_rule_in_order() {
+        let rules = loaded().rules;
+
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0], RuleId::new("test.flag-every-function"));
+        assert_eq!(rules[1], RuleId::new("test.quiet"));
     }
 }

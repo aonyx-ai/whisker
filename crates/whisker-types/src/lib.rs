@@ -36,7 +36,7 @@ pub use decoration_provider::DecorationProvider;
 pub use diagnostic::Diagnostic;
 pub use file_path::FilePath;
 pub use language::Language;
-pub use lint_pass::{Checked, Configured, LintPass};
+pub use lint_pass::{BoxedLintPass, Checked, Configured, LintPass, boxed_lint_pass};
 pub use location::Location;
 pub use panic::Panic;
 pub use provider_name::ProviderName;

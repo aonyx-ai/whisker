@@ -11,10 +11,11 @@
 //! [`export_lints!`]: crate::export_lints
 
 use stabby::IStable;
+pub use whisker_types::Panic;
 use whisker_types::plugin::stable_fingerprint;
 pub use whisker_types::plugin::{
-    ABI_VERSION, LintPassFactory, LintRegistrar, MIN_ABI_VERSION, PluginDeclaration, RUSTC_VERSION,
-    TYPES_FINGERPRINT, c_str,
+    ABI_VERSION, Constructed, Factories, LintPassFactory, Loaded, MIN_ABI_VERSION, Plugin,
+    PluginDeclaration, RUSTC_VERSION, TYPES_FINGERPRINT, c_str, factory,
 };
 
 use crate::decorations::{AdtFlags, FnSignature, ImportSource, ResolvedType};

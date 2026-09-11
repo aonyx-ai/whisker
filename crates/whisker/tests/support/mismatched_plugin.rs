@@ -31,14 +31,14 @@ pub fn write_mismatched_lint_package(directory: &Path, name: &str) {
     .expect("the manifest should be written");
     std::fs::write(
         directory.join("src").join("lib.rs"),
-        r#"use whisker_types::plugin::{LintRegistrar, PluginDeclaration};
+        r#"use whisker_types::plugin::{Factories, Loaded, Plugin, PluginDeclaration};
 
-/// Registers no lint, because the handshake refuses this library first
-fn register(_registrar: &mut dyn LintRegistrar) {}
-
-/// Declares no rule, for the same reason
-fn rules() -> Vec<whisker_types::RuleId> {
-    Vec::new()
+/// Exports nothing, because the handshake refuses this library first
+extern "C" fn load() -> Loaded {
+    Loaded::Ok(Plugin {
+        factories: Factories::new(),
+        rules: std::iter::empty().collect(),
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -48,8 +48,7 @@ pub static whisker_plugin_declaration: PluginDeclaration = PluginDeclaration {
     rustc_version: whisker_types::plugin::RUSTC_VERSION.as_ptr(),
     types_fingerprint: whisker_types::plugin::TYPES_FINGERPRINT,
     language_fingerprint: 0,
-    register,
-    rules,
+    load,
 };
 "#,
     )

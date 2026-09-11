@@ -46,8 +46,60 @@ pub type Configured = result::Result<(), Panic>;
 /// allocation stabby makes carries its own release function.
 pub type Checked = result::Result<vec::Vec<Diagnostic>, Panic>;
 
+/// A pass boxed for the boundary: a stabby box with a stabby vtable
+///
+/// A plugin builds one from a pass it owns, and the host calls through it
+/// without knowing the pass's type. The host can also treat it as a
+/// [`LintPass`] of its own, because this type implements the trait by
+/// forwarding through the vtable. The rest of whisker therefore keeps its
+/// `Box<dyn LintPass>`.
+pub type BoxedLintPass = stabby::dynptr!(stabby::boxed::Box<dyn LintPass + Send + Sync + 'static>);
+
+/// Boxes a pass for the boundary
+///
+/// # Examples
+///
+/// ```
+/// use stabby::vec;
+/// use whisker_types::{
+///     Checked, Configured, DecoratedNode, LintPass, RuleOptions, boxed_lint_pass,
+/// };
+///
+/// struct Quiet;
+///
+/// impl LintPass for Quiet {
+///     extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+///         Configured::Ok(())
+///     }
+///
+///     extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
+///         Checked::Ok(vec::Vec::new())
+///     }
+/// }
+///
+/// let mut pass = boxed_lint_pass(Quiet);
+///
+/// let configured: Result<(), _> = pass.configure(&RuleOptions::default()).into();
+/// assert!(configured.is_ok());
+/// ```
+pub fn boxed_lint_pass(pass: impl LintPass + 'static) -> BoxedLintPass {
+    stabby::boxed::Box::new(pass).into()
+}
+
+impl LintPass for BoxedLintPass {
+    extern "C" fn configure(&mut self, options: &RuleOptions) -> Configured {
+        LintPassDynMut::configure(self, options)
+    }
+
+    extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+        LintPassDynMut::check_node(self, node)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
     use super::*;
 
     struct Dummy;
@@ -63,20 +115,47 @@ mod tests {
     }
 
     #[test]
+    fn a_boxed_pass_forwards_through_its_vtable() {
+        static CONFIGURED: AtomicU32 = AtomicU32::new(0);
+        struct Counting;
+
+        impl LintPass for Counting {
+            extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+                CONFIGURED.fetch_add(1, Ordering::SeqCst);
+                Configured::Ok(())
+            }
+
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
+                Checked::Ok(vec::Vec::new())
+            }
+        }
+
+        let mut pass: Box<dyn LintPass> = Box::new(boxed_lint_pass(Counting));
+
+        let configured: Result<(), Panic> = pass.configure(&RuleOptions::default()).into();
+
+        assert!(configured.is_ok());
+        assert_eq!(CONFIGURED.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
     fn trait_send() {
         fn assert_send<T: Send>() {}
         assert_send::<Dummy>();
+        assert_send::<BoxedLintPass>();
     }
 
     #[test]
     fn trait_sync() {
         fn assert_sync<T: Sync>() {}
         assert_sync::<Dummy>();
+        assert_sync::<BoxedLintPass>();
     }
 
     #[test]
     fn trait_unpin() {
         fn assert_unpin<T: Unpin>() {}
         assert_unpin::<Dummy>();
+        assert_unpin::<BoxedLintPass>();
     }
 }

@@ -15,13 +15,15 @@
 //! 2. The rustc version is a C string and the two fingerprints are plain
 //!    integers, all readable across any pair of rustc versions.
 //! 3. Only when every one of them matches the host's own constants may
-//!    [`PluginDeclaration::register`] be called, because a plain Rust
-//!    function pointer is only meaningful once the two images are known to
-//!    agree on the language's ABI.
+//!    [`PluginDeclaration::load`] be called, because what it hands back
+//!    is only meaningful once the two images are known to lay it out the
+//!    same way.
 //!
-//! A plugin must not set its own `#[global_allocator]`: the host frees the
-//! values a plugin allocated (diagnostics, boxed passes), which is sound
-//! because both images default to the system allocator.
+//! Every value that crosses the boundary is one stabby lays out, and every
+//! allocation among them carries the function that frees it, so the side
+//! that allocated a value is the side that frees it whatever the other
+//! side's allocator is. A plugin may therefore set its own
+//! `#[global_allocator]`.
 //!
 //! The handshake reaches how both sides lay out the boundary, not the
 //! source they compiled and not the dependency graph each side resolved.
@@ -41,26 +43,25 @@ use std::ffi::CStr;
 use stabby::IStable;
 
 use crate::{
-    DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Location, Panic, RuleId,
-    RuleOption, RuleOptions, Severity, Span, Suggestion,
+    BoxedLintPass, DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Location,
+    Panic, RuleId, RuleOption, RuleOptions, Severity, Span, Suggestion,
 };
 
 mod declaration;
+mod factory;
 mod fingerprint;
-mod registrar;
 
 pub use declaration::PluginDeclaration;
+pub use factory::{Constructed, Factories, LintPassFactory, Loaded, Plugin, construct, factory};
 pub use fingerprint::{Shape, fingerprint, seeded_fingerprint, stable_fingerprint};
-pub use registrar::{LintPassFactory, LintRegistrar};
 
 /// The version of the plugin declaration protocol itself
 ///
 /// This guards the shape of [`PluginDeclaration`] and the meaning of its
-/// fields, and the method order of the two traits that cross the boundary,
-/// which no fingerprint can read back. The rustc version and the two
-/// fingerprints guard everything else. Bump it whenever the declaration
-/// struct, the registration contract, [`LintPass`], or [`LintRegistrar`]
-/// changes.
+/// fields, and the signatures of [`LintPass`]'s methods, which no
+/// fingerprint can read back. The rustc version and the two fingerprints
+/// guard everything else. Bump it whenever the declaration struct or
+/// [`LintPass`] changes.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
@@ -69,9 +70,9 @@ pub use registrar::{LintPassFactory, LintRegistrar};
 /// ```
 /// use whisker_types::plugin::ABI_VERSION;
 ///
-/// assert_eq!(ABI_VERSION, 5);
+/// assert_eq!(ABI_VERSION, 6);
 /// ```
-pub const ABI_VERSION: u32 = 5;
+pub const ABI_VERSION: u32 = 6;
 
 /// The oldest protocol whisker still loads
 ///
@@ -81,12 +82,12 @@ pub const ABI_VERSION: u32 = 5;
 /// treats the rest as absent.
 ///
 /// This range covers the declaration alone. A change to the method list
-/// of [`LintPass`] or [`LintRegistrar`] reorders a vtable, which no
-/// version can make readable, so such a change raises this floor to meet
-/// [`ABI_VERSION`] and refuses everything older. It does today: protocol
-/// 5 made the methods of [`LintPass`] `extern "C"` and gave each a result
-/// to hand back, so 5 is the only protocol whisker loads until the
-/// declaration next gains a field.
+/// of [`LintPass`] reorders a vtable, which no version can make readable,
+/// so such a change raises this floor to meet [`ABI_VERSION`] and refuses
+/// everything older. Protocol 6 hands everything a plugin exports over
+/// through one `load` function, which no earlier protocol supplies. 6 is
+/// therefore the only protocol whisker loads until the declaration next
+/// gains a field.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
@@ -97,7 +98,7 @@ pub const ABI_VERSION: u32 = 5;
 ///
 /// assert!(MIN_ABI_VERSION <= ABI_VERSION);
 /// ```
-pub const MIN_ABI_VERSION: u32 = 5;
+pub const MIN_ABI_VERSION: u32 = 6;
 
 /// The full identity of the rustc that compiled this crate
 ///
@@ -128,26 +129,29 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 /// A type that stabby lays out contributes the identity stabby derives
 /// from its report. That is a hash over the type's name, its module, and
 /// the name and type of every field, recursively. It refuses a field that
-/// moved, and a field whose type changed to another of the same size. The
-/// factory function pointer, which stabby does not lay out yet,
-/// contributes its size and alignment.
+/// moved, and a field whose type changed to another of the same size.
 ///
-/// The list names what a pass receives and what it returns, and nothing
-/// else. A pass receives a [`DecoratedNode`], which reaches its file and
-/// its decorations through a [`FilePath`] and a [`DecorationLookup`], and
-/// the [`RuleOptions`] a project set. It returns [`Diagnostic`]s, or the
-/// [`Panic`] that stopped it. The results themselves are stabby's, laid
-/// out by the stabby every plugin shares, so the payloads are what the
-/// list names. The tree, the decoration map, and the coverage types stay
-/// on the host's side of the boundary, so they are not here.
+/// The list names every value that crosses, and nothing else. A pass
+/// receives a [`DecoratedNode`], which reaches its file and its
+/// decorations through a [`FilePath`] and a [`DecorationLookup`], and the
+/// [`RuleOptions`] a project set. It returns [`Diagnostic`]s, or the
+/// [`Panic`] that stopped it. A plugin hands its exports over as a
+/// [`Plugin`], and each factory builds a [`BoxedLintPass`].
 ///
-/// What it does not cover is the shape of [`LintPass`] and
-/// [`LintRegistrar`] themselves. A trait object's vtable orders its
-/// methods by declaration, and no const can read that back, so adding,
-/// removing, or reordering a method on either trait is a change to the
-/// protocol and belongs in [`ABI_VERSION`]. The `abi_version_covers_the
-/// _boundary_traits` test in this module fails when either trait's method
-/// list moves, so the bump is not left to memory.
+/// A stabby result is not on the list, and neither is a stabby list. Both
+/// are stabby's own layouts, which the stabby every plugin shares
+/// decides, so the list names their payloads instead. The tree, the
+/// decoration map, and the coverage types stay on the host's side of the
+/// boundary, so they are not here.
+///
+/// What it does not cover is the signatures of [`LintPass`]'s methods.
+/// The factory's identity reaches the vtable and names its methods in
+/// order, so a method added, removed, or moved is refused, but the report
+/// records each method as a pointer and not what it takes and returns. A
+/// changed signature is a change to the protocol and belongs in
+/// [`ABI_VERSION`]. The `abi_version_covers_the_boundary_traits` test in
+/// this module fails when the trait's method list moves, so the bump is
+/// not left to memory.
 ///
 /// [`LintPass`]: crate::LintPass
 ///
@@ -158,15 +162,7 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 ///
 /// assert_ne!(TYPES_FINGERPRINT, 0);
 /// ```
-pub const TYPES_FINGERPRINT: u64 =
-    seeded_fingerprint(STABLE_TYPES_FINGERPRINT, &[Shape::of::<LintPassFactory>()]);
-
-/// The identities of the boundary types that stabby lays out
-///
-/// Each is the hash stabby computes over a type's report. The list names
-/// every such type, including one that another already reaches through a
-/// field.
-const STABLE_TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
+pub const TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
     <DecoratedNode<'static> as IStable>::ID,
     <DecorationLookup<'static> as IStable>::ID,
     <DecorationKey as IStable>::ID,
@@ -174,6 +170,9 @@ const STABLE_TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
     <RuleOptions as IStable>::ID,
     <RuleOption as IStable>::ID,
     <Panic as IStable>::ID,
+    <LintPassFactory as IStable>::ID,
+    <Plugin as IStable>::ID,
+    <BoxedLintPass as IStable>::ID,
     <Diagnostic as IStable>::ID,
     <Span as IStable>::ID,
     <Suggestion as IStable>::ID,
@@ -249,23 +248,16 @@ mod tests {
             include_str!("lint_pass.rs"),
             "pub trait LintPass: Send + Sync {",
         );
-        let registrar = method_signatures(
-            include_str!("plugin/registrar.rs"),
-            "pub trait LintRegistrar {",
-        );
 
         assert_eq!(
-            (lint_pass, registrar),
-            (
-                vec![
-                    "extern \"C\" fn configure(&mut self, options: &RuleOptions) -> Configured;"
-                        .to_owned(),
-                    "extern \"C\" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked;"
-                        .to_owned()
-                ],
-                vec!["fn register(&mut self, factory: LintPassFactory);".to_owned()],
-            ),
-            "a boundary trait's methods moved, which reorders its vtable; \
+            lint_pass,
+            vec![
+                "extern \"C\" fn configure(&mut self, options: &RuleOptions) -> Configured;"
+                    .to_owned(),
+                "extern \"C\" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked;"
+                    .to_owned()
+            ],
+            "the boundary trait's methods moved, which changes its vtable; \
              bump ABI_VERSION and update this test together",
         );
     }
@@ -277,7 +269,6 @@ mod tests {
         let all = TYPES_FINGERPRINT;
 
         assert_ne!(all, one);
-        assert_ne!(all, STABLE_TYPES_FINGERPRINT);
         assert_ne!(all, 0);
     }
 }
