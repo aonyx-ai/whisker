@@ -59,6 +59,9 @@ impl<'a> DecoratedNode<'a> {
     /// `#[repr(C)]` struct, so the bytes the host wrote read back as the
     /// same node under any compiler.
     fn inner(&self) -> tree_sitter::Node<'a> {
+        // SAFETY: `TsNode` is a copy of `TSNode`'s layout, checked for
+        // size and alignment where `StableLike::new` builds the wrapper,
+        // and `tree_sitter::Node` is `#[repr(transparent)]` over `TSNode`.
         unsafe { *self.node.as_ref_unchecked() }
     }
 

@@ -399,10 +399,17 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
 ///
 /// [`RuleId`]: whisker_types::RuleId
 fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
+    // SAFETY: opening a library runs its initializers, which is unsound
+    // for any library whose initializers are. Whisker opens only what a
+    // project's configuration names, which the project already trusts to
+    // run as a lint.
     let library = unsafe { Library::new(library) }
         .with_context(|| format!("failed to open {}", library.display()))?;
 
     let declaration =
+        // SAFETY: the symbol's type is checked before the value is used.
+        // `abi_version` reads the first field, and the handshake refuses
+        // the library unless the whole declaration matches this binary.
         unsafe { library.get::<*const PluginDeclaration>(b"whisker_plugin_declaration\0") }
             .context(
                 "the library is not a whisker lint plugin; export its lints with \
@@ -410,6 +417,8 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
             )?;
     let declaration: *const PluginDeclaration = *declaration;
 
+    // SAFETY: `declaration` is the address `dlsym` gave for the loaded
+    // library's `whisker_plugin_declaration` static.
     let plugin_abi_version = unsafe { abi_version(declaration) };
     if !handshake::supported(plugin_abi_version) {
         return Err(handshake::HandshakeMismatch::AbiVersion {
@@ -422,11 +431,17 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
 
     let plugin = AbiIdentity {
         abi_version: plugin_abi_version,
+        // SAFETY: the protocol is one this binary knows, so the plugin
+        // lays both fields out where this binary reads them.
         types_fingerprint: unsafe { (&raw const (*declaration).types_fingerprint).read() },
+        // SAFETY: as for `types_fingerprint` above.
         language_fingerprint: unsafe { (&raw const (*declaration).language_fingerprint).read() },
     };
     handshake::validate(host, &plugin)?;
 
+    // SAFETY: the handshake passed, so the plugin lays the declaration
+    // out the way this binary does, and `load` holds a function this
+    // binary can call.
     let load = unsafe { (&raw const (*declaration).load).read() };
     let loaded: Result<_, Panic> = load().into();
     let loaded = loaded.context("the plugin panicked while listing what it exports")?;
@@ -457,6 +472,9 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
 /// `declaration` must be the address of a loaded library's
 /// `whisker_plugin_declaration` static.
 unsafe fn abi_version(declaration: *const PluginDeclaration) -> u32 {
+    // SAFETY: every protocol puts `abi_version` first, which the
+    // `abi_version_sits_at_offset_zero` test pins, so the first four
+    // bytes of any declaration are this field.
     unsafe { declaration.cast::<u32>().read_unaligned() }
 }
 
@@ -499,6 +517,8 @@ mod tests {
         }
         let truncated = Truncated { abi_version: 7 };
 
+        // SAFETY: `Truncated` holds the one field `abi_version` reads,
+        // which is what this test pins about a shorter declaration.
         let version = unsafe { abi_version((&raw const truncated).cast::<PluginDeclaration>()) };
 
         assert_eq!(version, 7);

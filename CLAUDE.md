@@ -339,6 +339,26 @@ for entry in entries {
 - No TODO comments (use issue tracker)
 - No commented-out code (use version control)
 
+The one exception is `unsafe`. Every `unsafe` block and every `unsafe
+impl` carries a `// SAFETY:` comment that says why it is sound, and
+`clippy::undocumented_unsafe_blocks` enforces this. Say what the caller
+or the surrounding code guarantees, not what the block does.
+
+```rust
+// DO
+// SAFETY: nextest runs each test in its own process, so no other thread
+// reads the environment while this writes it.
+unsafe {
+    std::env::set_var("GIT_DIR", &git_dir);
+}
+
+// DON'T
+// SAFETY: sets an environment variable.
+unsafe {
+    std::env::set_var("GIT_DIR", &git_dir);
+}
+```
+
 ```rust
 // DON'T
 // Check if user is valid
