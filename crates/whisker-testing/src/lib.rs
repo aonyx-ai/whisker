@@ -229,7 +229,7 @@ mod tests {
     #[derive(Eq, PartialEq, Debug)]
     struct Tag(u32);
 
-    unsafe impl Decoration for Tag {
+    impl Decoration for Tag {
         const KEY: DecorationKey = DecorationKey::new(concat!(module_path!(), "::Tag"));
 
         type Ref<'a> = Option<&'a Self>;

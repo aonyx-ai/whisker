@@ -41,9 +41,8 @@ use std::ffi::CStr;
 use stabby::IStable;
 
 use crate::{
-    Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationKey, DecorationMap, Diagnostic,
-    FilePath, Language, Location, ProviderName, RuleId, RuleOption, RuleOptions, Severity, Span,
-    Suggestion, UncoveredFile,
+    DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Location, RuleId,
+    RuleOption, RuleOptions, Severity, Span, Suggestion,
 };
 
 mod declaration;
@@ -129,8 +128,15 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 /// from its report. That is a hash over the type's name, its module, and
 /// the name and type of every field, recursively. It refuses a field that
 /// moved, and a field whose type changed to another of the same size. The
-/// types not yet laid out that way contribute their size, alignment, and
-/// field offsets.
+/// factory function pointer, which stabby does not lay out yet,
+/// contributes its size and alignment.
+///
+/// The list names what a pass receives and what it returns, and nothing
+/// else. A pass receives a [`DecoratedNode`], which reaches its file and
+/// its decorations through a [`FilePath`] and a [`DecorationLookup`], and
+/// the [`RuleOptions`] a project set. It returns [`Diagnostic`]s. The tree,
+/// the decoration map, and the coverage types stay on the host's side of
+/// the boundary, so they are not here.
 ///
 /// What it does not cover is the shape of [`LintPass`] and
 /// [`LintRegistrar`] themselves. A trait object's vtable orders its
@@ -149,21 +155,8 @@ pub const RUSTC_VERSION: &CStr = c_str(concat!(env!("WHISKER_RUSTC_VERSION"), "\
 ///
 /// assert_ne!(TYPES_FINGERPRINT, 0);
 /// ```
-pub const TYPES_FINGERPRINT: u64 = seeded_fingerprint(
-    STABLE_TYPES_FINGERPRINT,
-    &[
-        Shape::of_fields::<DecoratedNode<'static>>(crate::decorated_node::FIELD_OFFSETS),
-        Shape::of::<DecoratedTree>(),
-        Shape::of::<DecorationKey>(),
-        Shape::of::<DecorationMap>(),
-        Shape::of::<Language>(),
-        Shape::of::<ProviderName>(),
-        Shape::of::<Coverage>(),
-        Shape::of::<CoverageGap>(),
-        Shape::of::<UncoveredFile>(),
-        Shape::of::<LintPassFactory>(),
-    ],
-);
+pub const TYPES_FINGERPRINT: u64 =
+    seeded_fingerprint(STABLE_TYPES_FINGERPRINT, &[Shape::of::<LintPassFactory>()]);
 
 /// The identities of the boundary types that stabby lays out
 ///
@@ -171,15 +164,18 @@ pub const TYPES_FINGERPRINT: u64 = seeded_fingerprint(
 /// every such type, including one that another already reaches through a
 /// field.
 const STABLE_TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
+    <DecoratedNode<'static> as IStable>::ID,
+    <DecorationLookup<'static> as IStable>::ID,
+    <DecorationKey as IStable>::ID,
+    <FilePath as IStable>::ID,
+    <RuleOptions as IStable>::ID,
+    <RuleOption as IStable>::ID,
     <Diagnostic as IStable>::ID,
     <Span as IStable>::ID,
-    <FilePath as IStable>::ID,
     <Suggestion as IStable>::ID,
     <Location as IStable>::ID,
     <RuleId as IStable>::ID,
     <Severity as IStable>::ID,
-    <RuleOptions as IStable>::ID,
-    <RuleOption as IStable>::ID,
 ]);
 
 /// Converts a NUL-terminated string literal into a [`&CStr`] at compile time

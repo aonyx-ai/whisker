@@ -14,12 +14,12 @@ enum Cardinality {
 
 /// Builds the `Decoration` implementation for a derive input
 ///
-/// The emitted implementation is an `unsafe impl`, because `Decoration`'s
-/// key contract is a safety obligation: a key must name exactly one type
-/// definition. The derive discharges it by building the key from the
-/// defining module's path, the type's name, and [`definition_hash`], and
-/// by rejecting generic types, whose single key would have to cover one
-/// layout per instantiation.
+/// A key should name exactly one type definition, so the derive builds it
+/// from the defining module's path, the type's name, and
+/// [`definition_hash`], and rejects generic types, whose single key would
+/// have to cover one layout per instantiation. A key that names another
+/// type is a wrong answer rather than a wrong read: stabby checks the
+/// stored type against the requested one before it casts.
 ///
 /// # Errors
 ///
@@ -52,7 +52,7 @@ pub(crate) fn expand(input: &DeriveInput) -> Result<TokenStream> {
 
     Ok(quote! {
         #[automatically_derived]
-        unsafe impl ::whisker_types::Decoration for #name #where_clause {
+        impl ::whisker_types::Decoration for #name #where_clause {
             const KEY: ::whisker_types::DecorationKey = ::whisker_types::DecorationKey::new(
                 ::core::concat!(
                     ::core::module_path!(),
@@ -169,7 +169,7 @@ mod tests {
 
         let code = expand(&input).expect("should expand").to_string();
 
-        assert!(code.contains("unsafe impl :: whisker_types :: Decoration for Flag"));
+        assert!(code.contains("impl :: whisker_types :: Decoration for Flag"));
     }
 
     #[test]

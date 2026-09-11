@@ -55,6 +55,10 @@ and this project adheres to
   `FnSignature`, `AdtFlags`, and `ImportSource`, with the types they hold. A
   `Decoration` must now be `IStable`, so a decoration std would lay out is a
   compile error rather than a plugin that reads the wrong bytes.
+- A node crosses the boundary laid out by stabby, and it reads decorations
+  through a call into whisker rather than by walking whisker's map. The
+  boundary fingerprint now names only the types a pass receives and
+  returns.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against. The protocol is 3, and whisker reads every protocol from
   2 upward, so a plugin built before this still loads and its rules still

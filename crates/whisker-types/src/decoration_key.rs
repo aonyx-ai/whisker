@@ -11,12 +11,14 @@ use stabby::str::Str;
 /// string content is identical in both images whenever both were compiled
 /// from the same source, which the plugin handshake enforces.
 ///
-/// Key equality is the decoration map's license to cast an erased value
-/// back to a concrete type, so a key must name exactly one type definition.
-/// That contract belongs to [`Decoration`], which is an unsafe trait for
-/// this reason. The derive macro builds a key that holds to it from the
-/// type's module path, its name, and a hash of its definition, so two
-/// types stay apart even where a module path and a name coincide.
+/// A key selects the entry, and stabby decides whether it holds the type
+/// the caller asked for. Stabby compares the stored type's identity and
+/// its layout report before it casts, so two types that share a key give
+/// each other [`None`] rather than each other's memory. A key should
+/// still name exactly one type definition, because a shared key costs a
+/// lookup its answer. The derive macro builds one from the type's module
+/// path, its name, and a hash of its definition, so two types stay apart
+/// even where a module path and a name coincide.
 ///
 /// The name is held as a [`Str`], stabby's string slice, because a key
 /// crosses the plugin boundary with every lookup a plugin makes. Std
