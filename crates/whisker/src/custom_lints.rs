@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use anyhow::Context as _;
 use libloading::Library;
 use whisker_types::plugin::{LintPassFactory, LintRegistrar, PluginDeclaration};
-use whisker_types::{LintPass, RuleId, RuleOptions};
+use whisker_types::{LintPass, Panic, RuleId, RuleOptions};
 
 use self::handshake::AbiIdentity;
 use crate::config::{GitLintSource, LintSource, WhiskerConfig};
@@ -89,13 +89,21 @@ impl CustomLints {
     /// the whole table for the same reason: whisker cannot tell which of
     /// a plugin's rules a given pass reports, so the pass reads its own
     /// entry.
-    pub fn instantiate(&self, options: &RuleOptions) -> Vec<Box<dyn LintPass>> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a pass panics while it reads the table. The
+    /// plugin caught the panic at its boundary and handed it back, and a
+    /// pass that cannot read its options is a broken setup rather than a
+    /// file to skip.
+    pub fn instantiate(&self, options: &RuleOptions) -> anyhow::Result<Vec<Box<dyn LintPass>>> {
         self.factories
             .iter()
             .map(|factory| {
                 let mut pass = factory();
-                pass.configure(options);
-                pass
+                let configured: Result<(), Panic> = pass.configure(options).into();
+                configured.context("a lint pass panicked while reading the project's options")?;
+                Ok(pass)
             })
             .collect()
     }
@@ -635,7 +643,11 @@ mod tests {
 
         let lints = CustomLints::load(&config).expect("should load");
 
-        assert!(lints.instantiate(&RuleOptions::default()).is_empty());
+        let passes = lints
+            .instantiate(&RuleOptions::default())
+            .expect("nothing to configure");
+
+        assert!(passes.is_empty());
     }
 
     #[test]

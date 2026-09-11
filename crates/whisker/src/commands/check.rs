@@ -46,7 +46,10 @@ pub struct CheckArgs {
 /// of a run, so a rule that is not configured does not run however
 /// complete its own tests are. Nothing is enabled by default, and the
 /// configuration is the whole answer to what a check does.
-fn create_lint_passes(custom_lints: &CustomLints, options: &RuleOptions) -> Vec<Box<dyn LintPass>> {
+fn create_lint_passes(
+    custom_lints: &CustomLints,
+    options: &RuleOptions,
+) -> anyhow::Result<Vec<Box<dyn LintPass>>> {
     custom_lints.instantiate(options)
 }
 
@@ -172,7 +175,8 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
             },
         };
 
-        let mut passes = create_lint_passes(&custom_lints, config.options());
+        let mut passes = create_lint_passes(&custom_lints, config.options())
+            .context("failed to configure the custom lints")?;
 
         match pipeline.run_on_source(&source, file, &providers, &mut passes) {
             Ok(diagnostics) => {

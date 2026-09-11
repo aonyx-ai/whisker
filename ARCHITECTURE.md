@@ -327,9 +327,12 @@ changes the key without changing any fingerprint. The plugin's lockfile
 resolves its own `tree-sitter`. Its `Node` is a `#[repr(transparent)]`
 wrapper around a `#[repr(C)]` struct of the C library, so a version
 difference moves no field. Each image still carries its own copy of that
-library. Nothing on the call path catches a panic, and nothing checks the
-plugin's allocator or panic strategy. A plugin must not set a
-`#[global_allocator]`, because the host frees values the plugin allocated.
+library. A pass catches its own panics at the boundary and hands them
+back as values, because an unwind must not cross between two panic
+runtimes. That catch rests on the plugin unwinding: a plugin built with
+`panic = "abort"` still takes the process down, and nothing checks the
+strategy. A plugin must not set a `#[global_allocator]`, because the host
+frees values the plugin allocated.
 
 The loader keeps every library loaded for the life of the process. The
 registered factories and every `RuleId` a plugin mints point into the

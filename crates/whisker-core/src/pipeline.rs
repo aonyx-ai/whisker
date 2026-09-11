@@ -60,8 +60,8 @@ impl Pipeline {
     /// # Errors
     ///
     /// Returns an error if parsing fails, if a provider's toolchain
-    /// malfunctions, or if no provider claims the file. An empty provider
-    /// list counts as no claims.
+    /// malfunctions, if no provider claims the file, or if a pass panics.
+    /// An empty provider list counts as no claims.
     pub fn run_on_source(
         &mut self,
         source: &str,
@@ -98,7 +98,7 @@ impl Pipeline {
             decorated.merge_decorations(decorations);
         }
 
-        Ok(tree_walker::walk(&decorated, passes))
+        tree_walker::walk(&decorated, passes).context("run the lint passes")
     }
 }
 
@@ -122,9 +122,10 @@ mod tests {
     use std::path::PathBuf;
 
     use stabby::str::Str;
+    use stabby::vec;
     use whisker_types::{
-        CoverageGap, DecoratedNode, Decoration, DecorationKey, DecorationMap, Diagnostic, Language,
-        ProviderName, RuleId, RuleOptions, Severity,
+        Checked, Configured, CoverageGap, DecoratedNode, Decoration, DecorationKey, DecorationMap,
+        Diagnostic, Language, Panic, ProviderName, RuleId, RuleOptions, Severity,
     };
 
     use super::*;
@@ -191,21 +192,27 @@ mod tests {
     struct ReportMarker;
 
     impl LintPass for ReportMarker {
-        fn configure(&mut self, _options: &RuleOptions) {}
+        extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+            Configured::Ok(())
+        }
 
-        fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+        extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
             if node.kind() != "source_file" {
-                return Vec::new();
+                return Checked::Ok(vec::Vec::new());
             }
             let Some(marker) = node.decoration::<Marker>() else {
-                return Vec::new();
+                return Checked::Ok(vec::Vec::new());
             };
-            vec![Diagnostic::new(
-                RuleId::new("test.marker"),
-                Severity::Warn,
-                marker.0.as_str().into(),
-                node.span(),
-            )]
+            Checked::Ok(
+                [Diagnostic::new(
+                    RuleId::new("test.marker"),
+                    Severity::Warn,
+                    marker.0.as_str().into(),
+                    node.span(),
+                )]
+                .into_iter()
+                .collect(),
+            )
         }
     }
 
@@ -311,19 +318,24 @@ mod tests {
     fn run_on_source_with_lint_pass_collects_diagnostics() {
         struct AlwaysWarn;
         impl whisker_types::LintPass for AlwaysWarn {
-            fn configure(&mut self, _options: &whisker_types::RuleOptions) {}
+            extern "C" fn configure(
+                &mut self,
+                _options: &whisker_types::RuleOptions,
+            ) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
-                if node.kind() == "function_item" {
-                    vec![Diagnostic::new(
+            extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+                let found = match node.kind() == "function_item" {
+                    true => vec![Diagnostic::new(
                         RuleId::new("test.always"),
                         Severity::Warn,
                         "found function".into(),
                         node.span(),
-                    )]
-                } else {
-                    Vec::new()
-                }
+                    )],
+                    false => Vec::new(),
+                };
+                Checked::Ok(found.into_iter().collect())
             }
         }
 
@@ -365,6 +377,53 @@ mod tests {
         );
     }
 
+    /// A pass that panics ends the file with an error that says where
+    ///
+    /// The panic comes back across the boundary as a value. The run can
+    /// therefore name the node it was checking.
+    #[test]
+    fn run_on_source_with_a_panicking_pass_returns_an_error_naming_the_node() {
+        struct Panicking;
+        impl whisker_types::LintPass for Panicking {
+            extern "C" fn configure(
+                &mut self,
+                _options: &whisker_types::RuleOptions,
+            ) -> Configured {
+                Configured::Ok(())
+            }
+
+            extern "C" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked {
+                let kind = node.kind();
+                Panic::catch(move || -> Vec<Diagnostic> {
+                    match kind == "function_item" {
+                        true => panic!("no functions allowed"),
+                        false => Vec::new(),
+                    }
+                })
+                .map(|found| found.into_iter().collect())
+                .into()
+            }
+        }
+
+        let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut passes: Vec<Box<dyn whisker_types::LintPass>> = vec![Box::new(Panicking)];
+
+        let error = pipeline
+            .run_on_source(
+                "fn main() {}",
+                Path::new("test.rs"),
+                &[&Covering as &dyn DecorationProvider],
+                &mut passes,
+            )
+            .expect_err("a panicking pass should fail the file");
+
+        let message = format!("{error:#}");
+        assert!(message.contains("function_item"), "{message}");
+        assert!(message.contains("byte 0 of test.rs"), "{message}");
+        assert!(message.contains("no functions allowed"), "{message}");
+    }
+
     #[test]
     fn run_on_source_with_two_decorating_providers_keeps_first_decoration() {
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
@@ -391,10 +450,19 @@ mod tests {
     fn run_on_source_with_uncovered_file_does_not_run_passes() {
         struct Exploding;
         impl whisker_types::LintPass for Exploding {
-            fn configure(&mut self, _options: &whisker_types::RuleOptions) {}
+            extern "C" fn configure(
+                &mut self,
+                _options: &whisker_types::RuleOptions,
+            ) -> Configured {
+                Configured::Ok(())
+            }
 
-            fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
-                panic!("lint passes must not run on an uncovered file");
+            extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
+                Panic::catch(|| -> Vec<Diagnostic> {
+                    panic!("lint passes must not run on an uncovered file")
+                })
+                .map(|found| found.into_iter().collect())
+                .into()
             }
         }
 

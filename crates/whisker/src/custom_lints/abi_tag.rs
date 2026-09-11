@@ -94,12 +94,16 @@ mod tests {
     ///
     /// Whisker stops finding every archive that carries the old tag if
     /// this derivation changes. The test fails first, so whoever changes
-    /// it knows to republish.
+    /// it knows to republish. The floor is one of the inputs, so the value
+    /// here moves when [`MIN_ABI_VERSION`] does, which is the one change
+    /// that is meant to strand what publishers built.
+    ///
+    /// [`MIN_ABI_VERSION`]: whisker_rust::plugin::MIN_ABI_VERSION
     #[test]
     fn new_is_stable_across_releases() {
         let tag = AbiTag::new(&identity(), "aarch64-apple-darwin");
 
-        assert_eq!(tag.to_string(), "9b48f55a52cd17d2-aarch64-apple-darwin");
+        assert_eq!(tag.to_string(), "c2266ad91c0f209d-aarch64-apple-darwin");
     }
 
     /// A protocol version is not part of the tag
