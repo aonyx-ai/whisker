@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use kawauso_project::project::ProjectRoot;
@@ -50,6 +50,7 @@ pub struct WhiskerConfig {
     lints: Vec<LintSource>,
     rules: RuleFilter,
     options: RuleOptions,
+    whisker_source: Option<PathBuf>,
 }
 
 impl WhiskerConfig {
@@ -89,6 +90,7 @@ impl WhiskerConfig {
             lints,
             rules,
             options,
+            whisker_source: None,
         }
     }
 
@@ -161,6 +163,7 @@ impl WhiskerConfig {
             ignore,
             lints,
             rules,
+            whisker_source,
         }) = project.configuration()
         else {
             return Ok(Self::new(root, Vec::new(), Vec::new()));
@@ -191,7 +194,32 @@ impl WhiskerConfig {
             .collect::<anyhow::Result<Vec<_>>>()
             .with_context(|| format!("failed to read {}", project.configuration_path()))?;
 
-        Ok(Self::with_rules(root, ignore, lints, rules, options))
+        let whisker_source = whisker_source
+            .as_ref()
+            .map(|directory| root.get().join(directory));
+
+        Ok(Self {
+            root,
+            ignore,
+            lints,
+            rules,
+            options,
+            whisker_source,
+        })
+    }
+
+    /// Returns the whisker source that every configured lint builds against
+    ///
+    /// A lint package names a whisker of its own, and that name decides
+    /// which whisker the plugin is laid out by. This overrides it, so a
+    /// plugin is built against the whisker that loads it and the two
+    /// fingerprints match by construction.
+    ///
+    /// Only a project that holds whisker's own source sets this. A project
+    /// that does not leaves it unset and pins a lint source that names a
+    /// whisker revision, which is what the handshake checks.
+    pub fn whisker_source(&self) -> Option<&Path> {
+        self.whisker_source.as_deref()
     }
 
     /// Returns the project directory that anchors the ignore patterns
@@ -271,6 +299,9 @@ struct ConfigTable {
 
     #[serde(default)]
     rules: RulesTable,
+
+    #[serde(default, rename = "whisker-source")]
+    whisker_source: Option<String>,
 }
 
 /// The `[rules]` table as written on disk
@@ -491,6 +522,39 @@ mod tests {
             std::fs::canonicalize(&inner).expect("the inner project should resolve")
         );
         assert_eq!(config.ignore(), vec![IgnorePattern::new("inner/")]);
+    }
+
+    #[test]
+    fn load_with_a_whisker_source_anchors_it_at_the_root() {
+        let project = tempfile::tempdir().expect("temporary directory should be created");
+        std::fs::create_dir_all(project.path().join(".config"))
+            .expect("the config directory should be created");
+        std::fs::write(
+            project.path().join(".config").join("whisker.toml"),
+            "whisker-source = \"vendor/whisker\"\n",
+        )
+        .expect("the config should be written");
+
+        let config = WhiskerConfig::load(project.path()).expect("the config should load");
+
+        let expected = config.root().get().join("vendor").join("whisker");
+        assert_eq!(config.whisker_source(), Some(expected.as_path()));
+    }
+
+    #[test]
+    fn load_without_a_whisker_source_returns_none() {
+        let project = tempfile::tempdir().expect("temporary directory should be created");
+        std::fs::create_dir_all(project.path().join(".config"))
+            .expect("the config directory should be created");
+        std::fs::write(
+            project.path().join(".config").join("whisker.toml"),
+            "ignore = []\n",
+        )
+        .expect("the config should be written");
+
+        let config = WhiskerConfig::load(project.path()).expect("the config should load");
+
+        assert!(config.whisker_source().is_none());
     }
 
     #[test]

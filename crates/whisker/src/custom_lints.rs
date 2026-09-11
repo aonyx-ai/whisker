@@ -57,10 +57,12 @@ impl CustomLints {
         } in configured_sources(config, &AbiTag::host())?
         {
             let loaded = match contents {
-                Contents::Sources(locking) => load_sources(&directory, locking, &host)
-                    .with_context(|| {
-                        format!("failed to load the custom lints at {}", directory.display())
-                    }),
+                Contents::Sources(locking) => {
+                    { load_sources(&directory, locking, config.whisker_source(), &host) }
+                        .with_context(|| {
+                            format!("failed to load the custom lints at {}", directory.display())
+                        })
+                }
                 Contents::Libraries => load_prebuilt(&directory, &host).with_context(|| {
                     format!(
                         "failed to load the prebuilt lints at {}",
@@ -154,6 +156,18 @@ enum Contents {
     Libraries,
 }
 
+/// The git URL a lint package names when it depends on whisker
+///
+/// A patch entry is keyed by the source it replaces, so this must be
+/// spelled the way a lint package spells it.
+const WHISKER_GIT_URL: &str = "https://github.com/aonyx-ai/whisker.git";
+
+/// The whisker crates a lint package can depend on
+///
+/// Each one is patched to the local source, so a package that names any
+/// of them builds against the whisker that loads it.
+const WHISKER_CRATES: [&str; 3] = ["whisker-types", "whisker-rust", "whisker-testing"];
+
 /// Whether a build may change the lockfile it finds
 ///
 /// A path source belongs to the person running whisker, and cargo updating
@@ -161,6 +175,10 @@ enum Contents {
 /// pin is only worth as much as the dependency versions behind it, so its
 /// build refuses to resolve anything the committed lockfile did not
 /// already settle.
+///
+/// A patched build is the exception. Replacing the whisker a package
+/// names changes the graph the lockfile settled, so cargo has to resolve
+/// again and `--locked` would refuse the build.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 enum Locking {
     Locked,
@@ -275,8 +293,13 @@ fn resolve_git(source: &GitLintSource, tag: &AbiTag) -> anyhow::Result<(PathBuf,
 /// A directory may hold one package or a workspace of them, so every
 /// dynamic library the build produced is loaded, each with its own
 /// handshake.
-fn load_sources(directory: &Path, locking: Locking, host: &AbiIdentity) -> anyhow::Result<Loaded> {
-    let libraries = build(directory, locking)?;
+fn load_sources(
+    directory: &Path,
+    locking: Locking,
+    whisker_source: Option<&Path>,
+    host: &AbiIdentity,
+) -> anyhow::Result<Loaded> {
+    let libraries = build(directory, locking, whisker_source)?;
 
     load_libraries(&libraries, host)
 }
@@ -336,7 +359,11 @@ struct Loaded {
 ///
 /// Returns an error if cargo cannot be run, exits unsuccessfully, or
 /// produces no dynamic library.
-fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
+fn build(
+    directory: &Path,
+    locking: Locking,
+    whisker_source: Option<&Path>,
+) -> anyhow::Result<Vec<PathBuf>> {
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| OsString::from("cargo"));
 
     let mut command = Command::new(cargo);
@@ -346,11 +373,20 @@ fn build(directory: &Path, locking: Locking) -> anyhow::Result<Vec<PathBuf>> {
         "--message-format=json-render-diagnostics",
     ]);
 
-    match locking {
-        Locking::Locked => {
+    match (locking, whisker_source) {
+        (Locking::Locked, None) => {
             command.arg("--locked");
         }
-        Locking::Unlocked => {}
+        (Locking::Locked, Some(_)) | (Locking::Unlocked, _) => {}
+    }
+
+    if let Some(source) = whisker_source {
+        for crate_name in WHISKER_CRATES {
+            command.arg("--config").arg(format!(
+                "patch.'{WHISKER_GIT_URL}'.{crate_name}.path='{}'",
+                source.join("crates").join(crate_name).display()
+            ));
+        }
     }
 
     let output = command
