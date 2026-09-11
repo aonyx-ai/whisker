@@ -386,7 +386,6 @@ mod tests {
         let tag = AbiTag::new(
             &AbiIdentity {
                 abi_version: 2,
-                rustc_version: "rustc 1.92.0-nightly (0123456 2026-08-11)".to_owned(),
                 types_fingerprint: 0,
                 language_fingerprint: 0,
             },

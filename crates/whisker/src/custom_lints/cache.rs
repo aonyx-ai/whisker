@@ -196,7 +196,6 @@ mod tests {
 
     const REV: &str = "0123456789abcdef0123456789abcdef01234567";
     const ROOT: &str = "/cache";
-    const RUSTC: &str = "rustc 1.92.0-nightly (0123456 2026-08-11)";
     const TARGET: &str = "aarch64-apple-darwin";
 
     fn location(override_directory: Option<&str>, base_directory: Option<&str>) -> CacheLocation {
@@ -206,16 +205,15 @@ mod tests {
         }
     }
 
-    /// Returns the tag of a whisker built by `rustc` for `target`
+    /// Returns the tag of a whisker with boundary `types` built for `target`
     ///
     /// These build real tags, so a change to how whisker spells one
     /// reaches these paths too.
-    fn tag(rustc: &str, target: &str) -> AbiTag {
+    fn tag(types: u64, target: &str) -> AbiTag {
         AbiTag::new(
             &AbiIdentity {
                 abi_version: 2,
-                rustc_version: rustc.to_owned(),
-                types_fingerprint: 0,
+                types_fingerprint: types,
                 language_fingerprint: 0,
             },
             target,
@@ -306,12 +304,12 @@ mod tests {
         let directory = prebuilt_directory_in(
             Path::new(ROOT),
             &source("https://example.com/rules"),
-            &tag(RUSTC, TARGET),
+            &tag(0, TARGET),
         );
 
         assert_eq!(
             directory.file_name().expect("should have a name"),
-            std::ffi::OsStr::new(&tag(RUSTC, TARGET).to_string())
+            std::ffi::OsStr::new(&tag(0, TARGET).to_string())
         );
     }
 
@@ -320,12 +318,8 @@ mod tests {
     fn prebuilt_directory_in_separates_tags() {
         let source = source("https://example.com/rules");
 
-        let first = prebuilt_directory_in(Path::new(ROOT), &source, &tag(RUSTC, TARGET));
-        let second = prebuilt_directory_in(
-            Path::new(ROOT),
-            &source,
-            &tag("rustc 1.93.0-nightly (0000000 2026-09-01)", TARGET),
-        );
+        let first = prebuilt_directory_in(Path::new(ROOT), &source, &tag(0, TARGET));
+        let second = prebuilt_directory_in(Path::new(ROOT), &source, &tag(1, TARGET));
 
         assert_ne!(first, second);
     }
@@ -336,7 +330,7 @@ mod tests {
     fn prebuilt_directory_in_stays_apart_from_the_checkout() {
         let source = source("https://example.com/rules");
 
-        let prebuilt = prebuilt_directory_in(Path::new(ROOT), &source, &tag(RUSTC, TARGET));
+        let prebuilt = prebuilt_directory_in(Path::new(ROOT), &source, &tag(0, TARGET));
         let checkout = checkout_directory_in(Path::new(ROOT), &source);
 
         assert!(!prebuilt.starts_with(&checkout), "{prebuilt:?}");
@@ -347,7 +341,7 @@ mod tests {
     fn prebuilt_directory_in_names_the_remote_the_way_a_checkout_does() {
         let source = source("https://example.com/rules");
 
-        let prebuilt = prebuilt_directory_in(Path::new(ROOT), &source, &tag(RUSTC, TARGET));
+        let prebuilt = prebuilt_directory_in(Path::new(ROOT), &source, &tag(0, TARGET));
         let checkout = checkout_directory_in(Path::new(ROOT), &source);
 
         let remote_of = |path: &Path, depth: usize| {

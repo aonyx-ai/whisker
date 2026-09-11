@@ -389,7 +389,6 @@ name = "whisker-types"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "rustc_version",
  "stabby",
  "tree-sitter",
 ]

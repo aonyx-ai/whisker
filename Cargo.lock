@@ -5421,7 +5421,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "proptest",
- "rustc_version",
  "stabby",
  "tree-sitter",
  "tree-sitter-rust",

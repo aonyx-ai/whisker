@@ -57,10 +57,12 @@ cargo install --git https://github.com/aonyx-ai/whisker --locked whisker
 
 ## Which one to choose
 
-The choice decides how whisker obtains your custom lints. A released binary
-loads only a library built by the nightly that built it, so a project that
-compiles its own rules needs that same toolchain. Building whisker from source
-lets you compile both with whatever `rust-toolchain.toml` names at that commit.
-[Custom lints](/docs/custom-lints) covers the handshake this rests on.
+Both load the same custom lints. A plugin is laid out by stabby, so whisker
+loads it regardless of which toolchain built it, and a released binary and a
+build from source differ only in how you obtained whisker. What a plugin and
+its whisker must agree on is the fingerprints of the types that cross between
+them, and pinning the plugin to the revision your whisker was built from is the
+sure way to match them. [Custom lints](/docs/custom-lints) covers the handshake
+this rests on.
 
 [releases]: https://github.com/aonyx-ai/whisker/releases

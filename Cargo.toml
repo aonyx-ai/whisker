@@ -73,9 +73,7 @@ ignore = "0.4"
 # tool's configuration to sit, and a broken file is reported in the same
 # words with the same line and column.
 kawauso-project = "0.2.0"
-# Loads custom lint plugins. The loader trusts a library only after the
-# handshake in whisker-types::plugin proves it was built by the same rustc
-# from the same whisker source.
+# Loads custom lint plugins.
 libloading = "0.9"
 proptest = "1"
 ra_ap_hir = "0.0.351"
@@ -93,10 +91,6 @@ reqwest = { version = "0.13", default-features = false, features = [
   "blocking",
   "rustls",
 ] }
-# Read by build scripts to bake the compiler's identity into the plugin
-# handshake: whisker refuses to load a custom lint plugin built by a
-# different rustc, because Rust's ABI is only coherent within one compiler.
-rustc_version = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Checks an archive of prebuilt lints against the digest its publisher

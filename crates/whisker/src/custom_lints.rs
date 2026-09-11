@@ -1,5 +1,5 @@
 use std::collections::{BTreeSet, HashSet};
-use std::ffi::{CStr, OsString, c_char};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -422,9 +422,6 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
 
     let plugin = AbiIdentity {
         abi_version: plugin_abi_version,
-        rustc_version: read_declaration_string(unsafe {
-            (&raw const (*declaration).rustc_version).read()
-        })?,
         types_fingerprint: unsafe { (&raw const (*declaration).types_fingerprint).read() },
         language_fingerprint: unsafe { (&raw const (*declaration).language_fingerprint).read() },
     };
@@ -461,26 +458,6 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
 /// `whisker_plugin_declaration` static.
 unsafe fn abi_version(declaration: *const PluginDeclaration) -> u32 {
     unsafe { declaration.cast::<u32>().read_unaligned() }
-}
-
-/// Reads one C string field of a plugin declaration
-///
-/// # Errors
-///
-/// Returns an error if the pointer is null or the string is not UTF-8,
-/// both of which mean the declaration was not written by `export_lints!`.
-fn read_declaration_string(field: *const c_char) -> anyhow::Result<String> {
-    anyhow::ensure!(
-        !field.is_null(),
-        "the plugin declaration is malformed; export lints with whisker_rust::export_lints!"
-    );
-
-    let text = unsafe { CStr::from_ptr(field) };
-    let text = text
-        .to_str()
-        .context("the plugin declaration is malformed; export lints with export_lints!")?;
-
-    Ok(text.to_owned())
 }
 
 #[cfg(test)]

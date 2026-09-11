@@ -6,9 +6,8 @@
 //! build agent that checks out the same pin.
 //!
 //! It is also the one step whisker cannot take on a machine that has no
-//! matching toolchain, which a machine running a released whisker binary
-//! usually has not: the handshake accepts a library only from the rustc
-//! that built whisker itself.
+//! toolchain at all, which a machine running a released whisker binary
+//! may well not have.
 //!
 //! So whisker looks for libraries that were built once, by whoever
 //! publishes the lints, against the whisker that is asking. The

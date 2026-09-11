@@ -45,7 +45,6 @@ extern "C" fn load() -> Loaded {
 #[allow(non_upper_case_globals)]
 pub static whisker_plugin_declaration: PluginDeclaration = PluginDeclaration {
     abi_version: whisker_types::plugin::ABI_VERSION + 1,
-    rustc_version: whisker_types::plugin::RUSTC_VERSION.as_ptr(),
     types_fingerprint: whisker_types::plugin::TYPES_FINGERPRINT,
     language_fingerprint: 0,
     load,

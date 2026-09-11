@@ -1,5 +1,3 @@
-use std::ffi::c_char;
-
 use crate::plugin::Loaded;
 
 /// The entry point a custom lint plugin exports
@@ -12,11 +10,8 @@ use crate::plugin::Loaded;
 ///
 /// - [`abi_version`] is a bare integer at offset zero of a `#[repr(C)]`
 ///   struct, readable whatever else changed.
-/// - [`rustc_version`] is a pointer to a NUL-terminated string in the
-///   plugin's immutable data, readable across rustc versions. It is a raw
-///   pointer rather than a `&CStr`, because a reference's layout is only
-///   promised within one compiler. The two fingerprints are plain `u64`,
-///   which needs no such promise.
+/// - [`types_fingerprint`] and [`language_fingerprint`] are plain `u64`,
+///   readable under any pair of compilers.
 /// - [`load`] is an `extern "C"` function pointer that hands back values
 ///   stabby lays out. Calling it is sound once the fingerprints prove
 ///   that both images lay those values out the same way.
@@ -25,24 +20,16 @@ use crate::plugin::Loaded;
 /// this struct is a wire format: the exporting macro constructs it in a
 /// `const` context and the loader consumes it field by field.
 ///
-/// `Send` and `Sync` are implemented by hand, because the version pointer
-/// makes the type `!Sync` by default; they are sound because it points at
-/// immutable `'static` data in the plugin image.
-///
 /// [`abi_version`]: PluginDeclaration::abi_version
+/// [`language_fingerprint`]: PluginDeclaration::language_fingerprint
 /// [`load`]: PluginDeclaration::load
-/// [`rustc_version`]: PluginDeclaration::rustc_version
+/// [`types_fingerprint`]: PluginDeclaration::types_fingerprint
 #[repr(C)]
 pub struct PluginDeclaration {
     /// The plugin's copy of [`ABI_VERSION`]
     ///
     /// [`ABI_VERSION`]: crate::plugin::ABI_VERSION
     pub abi_version: u32,
-
-    /// The plugin's copy of [`RUSTC_VERSION`]
-    ///
-    /// [`RUSTC_VERSION`]: crate::plugin::RUSTC_VERSION
-    pub rustc_version: *const c_char,
 
     /// The plugin's copy of [`TYPES_FINGERPRINT`]
     ///
@@ -77,13 +64,6 @@ pub struct PluginDeclaration {
     pub load: extern "C" fn() -> Loaded,
 }
 
-/// The declaration is a `static` a plugin exports, and `rustc_version`
-/// makes it a raw pointer, which is neither [`Send`] nor [`Sync`]. The
-/// pointer names a NUL-terminated string in the plugin's own image, which
-/// lives as long as the library is loaded and which nothing writes.
-unsafe impl Send for PluginDeclaration {}
-unsafe impl Sync for PluginDeclaration {}
-
 #[cfg(test)]
 mod tests {
     use std::mem::offset_of;
@@ -107,7 +87,6 @@ mod tests {
         let load = offset_of!(PluginDeclaration, load);
 
         assert!(offset_of!(PluginDeclaration, abi_version) < load);
-        assert!(offset_of!(PluginDeclaration, rustc_version) < load);
         assert!(offset_of!(PluginDeclaration, types_fingerprint) < load);
         assert!(offset_of!(PluginDeclaration, language_fingerprint) < load);
     }

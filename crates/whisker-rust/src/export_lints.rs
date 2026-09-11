@@ -31,7 +31,6 @@ macro_rules! export_lints {
         pub static whisker_plugin_declaration: $crate::plugin::PluginDeclaration =
             $crate::plugin::PluginDeclaration {
                 abi_version: $crate::plugin::ABI_VERSION,
-                rustc_version: $crate::plugin::RUSTC_VERSION.as_ptr(),
                 types_fingerprint: $crate::plugin::TYPES_FINGERPRINT,
                 language_fingerprint: $crate::plugin::LANGUAGE_FINGERPRINT,
                 load: __whisker_load,
@@ -63,7 +62,6 @@ macro_rules! export_lints {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
     use std::path::PathBuf;
 
     use stabby::closure::Call0Dyn;
@@ -120,9 +118,6 @@ mod tests {
     #[test]
     fn declaration_carries_the_handshake_constants() {
         assert_eq!(whisker_plugin_declaration.abi_version, plugin::ABI_VERSION);
-
-        let rustc_version = unsafe { CStr::from_ptr(whisker_plugin_declaration.rustc_version) };
-        assert_eq!(rustc_version, plugin::RUSTC_VERSION);
 
         let types = whisker_plugin_declaration.types_fingerprint;
         assert_eq!(types, plugin::TYPES_FINGERPRINT);

@@ -102,20 +102,21 @@ bring a whole repository of rules.
 
 ## The plugin boundary
 
-Rust has no stable ABI, so whisker only loads a plugin built by the same rustc
-from the same whisker source as the binary itself, and refuses anything else
-with an error that says what to rebuild. In practice: pin the plugin's whisker
-dependencies to the revision your whisker was built from, and build both with
-the same toolchain.
+Rust has no stable ABI of its own, so every type that crosses between whisker
+and a plugin is laid out by [stabby][stabby], whose layouts hold under any
+compiler. Whisker therefore loads a plugin regardless of which rustc built it.
+What the handshake compares is two fingerprints. One covers the types that
+whisker-types lays out, the other covers whisker-rust's decorations and the
+lint pass trait it generates. Each moves only when a definition it covers
+moves, and a plugin whose fingerprints differ from whisker's is refused with an
+error that says what to rebuild. In practice: pin the plugin's whisker
+dependencies to the revision your whisker was built from, which is the one sure
+way to match both. The toolchain is yours to choose.
 
-A released whisker accepts only a library built by the nightly that built it.
-To compile a lint crate for one yourself, install the toolchain that
-`rust-toolchain.toml` names at the release's commit. Otherwise build whisker
-from source and compile the lint crate with the same toolchain.
-
-That check covers whisker's own source and the compiler. The rest of the graph
-your plugin's lockfile resolves lies outside it. Commit that lockfile and keep
-it in step with the whisker you build against, the way
-[`examples/custom_lint`][example] does.
+That check covers whisker's own boundary. The rest of the graph your plugin's
+lockfile resolves lies outside it. Commit that lockfile and keep it in step
+with the whisker you build against, the way [`examples/custom_lint`][example]
+does.
 
 [example]: https://github.com/aonyx-ai/whisker/tree/main/examples/custom_lint
+[stabby]: https://crates.io/crates/stabby

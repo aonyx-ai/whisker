@@ -99,10 +99,10 @@ fn shared_build_directory() -> PathBuf {
 /// Writes a workspace of two plugin packages and returns its root
 ///
 /// The members differ in the node they answer to, so a source holding
-/// both proves that each library was loaded rather than one of them
-/// twice. Their dependencies are path dependencies on this repository,
-/// which is what makes the handshake pass: one toolchain builds whisker
-/// and both plugins.
+/// both proves that whisker loaded both libraries. Their dependencies are
+/// path dependencies on this repository,
+/// which is what makes the handshake pass: whisker and both plugins are
+/// built from the same whisker source.
 fn workspace_of_lints() -> TempDir {
     let directory = tempfile::tempdir().expect("temporary directory should be created");
     let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -419,9 +419,9 @@ fn check_with_a_workspace_of_lints_reports_every_member() {
 
 /// Pins the whole path: configure, compile, handshake, lint, report
 ///
-/// One toolchain builds both sides here, as the setup documentation asks
-/// of a real user, so the handshake passes for the same reason theirs
-/// does.
+/// Both sides are built from this repository here, as the setup
+/// documentation asks of a real user, so the handshake passes for the
+/// same reason theirs does.
 #[test]
 fn check_with_custom_lint_reports_its_diagnostic() {
     let target = package(TODO_SOURCE);
