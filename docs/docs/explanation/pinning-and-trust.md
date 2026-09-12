@@ -23,9 +23,9 @@ nothing about whether the contents deserve to run.
 
 ## What the handshake proves
 
-Compatibility. That a library was built by the same compiler and against the
-same Whisker source, so the two agree on memory layout. See
-[the plugin boundary][plugin-boundary].
+Compatibility. That a library was built against the same Whisker source, so
+the two agree on memory layout. The compiler each side used is not part of it.
+See [the plugin boundary][plugin-boundary].
 
 Neither check is a trust decision, and neither was meant to be.
 
