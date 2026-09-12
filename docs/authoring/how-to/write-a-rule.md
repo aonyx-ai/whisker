@@ -25,8 +25,13 @@ crate-type = ["cdylib"]
 ```
 
 `default-features = false` on whisker-rust leaves out rust-analyzer, which a
-rule does not need. The tag has to match the Whisker you run; see
-[matching the toolchain][toolchain].
+rule does not need.
+
+The tag has to match the Whisker you run. Whisker compares the layout of its
+own types against the plugin's, and pinning both crates to the release you
+installed is the sure way to match. The compiler is not compared, so build the
+crate with whatever toolchain you like. [The plugin boundary][plugin-boundary]
+explains what the comparison covers.
 
 ## Hook a node kind
 
@@ -124,8 +129,8 @@ whisker check .
 Whisker compiles the crate with your cargo, loads the library, and runs the
 rule. The first build takes as long as any Rust build.
 
-A library built by a different compiler than the Whisker running it is refused:
-[matching the toolchain][toolchain] is the fix, and
+A library built against a different Whisker than the one running it is refused.
+Match the pin above to the Whisker you installed;
 [the plugin boundary][plugin-boundary] is the reason.
 
 ## Give the rule options
@@ -147,8 +152,7 @@ impl RustLintPass for RepeatedPrimitiveParams {
     fn configure(&mut self, options: &RuleOptions) {
         self.boundary_attributes = options
             .names(RULE_ID, "boundary-attributes")
-            .unwrap_or_default()
-            .to_vec();
+            .unwrap_or_default();
     }
 }
 ```
@@ -174,4 +178,3 @@ Whisker never checks an option name.
 [plugin-boundary]: /authoring/explanation/plugin-boundary
 [prebuilt-lints]: /docs/reference/prebuilt-archives
 [template]: https://github.com/aonyx-ai/whisker/tree/main/examples/custom_lint
-[toolchain]: /authoring/how-to/match-the-toolchain

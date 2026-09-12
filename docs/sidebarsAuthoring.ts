@@ -12,7 +12,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "How-to guides",
       collapsed: false,
-      items: ["how-to/write-a-rule", "how-to/match-the-toolchain"],
+      items: ["how-to/write-a-rule"],
     },
     {
       type: "category",

@@ -15,9 +15,9 @@ digest published beside it, and puts `whisker` on the runner's `PATH`:
 A runner starts cold on every run, so a compile hurts most here.
 
 Prefer rules that publish [prebuilt archives][prebuilt-lints], which skips the
-build. When they publish nothing, the runner compiles them, and a released
-binary loads only libraries built by its own toolchain. Install that toolchain
-in the job; see [matching the toolchain][toolchain].
+build. When they publish nothing, the runner compiles them, so the job needs a
+Rust toolchain and pays for the build on every run. Any toolchain will do,
+because Whisker loads a plugin whatever rustc built it.
 
 ## Private repositories of rules
 
@@ -38,4 +38,3 @@ rather than this token. See [environment variables][environment-variables].
 
 [environment-variables]: /docs/reference/environment-variables
 [prebuilt-lints]: /docs/reference/prebuilt-archives
-[toolchain]: /authoring/how-to/match-the-toolchain

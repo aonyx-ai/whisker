@@ -13,8 +13,11 @@ downloads them instead of compiling the source.
 | Digest   | A `.sha256` published beside the archive            |
 | Contents | Regular files at the archive root, and nothing else |
 
-The tag is a digest of every value the handshake compares, plus the target
-triple. An archive published under a tag passes that Whisker's handshake.
+The tag is a digest of the two fingerprints the handshake compares and the
+protocol Whisker reads, plus the target triple. An archive published under a
+tag passes that Whisker's handshake. The compiler is not among the inputs, so
+one archive serves every Whisker built from the same boundary, whatever rustc
+built it.
 
 Whisker unpacks only regular files at the root, which keeps every entry inside
 the directory and passes over symbolic links.

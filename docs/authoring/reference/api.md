@@ -9,9 +9,9 @@ The crates a lint crate depends on document themselves.
 | [whisker-testing][whisker-testing] | `parse`, `decorate`, `execute`, `fixtures`, and `assert_diagnostic`                                 |
 
 Pin all three to the same tag as the Whisker you run. See
-[matching the toolchain][toolchain].
+[write a rule][write-a-rule].
 
-[toolchain]: /authoring/how-to/match-the-toolchain
+[write-a-rule]: /authoring/how-to/write-a-rule
 [whisker-rust]: https://docs.rs/whisker-rust
 [whisker-testing]: https://docs.rs/whisker-testing
 [whisker-types]: https://docs.rs/whisker-types

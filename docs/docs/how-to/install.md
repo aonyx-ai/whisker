@@ -35,14 +35,13 @@ toolchain, and rustup installs it during the build:
 cargo install --git https://github.com/aonyx-ai/whisker --locked whisker
 ```
 
-A build from source is the simpler choice for a project that compiles its own
-rules, because you then hold the toolchain that built the binary. See
-[matching the toolchain][toolchain].
+A release and a build from source load the same rules. Whisker loads a plugin
+whatever rustc built it, so this choice is only about how you obtain the
+binary.
 
 ## Next
 
-- [Supported platforms][platforms]: the archives, the glibc floor, and the
-  toolchain each release carries.
+- [Supported platforms][platforms]: the archives and the glibc floor.
 - [Run Whisker on GitHub Actions][actions]: the same install on a runner.
 - [Configuration][configuration]: point Whisker at a set of rules.
 
@@ -50,4 +49,3 @@ rules, because you then hold the toolchain that built the binary. See
 [configuration]: /docs/reference/configuration
 [platforms]: /docs/reference/platforms
 [releases]: https://github.com/aonyx-ai/whisker/releases
-[toolchain]: /authoring/how-to/match-the-toolchain
