@@ -20,10 +20,15 @@ file that rust-analyzer excludes from the workspace.
 | A directory Whisker cannot read       | Ends the run |
 | An ignore file Whisker cannot parse   | Ends the run |
 | A file Whisker cannot read or analyze | Ends the run |
+| A rule that panics                    | Ends the run |
 | A run that finds nothing to check     | Fails        |
 
 The first two change which files Whisker inspects, so continuing would report
 on a different set than the project asked for.
+
+A rule that panics does not end the process. The panic comes back to Whisker as
+a value, and Whisker names the node kind, the byte offset, and the file the
+rule was checking. That file's walk stops there.
 
 Pass `--keep-going` to report each failure, continue, and still exit non-zero.
 

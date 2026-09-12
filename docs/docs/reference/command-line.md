@@ -3,18 +3,22 @@
 ## `whisker check`
 
 ```bash
-whisker check [OPTIONS] [PATH]
+whisker check [OPTIONS] [PATH] [ARGS]...
 ```
 
 | Argument          | Meaning                                                        |
 | ----------------- | -------------------------------------------------------------- |
 | `PATH`            | The directory or file to check. Defaults to `.`                |
+| `ARGS`            | Accepted and discarded                                         |
 | `--keep-going`    | Report each failure and continue. The run still exits non-zero |
 | `--deny-warnings` | Fail on warnings as well as errors                             |
 
 `PATH` decides which project Whisker reads its configuration from, and which
 Cargo workspace rust-analyzer loads. See
 [the configuration file][configuration].
+
+Whisker takes arguments after `PATH` and does nothing with them. Its own help
+calls them forwarded, and nothing forwards them yet.
 
 ## `whisker abi`
 

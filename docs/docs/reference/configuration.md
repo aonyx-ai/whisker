@@ -39,8 +39,9 @@ disable = ["lint.no-inline-comments"]
 boundary-attributes = ["shard", "procedure"]
 ```
 
-Every key is optional, and a file that sets none of them is valid. `enable` is
-the one setting missing above, because it and `disable` cannot both appear.
+Every key is optional, and a file that sets none of them is valid. Two settings
+are missing above. `enable` is missing because it and `disable` cannot both
+appear, and `whisker-source` is missing because almost no project sets it.
 
 Whisker rejects a key it does not recognize, so a typo is an error rather than
 a setting that silently does nothing.
@@ -162,6 +163,21 @@ Whisker never checks an option name, because nothing declares which options a
 rule reads. An option a rule ignores is therefore silently ignored. Which
 options a rule reads is that rule's own documentation.
 
+## `whisker-source`
+
+A directory holding Whisker's own source. Every configured lint then builds
+against the Whisker in that directory rather than the one its own manifest
+names, so the fingerprints match by construction.
+
+```toml
+whisker-source = "."
+```
+
+Only a project that holds Whisker's own source sets this, which in practice
+means Whisker's repository checking itself. Every other project leaves it
+unset and pins each lint source to a Whisker revision, which is what the
+handshake compares. See [the plugin boundary][plugin-boundary].
+
 ## Where the file lives
 
 The search starts at the path you check and climbs until it finds
@@ -175,4 +191,5 @@ target: Whisker checks it and applies no patterns.
 
 [checking-a-project]: /docs/reference/runs-and-outcomes
 [custom-lints]: /authoring/how-to/write-a-rule
+[plugin-boundary]: /authoring/explanation/plugin-boundary
 [prebuilt-lints]: /docs/reference/prebuilt-archives
