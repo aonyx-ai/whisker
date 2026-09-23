@@ -1,21 +1,11 @@
 # Whisker
 
-Whisker is a language-agnostic linting platform that lets you build
-hyper-specific lints.
+Whisker is a linting platform built on tree-sitter. It lints Rust today.
 
-With the dawn of agentic coding, the software development world has (finally)
-become interested in stricter guardrails. Language-specific linting tools are
-limited to community-wide best practice rules, but there are probably more
-specific rules in your projects or organization. Whisker aims to let you build
-lints against those rules, however weird they may be.
-
-Installing Whisker by itself isn't very valuable, as it _does not_ ship any
-lints. Follow the [quick start][quick-start] to set up the tooling and build
-your first lint.
-
-Whisker does not currently attempt to promise any kind of linting performance.
-We may optimize Whisker later, but for now we're focused on covering all lints
-you may want to build.
+Whisker ships no rules of its own. A project brings its own, either a crate in
+the repository or a repository of shared rules pinned to a commit. Rules can be
+as specific as your codebase is: the ones a language's own linter would never
+carry, because only your project wants them.
 
 ## Install
 
@@ -23,12 +13,22 @@ you may want to build.
 curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 ```
 
-[Installation](/docs/installation) covers Linux, macOS, GitHub Actions, and a
+[Install Whisker][installation] covers Linux, macOS, GitHub Actions, and a
 build from source.
 
 ## Where to start
 
 - **[Quick start][quick-start]**  
-  Install Whisker, point it at a set of rules, and check a project.
+  Install Whisker, write a rule, and check a project.
+- **[Write a rule][custom-lints]**  
+  Hook a node kind, test it, and give it options.
+- **[Configuration][configuration]**  
+  Every key of `.config/whisker.toml`.
+- **[How Whisker works][how-it-works]**  
+  Why syntax and semantics stay apart, and what that buys.
 
-[quick-start]: /docs/quick-start
+[configuration]: /docs/reference/configuration
+[custom-lints]: /authoring/how-to/write-a-rule
+[how-it-works]: /docs/explanation/how-whisker-works
+[installation]: /docs/how-to/install
+[quick-start]: /docs/tutorials/quick-start
