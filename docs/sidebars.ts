@@ -29,8 +29,9 @@ const sidebars: SidebarsConfig = {
       items: [
         "how-to/install",
         "how-to/github-actions",
-        "how-to/pin-shared-rules",
+        "how-to/shared-rules",
         "how-to/adopt-rules-gradually",
+        "how-to/troubleshooting",
       ],
     },
     {
@@ -40,7 +41,6 @@ const sidebars: SidebarsConfig = {
       items: [
         "reference/configuration",
         "reference/command-line",
-        "reference/runs-and-outcomes",
         "reference/file-discovery",
         "reference/prebuilt-archives",
         "reference/environment-variables",
@@ -54,7 +54,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         "explanation/how-whisker-works",
-        "explanation/coverage",
+        "explanation/package-and-abi-versioning",
         "explanation/pinning-and-trust",
       ],
     },

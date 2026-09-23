@@ -1,51 +1,57 @@
 # Install Whisker
 
-## With the install script
+There's various ways to install Whisker. On this page we'll go through a few
+options.
 
-The script picks the archive for the machine it runs on, checks it against the
-digest published beside it, and puts the binary in `~/.local/bin`:
+## Recommended: Install script
+
+This is easily the fastest way to get started. Feel free to read through [the
+installation script][install-sh] to make sure it's safe to run.
 
 ```bash
 curl -LsSf https://aonyx-ai.github.io/whisker/install.sh | sh
 ```
 
-Set `WHISKER_INSTALL_DIR` to install somewhere else. The script installs the
-newest release over whatever Whisker that directory already holds.
+If you don't want to install in `$HOME/.local/bin` you can set a different path
+in the `WHISKER_INSTALL_DIR` environment variable and the script will pick that
+up.
 
-## By hand
+## Github Releases
 
-Download the archive for your platform from the [releases page][releases],
-check it against the `.sha256` beside it, and unpack it:
+Alternatively, grab the `.tar.gz` and the shasum directly from [Github
+Releases][gh-releases]. You'll have to move the file someplace on your `$PATH`
+yourself.
 
 ```bash
 shasum -a 256 -c whisker-0.1.0-rc.4-aarch64-apple-darwin.tar.gz.sha256
 tar -xzf whisker-0.1.0-rc.4-aarch64-apple-darwin.tar.gz
 ```
 
-The archive unpacks to a directory named after the release and the platform. It
-holds the binary, both licenses, and the README. Move `whisker` to a directory
-on your `PATH`, such as `~/.local/bin`.
-
 ## From source
 
-Whisker also builds from source. `rust-toolchain.toml` pins a nightly
-toolchain, and rustup installs it during the build:
+<!--
+what if my platform has no archive. cargo install --git --locked, and
+rust-toolchain.toml pulling the nightly.
+-->
+
+If your platform has no archive, you want to install an unreleased version, or
+you don't want to install binary files from the internet, you can easily build
+Whisker from source. The easiest method is to use `cargo install` pointed at the
+Git repository:
 
 ```bash
 cargo install --git https://github.com/aonyx-ai/whisker --locked whisker
 ```
 
-A release and a build from source load the same rules. Whisker loads a plugin
-whatever rustc built it, so this choice is only about how you obtain the
-binary.
+Alternatively, you can clone the repository and install it from there. Note that
+our workspace includes a nightly toolchain for some checks, but you can use
+Cargo's `+stable` option to bypass installing it.
 
-## Next
+```bash
+git clone https://github.com/aonyx-ai/whisker
+cd whisker
+cargo +stable install --locked --path crates/whisker
+```
 
-- [Supported platforms][platforms]: the archives and the glibc floor.
-- [Run Whisker on GitHub Actions][actions]: the same install on a runner.
-- [Configuration][configuration]: point Whisker at a set of rules.
-
-[actions]: /docs/how-to/github-actions
-[configuration]: /docs/reference/configuration
-[platforms]: /docs/reference/platforms
-[releases]: https://github.com/aonyx-ai/whisker/releases
+[install-sh]: https://github.com/aonyx-ai/whisker/blob/main/docs/static/install.sh
+[gh-releases]: https://github.com/aonyx-ai/whisker/releases

@@ -1,5 +1,20 @@
 # Environment variables
 
+<!--
+goal: one table saying which variable changes what, and who reads it.
+non-goal: explaining the cache or the token model. each has its own page.
+-->
+
+## the table
+
+<!--
+which variables exist. seven rows, each naming its reader, the install script or
+whisker check.
+where does my token go. only to the API host asked for releases.
+why is my `GIT_*` environment ignored. the fetch uses the machine's git
+credentials and ignores it so a run inside a hook cannot be redirected.
+-->
+
 | Variable                 | Read by            | Effect                                                                                          |
 | ------------------------ | ------------------ | ----------------------------------------------------------------------------------------------- |
 | `WHISKER_INSTALL_DIR`    | The install script | Where to put the binary. Defaults to `~/.local/bin`                                             |
@@ -9,13 +24,3 @@
 | `GITHUB_TOKEN`           | `whisker check`    | The same, when `GH_TOKEN` is unset                                                              |
 | `CARGO`                  | `whisker check`    | The cargo that builds a lint crate. Defaults to the one on `PATH`                               |
 | `WHISKER_GITHUB_API_URL` | `whisker check`    | A GitHub Enterprise API to ask for prebuilt archives                                            |
-
-Whisker sends a token only to the API host it asks for releases.
-
-Fetching the source of a repository is separate: that fetch carries the
-machine's own git credentials, and ignores the `GIT_*` environment so that a
-run inside a git hook cannot be redirected.
-
-[Cache layout][cache] covers what the cache directory holds.
-
-[cache]: /docs/reference/cache-layout

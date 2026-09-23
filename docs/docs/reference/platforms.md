@@ -1,6 +1,18 @@
-# Supported platforms
+# Platforms
 
-Every release carries an archive per platform, each with a `.sha256` beside it.
+<!--
+goal: tell a reader whether their machine has a prebuilt archive.
+non-goal: install instructions. install.md owns those.
+-->
+
+## the table
+
+<!--
+is my platform here. three targets, each with a .sha256 beside it.
+will the Linux binary run on my distro. 2.35, which Ubuntu 22.04 and Debian 12
+satisfy.
+what if I am not listed. build from source.
+-->
 
 | Platform               | Target                      |
 | ---------------------- | --------------------------- |
@@ -8,8 +20,7 @@ Every release carries an archive per platform, each with a `.sha256` beside it.
 | Linux on arm64         | `aarch64-unknown-linux-gnu` |
 | macOS on Apple silicon | `aarch64-apple-darwin`      |
 
-The Linux binaries need glibc 2.35 or newer, which Ubuntu 22.04 and Debian 12
-satisfy. Build [from source][installation] on anything older, and on any
-platform not listed.
-
-[installation]: /docs/how-to/install
+<!--
+this page is one table and two sentences. it may belong inside install.md rather
+than standing alone.
+-->

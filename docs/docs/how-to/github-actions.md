@@ -1,7 +1,17 @@
-# Run Whisker on GitHub Actions
+# GitHub Actions
 
-The action in the Whisker repository downloads a release, checks it against the
-digest published beside it, and puts `whisker` on the runner's `PATH`:
+<!--
+goal: get a whisker check running in a workflow without paying a build on every
+run.
+non-goal: teaching Actions. every snippet assumes the reader writes workflows.
+-->
+
+This page explains how to get Whisker running automatically in Github Actions.
+
+## Install step
+
+We publish a Github Action to install Whisker directly from the Whisker
+repository:
 
 ```yaml
 - uses: aonyx-ai/whisker@v0.1.0-rc.4
@@ -10,19 +20,22 @@ digest published beside it, and puts `whisker` on the runner's `PATH`:
 - run: whisker check .
 ```
 
-## Rules the runner has to compile
+## Caching rules
 
-A runner starts cold on every run, so a compile hurts most here.
+Currently, the action does not cache anything. When you are not using [shared
+rules][shared-rules], the action will rebuild rules every time. This will be
+very slow.
 
-Prefer rules that publish [prebuilt archives][prebuilt-lints], which skips the
-build. When they publish nothing, the runner compiles them, so the job needs a
-Rust toolchain and pays for the build on every run. Any toolchain will do,
-because Whisker loads a plugin whatever rustc built it.
+## Private rules
 
-## Private repositories of rules
+If you're using [shared rules][shared-rules] from a private repository, your
+action will not be able to access them by default. You'll need to configure a
+Github token and add it as a secret to a job.
 
-Whisker reads `GH_TOKEN`, then `GITHUB_TOKEN`, when it asks a repository's
-releases for prebuilt archives, and sends the token only to that API host:
+The default token that is configured with Github (`GITHUB_TOKEN`) is only able
+to grant access to the active repository. [Github
+recommends][gh-additional-permissions] using a Github App or a personal access
+token. For a PAT, add it to your Github Secrets and pass it to Whisker like so:
 
 ```yaml
 - run: whisker check .
@@ -30,11 +43,5 @@ releases for prebuilt archives, and sends the token only to that API host:
     GH_TOKEN: ${{ secrets.RULES_TOKEN }}
 ```
 
-The runner's own `GITHUB_TOKEN` reaches only the repository the workflow runs
-in. Rules elsewhere need a token that reaches that repository.
-
-Fetching the source is separate: that fetch uses the machine's git credentials
-rather than this token. See [environment variables][environment-variables].
-
-[environment-variables]: /docs/reference/environment-variables
-[prebuilt-lints]: /docs/reference/prebuilt-archives
+[shared-rules]: /docs/how-to/shared-rules
+[gh-additional-permissions]: https://docs.github.com/en/actions/tutorials/authenticate-with-github_token#granting-additional-permissions

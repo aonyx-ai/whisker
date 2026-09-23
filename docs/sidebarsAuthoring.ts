@@ -18,7 +18,7 @@ const sidebars: SidebarsConfig = {
       type: "category",
       label: "Reference",
       collapsed: true,
-      items: ["reference/api"],
+      items: ["reference/api", "reference/prebuilt-archives"],
     },
     {
       type: "category",

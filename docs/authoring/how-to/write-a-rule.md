@@ -1,14 +1,25 @@
 # Write a rule
 
-A rule is a Rust crate that Whisker compiles and loads.
+<!--
+goal: take a reader from nothing to their own rule running in their project.
+non-goal: explaining the boundary or the pipeline. both have their own pages.
+-->
 
-Start from [`examples/doc_summary_break`][example], or from
-[`examples/custom_lint`][template], which is the same shape with more comments.
-Copy either into `lints/` in your project.
+## start from an example
 
-## What a crate holds
+<!--
+where do I begin. doc_summary_break, or custom_lint for the same shape with more
+comments.
+-->
 
-A lint crate is a `cdylib` that depends on whisker-rust and whisker-types:
+## what a crate holds
+
+<!--
+what does the manifest look like. a cdylib plus the two whisker deps at a tag,
+and why default-features = false.
+how do I match the whisker I run. pin both crates to the release you installed,
+and the compiler is not compared.
+-->
 
 ```toml title="lints/doc_summary_break/Cargo.toml"
 [package]
@@ -24,20 +35,14 @@ whisker-types = { git = "https://github.com/aonyx-ai/whisker.git", tag = "v0.1.0
 crate-type = ["cdylib"]
 ```
 
-`default-features = false` on whisker-rust leaves out rust-analyzer, which a
-rule does not need.
+## hook a node kind
 
-The tag has to match the Whisker you run. Whisker compares the layout of its
-own types against the plugin's, and pinning both crates to the release you
-installed is the sure way to match. The compiler is not compared, so build the
-crate with whatever toolchain you like. [The plugin boundary][plugin-boundary]
-explains what the comparison covers.
-
-## Hook a node kind
-
-`RustLintPass` has one method per named node kind in the Rust grammar. Take the
-kind you care about and return the diagnostics you found. Every other kind
-keeps its default, which returns nothing:
+<!--
+how does my code get called. one method per node kind, returning diagnostics,
+every other kind defaulting to nothing.
+what bites me next. passes hold state so each file gets a fresh one, and a
+supertype beats hooking every kind under it.
+-->
 
 ```rust
 impl RustLintPass for DocSummaryBreak {
@@ -56,15 +61,12 @@ impl RustLintPass for DocSummaryBreak {
 }
 ```
 
-Whisker builds a fresh pass for each file, because passes hold state.
+## declare and export the rule
 
-Grammars group kinds into supertypes, so a rule that cares about every
-expression hooks the supertype rather than every kind under it.
-
-## Declare and export the rule
-
-The id is what a project names in `[rules]`, and what a diagnostic carries.
-Declaring it is what lets Whisker refuse a misspelled name in a configuration:
+<!--
+what makes a rule nameable in a config. a RuleId, DeclaresRules, and
+export_lints! taking a list.
+-->
 
 ```rust
 const RULE_ID: RuleId = RuleId::new("lint.doc-summary-break");
@@ -78,12 +80,14 @@ impl whisker_rust::DeclaresRules for DocSummaryBreak {
 whisker_rust::export_lints![DocSummaryBreak];
 ```
 
-`export_lints!` takes a list, so one crate can carry several rules.
+## test it
 
-## Test it
-
-whisker-testing runs a rule against source text, with no project and no
-toolchain around it:
+<!--
+how do I know it works. whisker-testing parse, execute and assert_diagnostic,
+with no project and no toolchain.
+how do I test a type-aware rule. build the decorations yourself rather than
+running a toolchain.
+-->
 
 ```rust
 use whisker_rust::RustLintPassAdapter;
@@ -105,17 +109,12 @@ fn a_second_line_against_the_summary_is_flagged() {
 }
 ```
 
-`assert_diagnostic` also checks severity, message, span, and the counts of
-origins, related spans, and suggestions. `fixtures` reads a directory of source
-files when a rule needs more than a string.
+## run it
 
-A rule that reads type information takes its decorations from `decorate`, so a
-test builds those facts itself rather than running a toolchain. See
-[how Whisker works][how-it-works].
-
-## Run it
-
-Name the directory in your configuration, and check the project:
+<!--
+how do I use it for real. a [[lints]] path entry and whisker check.
+what if it will not load. match the pin, and the boundary page is the reason.
+-->
 
 ```toml title=".config/whisker.toml"
 [[lints]]
@@ -126,26 +125,19 @@ path = "lints/doc_summary_break"
 whisker check .
 ```
 
-Whisker compiles the crate with your cargo, loads the library, and runs the
-rule. The first build takes as long as any Rust build.
+## give the rule options
 
-A library built against a different Whisker than the one running it is refused.
-Match the pin above to the Whisker you installed;
-[the plugin boundary][plugin-boundary] is the reason.
-
-## Give the rule options
-
-A rule cannot always decide a case from the source alone. Whether an attribute
-marks a system boundary depends on which framework wrote the attribute, and no
-rule knows every framework. A project names what the rule cannot know:
+<!--
+how does a rule learn what it cannot read off the source. a rules.options table,
+read in configure.
+why does None versus empty matter. a rule with a default worth keeping can tell
+them apart.
+-->
 
 ```toml title=".config/whisker.toml"
 [rules.options."lint.repeated-primitive-params"]
 boundary-attributes = ["shard", "procedure"]
 ```
-
-The rule reads it in `configure`, which Whisker calls once on each pass before
-that pass sees a node:
 
 ```rust
 impl RustLintPass for RepeatedPrimitiveParams {
@@ -157,24 +149,8 @@ impl RustLintPass for RepeatedPrimitiveParams {
 }
 ```
 
-`names` returns `None` when the project set no such option, and `Some` holding
-nothing when it set an empty list. A rule with a default worth keeping can tell
-the two apart. Which options a rule reads is the rule's own documentation:
-Whisker never checks an option name.
+## next
 
-## Next
-
-- [API documentation][api]: the crates a rule is written against.
-- [Configuration][configuration]: every key of `.config/whisker.toml`.
-- [Pin a shared set of rules][pinning-rules]: move the crate into its own
-  repository.
-- [Publish prebuilt archives][prebuilt-lints]: spare every consumer the build.
-
-[api]: /authoring/reference/api
-[configuration]: /docs/reference/configuration
-[example]: https://github.com/aonyx-ai/whisker/tree/main/examples/doc_summary_break
-[how-it-works]: /docs/explanation/how-whisker-works
-[pinning-rules]: /docs/how-to/pin-shared-rules
-[plugin-boundary]: /authoring/explanation/plugin-boundary
-[prebuilt-lints]: /docs/reference/prebuilt-archives
-[template]: https://github.com/aonyx-ai/whisker/tree/main/examples/custom_lint
+<!--
+where now. api, configuration, shared-rules, prebuilt archives.
+-->
