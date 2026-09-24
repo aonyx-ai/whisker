@@ -15,7 +15,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1"
-clawless = "0.6.0"
+clawless = "0.7.0"
 etcetera.workspace = true
 flate2.workspace = true
 gix.workspace = true
