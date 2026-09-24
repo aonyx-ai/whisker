@@ -398,9 +398,9 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "clawless"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85fec5bb609cc1076bc0f0a0b0690e792e4bfb6038fc938cccf7f6be229f78c4"
+checksum = "22029b1ae3a58f13313d8d9711e0a55a9451f2e4e10817f4667e637b6ce0a41b"
 dependencies = [
  "clap",
  "clawless-cli",
@@ -414,9 +414,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-cli"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac329448a14e6b274df9017910d5b265f5c29f54b306bf7e817c0b7fc77d5623"
+checksum = "6ecb633e4f88267a69f734820ad2658bef7f920fed436143e8ef3bf66a8d3c2a"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -432,13 +432,14 @@ dependencies = [
 
 [[package]]
 name = "clawless-core"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13242e36517abfd2bbb8aa74b0287f627e1f0a36383885ca5728893221ded4d5"
+checksum = "076956a329298b5b3e74ca03a0250514b66dbc4faafa090d9b74987fb7bc404d"
 dependencies = [
  "bon",
  "erased-serde",
  "getset",
+ "kawauso-process",
  "serde",
  "thiserror",
  "tokio",
@@ -448,9 +449,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-derive"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75da5ee0fed3df5894d6af1a54cc9f1ea9ebe31ff8f6f6c31dea54718f258fd7"
+checksum = "f8d4fd54cf54c23196aa8c8b7fa7833b59685d035075d490c45bd7041e2ce61f"
 dependencies = [
  "darling 0.24.0",
  "proc-macro2",
@@ -460,9 +461,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-tui"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd75b2854cb56c618ce19c6f913799d9e9bd8047c3d1df3295b9641939d13396"
+checksum = "d66b0903f03bb6b2bdbe7972335dde53bc239cdf36a4a9f75451041dd2390004"
 dependencies = [
  "anyhow",
  "clap",
@@ -2585,6 +2586,18 @@ dependencies = [
  "serde_path_to_error",
  "thiserror",
  "toml",
+ "typed-fields",
+]
+
+[[package]]
+name = "kawauso-process"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e8bc089a1fce8c0ee9a53d418c27b4929c3c99c05a121e4f05ba39a8b621446"
+dependencies = [
+ "rustix",
+ "thiserror",
+ "tokio",
  "typed-fields",
 ]
 
