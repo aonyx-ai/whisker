@@ -49,7 +49,7 @@ etcetera = "0.11"
 # the fetch agree on what a remote is. Whisker took that parser from `gix-url`
 # directly until gitoxide 0.87 moved the two crates apart, and a remote parsed
 # by one version cannot be handed to a fetch built on the other.
-gix = { version = "0.87", default-features = false, features = [
+gix = { version = "0.88", default-features = false, features = [
   "blocking-network-client",
   "blocking-http-transport-reqwest-rust-tls",
   "worktree-mutation",
