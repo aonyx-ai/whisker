@@ -398,9 +398,9 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "clawless"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22029b1ae3a58f13313d8d9711e0a55a9451f2e4e10817f4667e637b6ce0a41b"
+checksum = "bd3c574d62fabab0a7a045d05199912cafaebb7bf6b1b43332363e4fee98ca40"
 dependencies = [
  "clap",
  "clawless-cli",
@@ -414,9 +414,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-cli"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ecb633e4f88267a69f734820ad2658bef7f920fed436143e8ef3bf66a8d3c2a"
+checksum = "43b541f29447d5c35fccb82f4aade5f00e5b909d44a8418b4a098ea6ccdc0d6d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -432,9 +432,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-core"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "076956a329298b5b3e74ca03a0250514b66dbc4faafa090d9b74987fb7bc404d"
+checksum = "b8dcf8272857e1dca70258b24c6926120f916ab043f2edf996aae66b3163433f"
 dependencies = [
  "bon",
  "erased-serde",
@@ -449,9 +449,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-derive"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8d4fd54cf54c23196aa8c8b7fa7833b59685d035075d490c45bd7041e2ce61f"
+checksum = "aace017dc7e48455700d27253597e936ee0af371ac0bcbaaa78616309b6a7fa5"
 dependencies = [
  "darling 0.24.0",
  "proc-macro2",
@@ -461,9 +461,9 @@ dependencies = [
 
 [[package]]
 name = "clawless-tui"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d66b0903f03bb6b2bdbe7972335dde53bc239cdf36a4a9f75451041dd2390004"
+checksum = "9fe0724c25474ff2e60c773be2adcb7708ff1bff5e9152fef5262b20466dfdce"
 dependencies = [
  "anyhow",
  "clap",
