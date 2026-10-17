@@ -2589,9 +2589,9 @@ dependencies = [
 
 [[package]]
 name = "kawauso-config"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffe2ba7ba9821bb85741950b1dd035f6449dfa6fa1315e917be05c0d697f3802"
+checksum = "68b3e0d0ebc37c52a9349cec40924ae006e66cd097ebaaf17834bbe6c55a5087"
 dependencies = [
  "dirs",
  "serde",
@@ -2615,11 +2615,12 @@ dependencies = [
 
 [[package]]
 name = "kawauso-project"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de460985bdca60d0804251608e6157f483072a65842864db29d17a1fc7b46203"
+checksum = "f9409b3ac7a4910a81cc8d61369adb8d4520a874918c5056660f3e3fd519772d"
 dependencies = [
  "bon",
+ "dirs",
  "kawauso-config",
  "serde",
  "thiserror",
