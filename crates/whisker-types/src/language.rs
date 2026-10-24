@@ -29,11 +29,13 @@ impl Language {
     /// use whisker_types::Language;
     ///
     /// assert_eq!(Language::from_extension("rs"), Some(Language::Rust));
+    /// assert_eq!(Language::from_extension("tsx"), Some(Language::TypeScript));
     /// assert_eq!(Language::from_extension("py"), None);
     /// ```
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
             "rs" => Some(Self::Rust),
+            "ts" | "mts" | "cts" | "tsx" => Some(Self::TypeScript),
             _ => None,
         }
     }
@@ -76,6 +78,17 @@ mod tests {
     }
 
     #[test]
+    fn from_extension_with_typescript_extensions_returns_typescript() {
+        for extension in ["ts", "mts", "cts", "tsx"] {
+            assert_eq!(
+                Language::from_extension(extension),
+                Some(Language::TypeScript),
+                "`.{extension}` should be TypeScript"
+            );
+        }
+    }
+
+    #[test]
     fn from_extension_with_unknown_returns_none() {
         assert_eq!(Language::from_extension("py"), None);
         assert_eq!(Language::from_extension("js"), None);
@@ -95,8 +108,8 @@ mod tests {
 
         proptest! {
             #[test]
-            fn non_rs_extension_returns_none(ext in "[a-z]{1,10}") {
-                prop_assume!(ext != "rs");
+            fn unknown_extension_returns_none(ext in "[a-z]{1,10}") {
+                prop_assume!(!["rs", "ts", "mts", "cts", "tsx"].contains(&ext.as_str()));
                 prop_assert_eq!(Language::from_extension(&ext), None);
             }
         }

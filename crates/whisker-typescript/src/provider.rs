@@ -43,8 +43,8 @@ const TYPED_KINDS: [&str; 3] = [
 /// because the checker's offsets would address the old text.
 ///
 /// The program is built once and lives for the rest of the process, as it
-/// does in tsrs's own command-line compiler. Whisker loads one project per
-/// run, so the memory is the run's.
+/// does in tsrs's own command-line compiler. A check loads each project
+/// once, so the memory is the run's.
 ///
 /// # Examples
 ///
@@ -142,6 +142,34 @@ impl TypeScriptDecorationProvider {
             config,
             root,
         })
+    }
+
+    /// Returns the directory of the TypeScript project that holds `path`
+    ///
+    /// That is the directory of the `tsconfig.json` nearest at or above
+    /// `path`, which is the project [`TypeScriptDecorationProvider::load`]
+    /// loads for it. A caller with files from several projects groups them
+    /// by this, and loads each project once.
+    ///
+    /// Returns [`None`] when no `tsconfig.json` sits at or above `path`, or
+    /// when the current directory cannot be read to resolve a relative path.
+    ///
+    /// [`None`]: std::option::Option::None
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::path::Path;
+    ///
+    /// use whisker_typescript::TypeScriptDecorationProvider;
+    ///
+    /// let root = TypeScriptDecorationProvider::project_root(Path::new("src/main.ts"));
+    /// ```
+    pub fn project_root(path: &Path) -> Option<PathBuf> {
+        let path = std::path::absolute(path).ok()?;
+        let config = discover_config(&path)?;
+
+        config.parent().map(Path::to_path_buf)
     }
 
     /// Returns the gap for a file the program does not hold

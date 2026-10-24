@@ -92,6 +92,28 @@ Run Whisker from inside your project, or pass the project directory:
 `whisker check path/to/project`. Without a path, Whisker uses the current
 directory.
 
+## failed to load the TypeScript project for analysis
+
+<!--
+what happened. a TypeScript file has no tsconfig.json at or above it, or the
+tsconfig.json it has cannot be read. the cause line names the file or the
+configuration.
+what do I do. give the file a project, install what the configuration extends,
+or exclude the file from whisker.
+why does whisker need one. the checker reads the configuration to know which
+files make up the program and how to type them.
+-->
+
+Whisker checks each TypeScript file as part of the project of the
+`tsconfig.json` nearest it. The cause below the error says what went wrong:
+
+| Cause                                      | Fix                                                                        |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `discover a TypeScript project for <file>` | Add a `tsconfig.json` above the file, or exclude the file from whisker     |
+| `parse <tsconfig.json>`, naming a package  | Install the project's dependencies, because its configuration extends them |
+
+To exclude files, add them to the `ignore` patterns in `.config/whisker.toml`.
+
 ## no decoration provider covers this file, so semantic rules cannot run
 
 | Reason                                 | `help:` line                                                                             |

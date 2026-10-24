@@ -1,22 +1,24 @@
 mod check_outcome;
 mod error_recovery;
 mod failure_threshold;
+mod grammar;
+mod providers;
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
-use whisker_rust::RustDecorationProvider;
-use whisker_types::{
-    DecorationProvider, Diagnostic, Language, LintPass, RuleOptions, UncoveredFile,
-};
+use whisker_types::{Diagnostic, LintPass, RuleOptions, UncoveredFile};
 
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::{ErrorRecovery, Walk};
 use self::failure_threshold::FailureThreshold;
+use self::grammar::Grammar;
+use self::providers::Providers;
 use crate::config::WhiskerConfig;
 use crate::custom_lints::CustomLints;
 use crate::discovery::{Discovery, WalkErrorPolicy};
@@ -157,12 +159,8 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         path.display()
     );
 
-    let mut pipeline = Pipeline::new(Language::Rust, &whisker_rust::language())
-        .context("failed to initialize pipeline")?;
-
-    let provider = RustDecorationProvider::load(&path)
-        .context("failed to load the target project for analysis")?;
-    let providers: Vec<&dyn DecorationProvider> = vec![&provider];
+    let providers = Providers::load(&path, files)?;
+    let mut pipelines: HashMap<Grammar, Pipeline> = HashMap::new();
 
     let mut all_diagnostics = Vec::new();
     let mut sources: HashMap<Arc<Path>, String> = HashMap::new();
@@ -179,6 +177,23 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
 
         let mut passes = create_lint_passes(&custom_lints, config.options())
             .context("failed to configure the custom lints")?;
+
+        let Some(grammar) = Grammar::of(file) else {
+            let error = anyhow::anyhow!("whisker has no grammar for {}", file.display());
+            match recovery.record(&mut outcome, file, error) {
+                Walk::Continue => continue,
+                Walk::Stop => break,
+            }
+        };
+        let pipeline = match pipelines.entry(grammar) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(
+                grammar
+                    .pipeline()
+                    .context("failed to initialize pipeline")?,
+            ),
+        };
+        let providers = providers.for_file(file, grammar.language());
 
         match pipeline.run_on_source(&source, file, &providers, &mut passes) {
             Ok(diagnostics) => {

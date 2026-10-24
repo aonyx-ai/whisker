@@ -1,16 +1,16 @@
 # Whisker
 
-Whisker is a linting platform built on [tree-sitter][ts]. It lints Rust
-today. Whisker ships no rules of its own: a project configures the ones it
+Whisker is a linting platform built on [tree-sitter][ts]. It lints Rust and
+TypeScript. Whisker ships no rules of its own: a project configures the ones it
 wants, and those are exactly the ones it runs. Aonyx's own live in
 [whisker-aonyx-rules][rules] and cover what Clippy does not, like derive
 ordering, wildcard match arms, `matches!` macro usage, and the other style
 rules defined in our `CLAUDE.md` files.
 
-A rule implements the `RustLintPass` trait, which whisker generates from
-tree-sitter's Rust grammar. A rule that needs type information reads
-decorations that whisker computes with [rust-analyzer][ra] before any rule
-runs.
+A rule implements the `RustLintPass` or `TypeScriptLintPass` trait, which
+whisker generates from tree-sitter's grammar for that language. A rule that
+needs type information reads decorations that whisker computes before any rule
+runs, with [rust-analyzer][ra] for Rust and [tsrs][tsrs] for TypeScript.
 
 ## Status
 
@@ -54,7 +54,7 @@ The [documentation][docs] covers the rest:
 
 - [Install Whisker][install] — release archives, the GitHub Actions action,
   and building from source.
-- [Runs and outcomes][checking] — what ends a run, and what fails it.
+- [Command line][checking] — what ends a run, and what fails it.
 - [Configuration][configuration] — every key of `.config/whisker.toml`.
 - [Write a rule][custom-lints] — hook a node kind, test it, and give it
   options.
@@ -80,7 +80,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
-[checking]: https://aonyx-ai.github.io/whisker/docs/reference/runs-and-outcomes
+[checking]: https://aonyx-ai.github.io/whisker/docs/reference/command-line
 [configuration]: https://aonyx-ai.github.io/whisker/docs/reference/configuration
 [custom-lints]: https://aonyx-ai.github.io/whisker/authoring/how-to/write-a-rule
 [docs]: https://aonyx-ai.github.io/whisker/
@@ -90,3 +90,4 @@ dual licensed as above, without any additional terms or conditions.
 [releases]: https://github.com/aonyx-ai/whisker/releases
 [rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
 [ts]: https://tree-sitter.github.io/tree-sitter/
+[tsrs]: https://github.com/oxc-project/tsrs

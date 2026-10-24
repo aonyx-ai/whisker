@@ -5701,6 +5701,7 @@ dependencies = [
  "whisker-reporting",
  "whisker-rust",
  "whisker-types",
+ "whisker-typescript",
 ]
 
 [[package]]

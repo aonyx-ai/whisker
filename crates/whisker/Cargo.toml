@@ -32,6 +32,7 @@ whisker-core = { path = "../whisker-core" }
 whisker-reporting = { path = "../whisker-reporting" }
 whisker-plugin = { path = "../whisker-plugin" }
 whisker-rust = { path = "../whisker-rust" }
+whisker-typescript = { path = "../whisker-typescript" }
 whisker-types = { path = "../whisker-types" }
 
 [dev-dependencies]

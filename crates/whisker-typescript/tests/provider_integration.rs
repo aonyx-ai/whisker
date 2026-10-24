@@ -256,3 +256,30 @@ fn name_returns_typescript() {
 
     assert_eq!(name.as_str(), "typescript");
 }
+
+#[test]
+fn project_root_finds_the_nearest_configuration() {
+    let project = Project::new(
+        STRICT,
+        &[
+            ("src/main.ts", "export const a = 1;\n"),
+            ("packages/b/tsconfig.json", "{}"),
+            ("packages/b/index.ts", "export const b = 2;\n"),
+        ],
+    );
+
+    let outer = TypeScriptDecorationProvider::project_root(&project.path("src/main.ts"));
+    let inner = TypeScriptDecorationProvider::project_root(&project.path("packages/b/index.ts"));
+
+    assert_eq!(outer, Some(project.directory.path().to_path_buf()));
+    assert_eq!(inner, Some(project.path("packages/b")));
+}
+
+#[test]
+fn project_root_without_a_configuration_returns_none() {
+    let directory = tempfile::tempdir().expect("temporary directory should be created");
+
+    let root = TypeScriptDecorationProvider::project_root(&directory.path().join("main.ts"));
+
+    assert_eq!(root, None);
+}

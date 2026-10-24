@@ -1,8 +1,10 @@
 # Whisker reads this file when `whisker check` runs against this repository.
 # The patterns below anchor at the repository root, not at `.config`.
 # `/examples/` and the fixtures hold code that breaks whisker's own lints on
-# purpose.
-ignore = ["/examples/", "crates/whisker-rust/tests/fixtures/"]
+# purpose. `/docs/` is the documentation site: its TypeScript configuration
+# extends a package that exists only after `npm install`, and the site's own
+# build checks that code.
+ignore = ["/docs/", "/examples/", "crates/whisker-rust/tests/fixtures/"]
 
 # Every lint builds against the whisker in this directory, not against the
 # whisker its own manifest names. The rules repository pins a whisker commit

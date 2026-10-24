@@ -15,6 +15,16 @@ Whisker walks through the files or directories you list in its `check`
 arguments. Every file with an extension supported by Whisker is checked.
 Anything else is always ignored.
 
+| Extension                     | Language   | Project file    |
+| ----------------------------- | ---------- | --------------- |
+| `.rs`                         | Rust       | `Cargo.toml`    |
+| `.ts`, `.mts`, `.cts`, `.tsx` | TypeScript | `tsconfig.json` |
+
+Whisker loads a language's project only when it finds a file in that language,
+so a repository with no TypeScript needs no `tsconfig.json`. A TypeScript file
+belongs to the project of the `tsconfig.json` nearest it, so one repository can
+hold several TypeScript projects.
+
 If it turns out that an included file cannot be parsed by one of Whisker's
 language adapters, Whisker will throw an error.
 

@@ -106,6 +106,12 @@ and this project adheres to
   Node.js. It loads the `tsconfig.json` nearest the checked path and records
   the checker's type of every identifier as a `TypeText` decoration. A file
   the project leaves out is declined with the gap that names its remedy.
+- `whisker check` checks TypeScript: `.ts`, `.mts`, `.cts`, and `.tsx` files.
+  A run loads a language's project only when it finds a file in that language,
+  so a Rust repository needs no `tsconfig.json` and a TypeScript one needs no
+  `Cargo.toml`. A TypeScript file belongs to the project of the
+  `tsconfig.json` nearest it, so a repository can hold several, and each file
+  reaches only its own project's provider.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.
