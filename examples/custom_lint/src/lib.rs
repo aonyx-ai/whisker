@@ -38,13 +38,13 @@ impl RustLintPass for NoTodo {
     }
 }
 
-impl whisker_rust::DeclaresRules for NoTodo {
+impl whisker_plugin::DeclaresRules for NoTodo {
     fn rules(&self) -> Vec<RuleId> {
         vec![RuleId::new("custom.no-todo")]
     }
 }
 
-whisker_rust::export_lints![NoTodo];
+whisker_plugin::export_lints![rust: [NoTodo]];
 
 #[cfg(test)]
 mod tests {

@@ -81,7 +81,7 @@ impl fmt::Display for AbiTag {
 
 #[cfg(test)]
 mod tests {
-    use whisker_rust::plugin::AbiVersion;
+    use whisker_plugin::AbiVersion;
 
     use super::*;
 

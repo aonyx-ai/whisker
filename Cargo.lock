@@ -752,6 +752,7 @@ dependencies = [
 name = "decoration_probes"
 version = "0.1.0"
 dependencies = [
+ "whisker-plugin",
  "whisker-rust",
  "whisker-types",
 ]
@@ -5372,6 +5373,7 @@ dependencies = [
  "toml",
  "trycmd",
  "whisker-core",
+ "whisker-plugin",
  "whisker-reporting",
  "whisker-rust",
  "whisker-types",
@@ -5410,6 +5412,16 @@ dependencies = [
  "syn 3.0.9",
  "tree-sitter",
  "tree-sitter-rust",
+ "whisker-types",
+]
+
+[[package]]
+name = "whisker-plugin"
+version = "0.1.0"
+dependencies = [
+ "stabby",
+ "tree-sitter",
+ "whisker-rust",
  "whisker-types",
 ]
 

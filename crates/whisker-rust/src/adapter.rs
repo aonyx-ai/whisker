@@ -44,11 +44,9 @@ impl<P: RustLintPass> RustLintPassAdapter<P> {
 
     /// Wraps a rule and boxes it for the plugin boundary
     ///
-    /// This is what a factory written by [`export_lints!`] hands back to
-    /// whisker: a pass behind a stabby box and a stabby vtable, which the
-    /// host calls without knowing the rule's type.
-    ///
-    /// [`export_lints!`]: crate::export_lints
+    /// This is what a factory written by whisker-plugin's `export_lints!`
+    /// hands back to whisker: a pass behind a stabby box and a stabby
+    /// vtable, which the host calls without knowing the rule's type.
     pub fn boxed(pass: P) -> BoxedLintPass
     where
         P: 'static,

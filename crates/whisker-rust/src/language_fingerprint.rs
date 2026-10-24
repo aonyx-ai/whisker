@@ -1,28 +1,14 @@
-//! What a Rust custom lint plugin needs to declare itself
-//!
-//! This module re-exports the plugin vocabulary from whisker-types and adds
-//! the one value only this crate can supply: the fingerprint of the Rust
-//! language support a plugin was built against. A plugin crate depends on
-//! whisker-rust, implements [`RustLintPass`] for its rules, and hands them
-//! to [`export_lints!`], which writes the exported declaration; nothing
-//! here needs to be touched by hand.
-//!
-//! [`RustLintPass`]: crate::RustLintPass
-//! [`export_lints!`]: crate::export_lints
-
 use stabby::IStable;
-pub use whisker_types::Panic;
 use whisker_types::plugin::stable_fingerprint;
-pub use whisker_types::plugin::{
-    ABI_VERSION, AbiVersion, Constructed, Factories, LintPassFactory, Loaded, Plugin,
-    PluginDeclaration, TYPES_FINGERPRINT, factory,
-};
 
 use crate::decorations::{AdtFlags, FnSignature, ImportSource, ResolvedType};
 
 include!(concat!(env!("OUT_DIR"), "/visitor_fingerprint.rs"));
 
 /// A fingerprint of the Rust language support a plugin was built against
+///
+/// whisker-plugin joins it with every other language crate's into the
+/// value a plugin's declaration carries.
 ///
 /// Two things on this side shape the boundary. The generated lint pass
 /// trait is one: its methods are named after the grammar's node kinds. A
@@ -44,7 +30,7 @@ include!(concat!(env!("OUT_DIR"), "/visitor_fingerprint.rs"));
 /// # Examples
 ///
 /// ```
-/// use whisker_rust::plugin::LANGUAGE_FINGERPRINT;
+/// use whisker_rust::LANGUAGE_FINGERPRINT;
 ///
 /// assert_ne!(LANGUAGE_FINGERPRINT, 0);
 /// ```

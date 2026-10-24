@@ -31,6 +31,7 @@ dependencies = [
 name = "decoration_probes"
 version = "0.1.0"
 dependencies = [
+ "whisker-plugin",
  "whisker-rust",
  "whisker-testing",
  "whisker-types",
@@ -370,6 +371,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
+]
+
+[[package]]
+name = "whisker-plugin"
+version = "0.1.0"
+dependencies = [
+ "stabby",
+ "whisker-rust",
+ "whisker-types",
 ]
 
 [[package]]

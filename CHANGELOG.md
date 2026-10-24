@@ -90,6 +90,13 @@ and this project adheres to
   by stabby and gains a `TypeScript` variant, and a `DecoratedTree` records
   the language it was parsed as. The protocol is 0.2, and a plugin built for
   0.1 no longer loads.
+- A plugin exports its lints with `whisker_plugin::export_lints!`, grouped by
+  language: `export_lints![rust: [NoTodo]]`. `DeclaresRules` moved to
+  whisker-plugin too, and one type may appear in several groups while its
+  rules are declared once. The declaration's language fingerprint joins
+  every language crate's, so a plugin that names one language still matches
+  the whisker that supports several. `whisker-source` patches whisker-plugin
+  along with the other crates a lint package names.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.

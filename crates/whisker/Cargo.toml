@@ -30,6 +30,7 @@ sha2.workspace = true
 tar.workspace = true
 whisker-core = { path = "../whisker-core" }
 whisker-reporting = { path = "../whisker-reporting" }
+whisker-plugin = { path = "../whisker-plugin" }
 whisker-rust = { path = "../whisker-rust" }
 whisker-types = { path = "../whisker-types" }
 

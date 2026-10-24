@@ -23,6 +23,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+whisker-plugin = { path = "../../crates/whisker-plugin" }
 whisker-rust = { path = "../../crates/whisker-rust", default-features = false }
 whisker-types = { path = "../../crates/whisker-types" }
 

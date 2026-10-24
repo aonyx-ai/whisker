@@ -375,7 +375,7 @@ fn present(value: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use whisker_rust::plugin::AbiVersion;
+    use whisker_plugin::AbiVersion;
 
     use super::*;
     use crate::config::GitRev;

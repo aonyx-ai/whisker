@@ -24,6 +24,7 @@ default = ["plugin"]
 plugin = []
 
 [dependencies]
+whisker-plugin = { path = "../../../../../whisker-plugin" }
 whisker-rust = { path = "../../../..", default-features = false }
 whisker-types = { path = "../../../../../whisker-types" }
 

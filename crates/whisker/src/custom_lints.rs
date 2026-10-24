@@ -166,7 +166,12 @@ const WHISKER_GIT_URL: &str = "https://github.com/aonyx-ai/whisker.git";
 ///
 /// Each one is patched to the local source, so a package that names any
 /// of them builds against the whisker that loads it.
-const WHISKER_CRATES: [&str; 3] = ["whisker-types", "whisker-rust", "whisker-testing"];
+const WHISKER_CRATES: [&str; 4] = [
+    "whisker-types",
+    "whisker-plugin",
+    "whisker-rust",
+    "whisker-testing",
+];
 
 /// Whether a build may change the lockfile it finds
 ///
@@ -449,7 +454,7 @@ fn load_library(library: &Path, host: &AbiIdentity) -> anyhow::Result<Loaded> {
         unsafe { library.get::<*const PluginDeclaration>(b"whisker_plugin_declaration\0") }
             .context(
                 "the library is not a whisker lint plugin; export its lints with \
-             whisker_rust::export_lints!",
+             whisker_plugin::export_lints!",
             )?;
     let declaration: *const PluginDeclaration = *declaration;
 

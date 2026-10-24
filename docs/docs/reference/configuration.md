@@ -130,10 +130,11 @@ boundary-attributes = ["shard", "procedure"]
 
 ## whisker-source
 
-For Whisker's own development we need to patch `whisker-types`, `whisker-rust`,
-and `whisker-testing`. Lints will be built against these libraries instead of
-their crates.io versions. This utilizes the `whisker-source` property. You
-probably shouldn't need this option. define
+For Whisker's own development we need to patch `whisker-types`,
+`whisker-plugin`, `whisker-rust`, and `whisker-testing`. Lints will be built
+against these libraries instead of their crates.io versions. This utilizes
+the `whisker-source` property. You probably shouldn't need this option.
+define
 
 ```toml
 whisker-source = "."

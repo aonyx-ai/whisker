@@ -1,6 +1,6 @@
 use std::fmt;
 
-use whisker_rust::plugin::{self, AbiVersion};
+use whisker_plugin::{self as plugin, AbiVersion};
 
 /// The ABI-relevant identity of one side of the plugin boundary
 ///

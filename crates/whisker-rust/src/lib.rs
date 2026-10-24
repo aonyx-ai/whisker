@@ -1,13 +1,11 @@
 mod adapter;
-mod declares_rules;
 pub mod decorations;
-mod export_lints;
-pub mod plugin;
+mod language_fingerprint;
 #[cfg(feature = "provider")]
 mod provider;
 
 pub use adapter::RustLintPassAdapter;
-pub use declares_rules::DeclaresRules;
+pub use language_fingerprint::LANGUAGE_FINGERPRINT;
 #[cfg(feature = "provider")]
 pub use provider::RustDecorationProvider;
 pub use whisker_types::RuleId;

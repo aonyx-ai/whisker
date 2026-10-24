@@ -113,6 +113,12 @@ fn workspace_of_lints() -> TempDir {
             .to_str()
             .expect("the path should be UTF-8"),
     );
+    let plugin = toml::Value::from(
+        crates
+            .join("whisker-plugin")
+            .to_str()
+            .expect("the path should be UTF-8"),
+    );
     let types = toml::Value::from(
         crates
             .join("whisker-types")
@@ -138,6 +144,7 @@ fn workspace_of_lints() -> TempDir {
             format!(
                 "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\
                  publish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n\
+                 whisker-plugin = {{ path = {plugin} }}\n\
                  whisker-rust = {{ path = {rust}, default-features = false }}\n\
                  whisker-types = {{ path = {types} }}\n"
             ),
@@ -149,7 +156,7 @@ fn workspace_of_lints() -> TempDir {
                 "use whisker_rust::RustLintPass;\n\
                  use whisker_types::{{DecoratedNode, Diagnostic, RuleId, Severity}};\n\n\
                  pub struct Flag;\n\n\
-                 impl whisker_rust::DeclaresRules for Flag {{\n\
+                 impl whisker_plugin::DeclaresRules for Flag {{\n\
                  \x20   fn rules(&self) -> Vec<RuleId> {{\n\
                  \x20       vec![RuleId::new(\"{rule}\")]\n\
                  \x20   }}\n\
@@ -164,7 +171,7 @@ fn workspace_of_lints() -> TempDir {
                  \x20       )]\n\
                  \x20   }}\n\
                  }}\n\n\
-                 whisker_rust::export_lints![Flag];\n"
+                 whisker_plugin::export_lints![rust: [Flag]];\n"
             ),
         )
         .expect("the member source should be written");

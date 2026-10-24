@@ -139,11 +139,12 @@ is one.
 ## Lint rules
 
 A rule implements the generated trait and emits diagnostics with a stable
-rule ID and a severity. Rules ship in lint crates. `export_lints!` takes a
-list, so one crate can carry several rules, and Aonyx keeps one rule per
-crate. Whisker links no rules itself. A check runs exactly the rules its
-configured sources export, and the `rules` table decides which of those
-reach the report.
+rule ID and a severity. Rules ship in lint crates. whisker-plugin's
+`export_lints!` takes a list per language, so one crate can carry several
+rules, and Aonyx keeps one rule per crate. A pass names its language, and
+the walker hands it only the trees of that language. Whisker links no rules
+itself. A check runs exactly the rules its configured sources export, and
+the `rules` table decides which of those reach the report.
 
 Rules that depend on decorations **fail open**. A decoration is only ever
 evidence. Where a decoration is the reason to report, a missing one keeps
@@ -276,9 +277,10 @@ says.
 The plugin exports a declaration. The loader reads its leading protocol
 version through a raw pointer, and only a matching version licenses a
 reference to the whole struct. It then compares two fingerprints: one for
-whisker-types and one for whisker-rust. The first mismatch refuses the
-library with an error that says what to rebuild. Only then does the
-loader ask the plugin for its factories and its rules.
+whisker-types and one that whisker-plugin joins from every language crate.
+The first mismatch refuses the library with an error that says what to
+rebuild. Only then does the loader ask the plugin for its factories and its
+rules.
 
 The handshake guards against silence. A plugin built against drifted
 source would mostly work, and rules fail open, so a wrong answer would
@@ -288,8 +290,8 @@ The fingerprints hash layout. Each names a list of types that cross the
 boundary, and every one of them is laid out by stabby. Each contributes
 the identity stabby derives from its report, which covers the name and
 type of every field, so a field that moved or changed type is refused.
-The whisker-rust fingerprint also hashes the generated lint pass trait as
-text, because a trait has no layout a const can read. Doc comments and
+Each language crate's fingerprint also hashes its generated lint pass
+trait as text, because a trait has no layout a const can read. Doc comments and
 private helpers move nothing, so a plugin stays loadable across most of
 whisker's own churn.
 
@@ -365,6 +367,7 @@ own tests.
 | `whisker-core`      | The pipeline and tree walker                                                             |
 | `whisker-codegen`   | Generates a lint pass trait from `node-types.json`                                       |
 | `whisker-rust`      | Rust support: the generated trait, the decorations, and the provider                     |
+| `whisker-plugin`    | What a plugin exports: `export_lints!`, `DeclaresRules`, and the language fingerprint    |
 | `whisker-macros`    | The derive macro for decoration types                                                    |
 | `whisker-reporting` | Diagnostic rendering                                                                     |
 | `whisker-testing`   | Test harness for lint rules                                                              |
@@ -374,8 +377,9 @@ Dependencies flow one way. `whisker-types`, `whisker-codegen`, and
 `whisker-macros` depend on no other whisker crate. `whisker-core` and
 `whisker-reporting` rest on `whisker-types`. `whisker-rust` rests on
 `whisker-types` and `whisker-macros`, and uses `whisker-codegen` at build
-time. `whisker-testing` rests on `whisker-core`. The CLI ties the platform,
-the language, and the loaded lints together.
+time. `whisker-plugin` rests on `whisker-types` and the language crates,
+without their providers. `whisker-testing` rests on `whisker-core`. The
+CLI ties the platform, the language, and the loaded lints together.
 
 [discovery]: https://aonyx-ai.github.io/whisker/docs/reference/file-discovery
 [ra]: https://rust-analyzer.github.io/

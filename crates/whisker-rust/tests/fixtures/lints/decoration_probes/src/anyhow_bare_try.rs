@@ -35,7 +35,7 @@ impl AnyhowBareTry {
     }
 }
 
-impl whisker_rust::DeclaresRules for AnyhowBareTry {
+impl whisker_plugin::DeclaresRules for AnyhowBareTry {
     fn rules(&self) -> Vec<RuleId> {
         vec![RuleId::new("fixture.anyhow-bare-try")]
     }

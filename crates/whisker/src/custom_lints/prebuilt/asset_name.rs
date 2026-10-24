@@ -54,7 +54,7 @@ impl fmt::Display for AssetName {
 
 #[cfg(test)]
 mod tests {
-    use whisker_rust::plugin::AbiVersion;
+    use whisker_plugin::AbiVersion;
 
     use super::*;
     use crate::custom_lints::handshake::AbiIdentity;

@@ -27,7 +27,7 @@ impl FunctionScopedImport {
     }
 }
 
-impl whisker_rust::DeclaresRules for FunctionScopedImport {
+impl whisker_plugin::DeclaresRules for FunctionScopedImport {
     fn rules(&self) -> Vec<RuleId> {
         vec![RuleId::new("fixture.function-scoped-import")]
     }

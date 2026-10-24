@@ -23,8 +23,8 @@ pub fn write_configurable_lint_package(directory: &Path, name: &str, rule: &str)
         format!(
             "[workspace]\n\n[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \
              \"2024\"\npublish = false\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\n\
-             whisker-rust = {{ path = \"{crates}/whisker-rust\", default-features = false \
-             }}\nwhisker-types = {{ path = \"{crates}/whisker-types\" }}\n"
+             whisker-plugin = {{ path = \"{crates}/whisker-plugin\" }}\nwhisker-rust = {{ path = \
+             \"{crates}/whisker-rust\", default-features = false }}\nwhisker-types = {{ path = \"{crates}/whisker-types\" }}\n"
         ),
     )
     .expect("the manifest should be written");
@@ -72,13 +72,13 @@ impl RustLintPass for {pass} {{
     }}
 }}
 
-impl whisker_rust::DeclaresRules for {pass} {{
+impl whisker_plugin::DeclaresRules for {pass} {{
     fn rules(&self) -> Vec<RuleId> {{
         vec![RULE_ID]
     }}
 }}
 
-whisker_rust::export_lints![{pass}::default()];
+whisker_plugin::export_lints![rust: [{pass}::default()]];
 "#
     )
 }

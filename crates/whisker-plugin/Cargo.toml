@@ -1,0 +1,20 @@
+[package]
+name = "whisker-plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# A plugin depends on this crate for the export macro and the handshake
+# constants. The language crates come without their decoration providers,
+# whose analysis stacks a plugin never runs.
+[dependencies]
+stabby.workspace = true
+whisker-rust = { path = "../whisker-rust", default-features = false }
+whisker-types.workspace = true
+
+[dev-dependencies]
+tree-sitter.workspace = true
+
+[lints]
+workspace = true

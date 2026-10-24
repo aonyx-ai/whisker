@@ -26,7 +26,7 @@ impl WildcardMatchArm {
     }
 }
 
-impl whisker_rust::DeclaresRules for WildcardMatchArm {
+impl whisker_plugin::DeclaresRules for WildcardMatchArm {
     fn rules(&self) -> Vec<RuleId> {
         vec![RuleId::new("fixture.wildcard-match-arm")]
     }

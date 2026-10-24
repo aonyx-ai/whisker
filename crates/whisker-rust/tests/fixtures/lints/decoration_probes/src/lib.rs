@@ -22,4 +22,4 @@ pub use function_scoped_import::FunctionScopedImport;
 pub use wildcard_match_arm::WildcardMatchArm;
 
 #[cfg(feature = "plugin")]
-whisker_rust::export_lints![AnyhowBareTry, FunctionScopedImport, WildcardMatchArm];
+whisker_plugin::export_lints![rust: [AnyhowBareTry, FunctionScopedImport, WildcardMatchArm]];
