@@ -34,10 +34,17 @@ feature-depth = 1
 # modifies nothing and the clause never reaches whisker's own source. The
 # same reasoning covers gitoxide's pack caches, which whisker leaves off for
 # reasons of its own.
+#
+# BSL-1.0 and Unicode-DFS-2016 arrive with tsrs, the TypeScript checker behind
+# the TypeScript decoration provider: BSL-1.0 through `xxhash-rust`, and
+# Unicode-DFS-2016 through `unicode-id-start`, which carries Unicode's
+# identifier tables. Both are permissive. BSL-1.0 asks for nothing in a binary
+# distribution, and Unicode-DFS-2016 asks only that the data keep its notice.
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
   "BSD-3-Clause",
+  "BSL-1.0",
   "CC0-1.0",
   "CDLA-Permissive-2.0",
   "ISC",
@@ -45,6 +52,7 @@ allow = [
   "MIT-0",
   "MPL-2.0",
   "Unicode-3.0",
+  "Unicode-DFS-2016",
   "Zlib",
 ]
 
@@ -58,3 +66,8 @@ wildcards = "deny"
 # and this option exempts path dependencies in private crates while still
 # denying a genuine `*` requirement on anything from a registry.
 allow-wildcard-paths = true
+
+[sources]
+# tsrs publishes no crates, so whisker takes its crates from the repository,
+# pinned to one commit in the workspace manifest.
+allow-git = ["https://github.com/oxc-project/tsrs"]

@@ -117,6 +117,15 @@ tree-sitter-rust = "0.24"
 # TypeScript grammar and `.tsx` files with the TSX grammar, whose JSX
 # syntax conflicts with TypeScript's angle-bracket type assertions.
 tree-sitter-typescript = "0.23"
+# The TypeScript provider type-checks with tsrs, a Rust port of the
+# TypeScript 7 checker, so analysis runs in whisker's process with no
+# Node.js or Go toolchain. tsrs publishes no crates, so the crates are
+# pinned to one commit; a bump is a deliberate change to the checker.
+tsrs_astnav = { git = "https://github.com/oxc-project/tsrs", rev = "0d3458e53f914d91865be4a838b4c15464ecfc61" }
+tsrs_compiler = { git = "https://github.com/oxc-project/tsrs", rev = "0d3458e53f914d91865be4a838b4c15464ecfc61" }
+tsrs_core = { git = "https://github.com/oxc-project/tsrs", rev = "0d3458e53f914d91865be4a838b4c15464ecfc61" }
+tsrs_tsoptions = { git = "https://github.com/oxc-project/tsrs", rev = "0d3458e53f914d91865be4a838b4c15464ecfc61" }
+tsrs_vfs = { git = "https://github.com/oxc-project/tsrs", rev = "0d3458e53f914d91865be4a838b4c15464ecfc61" }
 whisker-core = { path = "crates/whisker-core", version = "=0.1.0" }
 whisker-macros = { path = "crates/whisker-macros", version = "=0.1.0" }
 whisker-codegen = { path = "crates/whisker-codegen", version = "=0.1.0" }

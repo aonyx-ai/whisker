@@ -9,12 +9,22 @@
 //! angle-bracket type assertion. The trait comes from the union of both, so
 //! a rule written for one kind of file runs on the other. A method for a
 //! kind that only one grammar produces is never called on the other's trees.
+//!
+//! The default `provider` feature adds [`TypeScriptDecorationProvider`],
+//! which type-checks the project with tsrs and records what the checker
+//! knows in [`decorations`]. A plugin needs only the trait and the
+//! decoration types, so it turns the feature off.
 
 mod adapter;
+pub mod decorations;
 mod language_fingerprint;
+#[cfg(feature = "provider")]
+mod provider;
 
 pub use adapter::TypeScriptLintPassAdapter;
 pub use language_fingerprint::LANGUAGE_FINGERPRINT;
+#[cfg(feature = "provider")]
+pub use provider::TypeScriptDecorationProvider;
 
 include!(concat!(env!("OUT_DIR"), "/typescript_lint_pass.rs"));
 

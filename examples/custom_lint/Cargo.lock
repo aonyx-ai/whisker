@@ -423,6 +423,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-typescript",
  "whisker-codegen",
+ "whisker-macros",
  "whisker-types",
 ]
 

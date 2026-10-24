@@ -101,6 +101,11 @@ and this project adheres to
   method per node kind of the TypeScript and TSX grammars together, so one
   rule runs on `.ts` and `.tsx` files alike. A plugin exports such rules in
   a `typescript` group of `export_lints!`.
+- `TypeScriptDecorationProvider` type-checks a TypeScript project with
+  [tsrs][tsrs], a Rust port of the TypeScript 7 checker, so analysis needs no
+  Node.js. It loads the `tsconfig.json` nearest the checked path and records
+  the checker's type of every identifier as a `TypeText` decoration. A file
+  the project leaves out is declined with the gap that names its remedy.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.
@@ -120,3 +125,4 @@ and this project adheres to
 [kawauso]: https://crates.io/crates/kawauso-project
 [rules]: https://github.com/aonyx-ai/whisker-aonyx-rules
 [stabby]: https://crates.io/crates/stabby
+[tsrs]: https://github.com/oxc-project/tsrs

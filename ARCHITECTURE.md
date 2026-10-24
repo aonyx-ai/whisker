@@ -367,7 +367,7 @@ own tests.
 | `whisker-core`       | The pipeline and tree walker                                                             |
 | `whisker-codegen`    | Generates a lint pass trait from `node-types.json`                                       |
 | `whisker-rust`       | Rust support: the generated trait, the decorations, and the provider                     |
-| `whisker-typescript` | TypeScript support: the trait generated from the TypeScript and TSX grammars             |
+| `whisker-typescript` | TypeScript support: the trait from both grammars, the decorations, and the tsrs provider |
 | `whisker-plugin`     | What a plugin exports: `export_lints!`, `DeclaresRules`, and the language fingerprint    |
 | `whisker-macros`     | The derive macro for decoration types                                                    |
 | `whisker-reporting`  | Diagnostic rendering                                                                     |

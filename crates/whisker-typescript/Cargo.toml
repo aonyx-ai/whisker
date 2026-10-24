@@ -5,14 +5,37 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+# The tsrs checker behind the decoration provider dwarfs everything else
+# in this crate. Lint plugins depend on this crate only for the generated
+# trait, the adapter, and the decoration types, so the provider is a
+# default feature they can switch off rather than an unconditional cost.
+[features]
+default = ["provider"]
+provider = [
+  "dep:anyhow",
+  "dep:tsrs_astnav",
+  "dep:tsrs_compiler",
+  "dep:tsrs_core",
+  "dep:tsrs_tsoptions",
+  "dep:tsrs_vfs",
+]
+
 [dependencies]
+anyhow = { workspace = true, optional = true }
 stabby.workspace = true
 tree-sitter.workspace = true
 tree-sitter-typescript.workspace = true
+tsrs_astnav = { workspace = true, optional = true }
+tsrs_compiler = { workspace = true, optional = true }
+tsrs_core = { workspace = true, optional = true }
+tsrs_tsoptions = { workspace = true, optional = true }
+tsrs_vfs = { workspace = true, optional = true }
+whisker-macros.workspace = true
 whisker-types.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+tempfile.workspace = true
 whisker-core.workspace = true
 
 [build-dependencies]

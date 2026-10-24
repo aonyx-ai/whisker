@@ -28,9 +28,10 @@ pre-commit:
 check-dependencies:
     cargo deny check bans licenses sources
 
-# Check that a lint crate's view of whisker-rust builds without the provider
+# Check that a lint crate's view of each language crate builds without its provider
 check-features:
     cargo check -p whisker-rust --no-default-features
+    cargo check -p whisker-typescript --no-default-features
 
 # Format JSON files
 format-json fix="false": (prettier fix "{json,json5}")
