@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 tree-sitter.workspace = true
 tree-sitter-rust.workspace = true
+tree-sitter-typescript.workspace = true
 whisker-core.workspace = true
 whisker-types.workspace = true
 

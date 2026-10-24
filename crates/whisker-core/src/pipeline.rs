@@ -13,21 +13,25 @@ use crate::tree_walker;
 /// tree-sitter grammar, runs decoration providers, then walks the
 /// decorated tree through all enabled lint passes.
 pub struct Pipeline {
+    language: Language,
     parser: tree_sitter::Parser,
 }
 
 impl Pipeline {
-    /// Creates a pipeline configured for the given language
+    /// Creates a pipeline that parses `language` with `grammar`
+    ///
+    /// Every tree the pipeline produces carries `language`, which decides
+    /// the lint passes that see it, so `grammar` must be that language's.
     ///
     /// # Errors
     ///
     /// Returns an error if the tree-sitter language cannot be set.
-    pub fn new(language: &tree_sitter::Language) -> anyhow::Result<Self> {
+    pub fn new(language: Language, grammar: &tree_sitter::Language) -> anyhow::Result<Self> {
         let mut parser = tree_sitter::Parser::new();
         parser
-            .set_language(language)
+            .set_language(grammar)
             .context("failed to set tree-sitter language")?;
-        Ok(Self { parser })
+        Ok(Self { language, parser })
     }
 
     /// Runs the full pipeline on a source file
@@ -74,7 +78,8 @@ impl Pipeline {
             .parse(source, None)
             .context("tree-sitter parse failed")?;
 
-        let mut decorated = DecoratedTree::new(tree, source.to_string(), path.to_path_buf());
+        let mut decorated =
+            DecoratedTree::new(tree, self.language, source.to_string(), path.to_path_buf());
 
         let mut covered = Vec::new();
         let mut gaps = Vec::new();
@@ -192,6 +197,10 @@ mod tests {
     struct ReportMarker;
 
     impl LintPass for ReportMarker {
+        extern "C" fn language(&self) -> Language {
+            Language::Rust
+        }
+
         extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
             Configured::Ok(())
         }
@@ -255,7 +264,7 @@ mod tests {
     #[test]
     fn run_on_source_with_covering_and_declining_providers_returns_diagnostics() {
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(ReportMarker)];
 
         let diagnostics = pipeline
@@ -277,7 +286,7 @@ mod tests {
     #[test]
     fn run_on_source_with_declining_provider_returns_uncovered_file() {
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
 
         let error = pipeline
             .run_on_source(
@@ -300,7 +309,7 @@ mod tests {
     #[test]
     fn run_on_source_with_empty_passes_produces_no_diagnostics() {
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
 
         let diagnostics = pipeline
             .run_on_source(
@@ -318,6 +327,10 @@ mod tests {
     fn run_on_source_with_lint_pass_collects_diagnostics() {
         struct AlwaysWarn;
         impl whisker_types::LintPass for AlwaysWarn {
+            extern "C" fn language(&self) -> whisker_types::Language {
+                whisker_types::Language::Rust
+            }
+
             extern "C" fn configure(
                 &mut self,
                 _options: &whisker_types::RuleOptions,
@@ -340,7 +353,7 @@ mod tests {
         }
 
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
         let mut passes: Vec<Box<dyn whisker_types::LintPass>> = vec![Box::new(AlwaysWarn)];
 
         let diagnostics = pipeline
@@ -359,7 +372,7 @@ mod tests {
     #[test]
     fn run_on_source_with_no_providers_returns_uncovered_file() {
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
 
         let error = pipeline
             .run_on_source("fn main() {}", Path::new("test.rs"), &[], &mut Vec::new())
@@ -385,6 +398,10 @@ mod tests {
     fn run_on_source_with_a_panicking_pass_returns_an_error_naming_the_node() {
         struct Panicking;
         impl whisker_types::LintPass for Panicking {
+            extern "C" fn language(&self) -> whisker_types::Language {
+                whisker_types::Language::Rust
+            }
+
             extern "C" fn configure(
                 &mut self,
                 _options: &whisker_types::RuleOptions,
@@ -406,7 +423,7 @@ mod tests {
         }
 
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
         let mut passes: Vec<Box<dyn whisker_types::LintPass>> = vec![Box::new(Panicking)];
 
         let error = pipeline
@@ -427,7 +444,7 @@ mod tests {
     #[test]
     fn run_on_source_with_two_decorating_providers_keeps_first_decoration() {
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
         let mut passes: Vec<Box<dyn LintPass>> = vec![Box::new(ReportMarker)];
 
         let diagnostics = pipeline
@@ -450,6 +467,10 @@ mod tests {
     fn run_on_source_with_uncovered_file_does_not_run_passes() {
         struct Exploding;
         impl whisker_types::LintPass for Exploding {
+            extern "C" fn language(&self) -> whisker_types::Language {
+                whisker_types::Language::Rust
+            }
+
             extern "C" fn configure(
                 &mut self,
                 _options: &whisker_types::RuleOptions,
@@ -467,7 +488,7 @@ mod tests {
         }
 
         let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-        let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+        let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
         let mut passes: Vec<Box<dyn whisker_types::LintPass>> = vec![Box::new(Exploding)];
 
         let error = pipeline
@@ -508,7 +529,7 @@ mod tests {
                 source in "(fn [a-z]+\\(\\) \\{\\}\n){0,5}",
             ) {
                 let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-                let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+                let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
 
                 let result = pipeline.run_on_source(
                     &source,
@@ -526,7 +547,7 @@ mod tests {
                 source in "\\PC{0,200}",
             ) {
                 let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-                let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+                let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
 
                 let result = pipeline.run_on_source(
                     &source,
@@ -543,7 +564,7 @@ mod tests {
                 source in "(fn [a-z]+\\(\\) \\{\\}\n){0,5}",
             ) {
                 let ts_lang: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
-                let mut pipeline = Pipeline::new(&ts_lang).unwrap();
+                let mut pipeline = Pipeline::new(Language::Rust, &ts_lang).unwrap();
 
                 let result = pipeline.run_on_source(
                     &source,

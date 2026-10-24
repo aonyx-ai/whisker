@@ -10,8 +10,8 @@ use whisker_rust::decorations::{
 };
 use whisker_rust::{RustDecorationProvider, RustLintPassAdapter};
 use whisker_types::{
-    Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, LintPass,
-    RuleId, Severity, Span,
+    Coverage, CoverageGap, DecoratedNode, DecoratedTree, DecorationProvider, Diagnostic, Language,
+    LintPass, RuleId, Severity, Span,
 };
 
 static PROVIDER: OnceLock<RustDecorationProvider> = OnceLock::new();
@@ -97,7 +97,7 @@ fn parse_source(source: String, file_path: PathBuf) -> DecoratedTree {
     parser.set_language(&whisker_rust::language()).unwrap();
     let tree = parser.parse(&source, None).unwrap();
 
-    DecoratedTree::new(tree, source, file_path)
+    DecoratedTree::new(tree, Language::Rust, source, file_path)
 }
 
 fn parse_fixture_file(relative: &str) -> DecoratedTree {

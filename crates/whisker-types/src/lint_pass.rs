@@ -1,6 +1,6 @@
 use stabby::{result, vec};
 
-use crate::{DecoratedNode, Diagnostic, Panic, RuleOptions};
+use crate::{DecoratedNode, Diagnostic, Language, Panic, RuleOptions};
 
 /// A lint rule that inspects decorated syntax tree nodes
 ///
@@ -17,6 +17,14 @@ use crate::{DecoratedNode, Diagnostic, Panic, RuleOptions};
 /// must not cross the boundary, and the host reports what it caught.
 #[stabby::stabby]
 pub trait LintPass: Send + Sync {
+    /// Returns the language whose trees this pass inspects
+    ///
+    /// The tree walker hands a pass only the nodes of trees in this
+    /// language. A language adapter answers for the trait it adapts, so a
+    /// rule written against one grammar never sees another grammar's nodes
+    /// that happen to share a kind name.
+    extern "C" fn language(&self) -> Language;
+
     /// Applies the project's options to this pass
     ///
     /// Called once on every pass, after it is constructed and before it
@@ -62,12 +70,16 @@ pub type BoxedLintPass = stabby::dynptr!(stabby::boxed::Box<dyn LintPass + Send 
 /// ```
 /// use stabby::vec;
 /// use whisker_types::{
-///     Checked, Configured, DecoratedNode, LintPass, RuleOptions, boxed_lint_pass,
+///     Checked, Configured, DecoratedNode, Language, LintPass, RuleOptions, boxed_lint_pass,
 /// };
 ///
 /// struct Quiet;
 ///
 /// impl LintPass for Quiet {
+///     extern "C" fn language(&self) -> Language {
+///         Language::Rust
+///     }
+///
 ///     extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
 ///         Configured::Ok(())
 ///     }
@@ -81,12 +93,17 @@ pub type BoxedLintPass = stabby::dynptr!(stabby::boxed::Box<dyn LintPass + Send 
 ///
 /// let configured: Result<(), _> = pass.configure(&RuleOptions::default()).into();
 /// assert!(configured.is_ok());
+/// assert_eq!(pass.language(), Language::Rust);
 /// ```
 pub fn boxed_lint_pass(pass: impl LintPass + 'static) -> BoxedLintPass {
     stabby::boxed::Box::new(pass).into()
 }
 
 impl LintPass for BoxedLintPass {
+    extern "C" fn language(&self) -> Language {
+        LintPassDyn::language(self)
+    }
+
     extern "C" fn configure(&mut self, options: &RuleOptions) -> Configured {
         LintPassDynMut::configure(self, options)
     }
@@ -105,6 +122,10 @@ mod tests {
     struct Dummy;
 
     impl LintPass for Dummy {
+        extern "C" fn language(&self) -> Language {
+            Language::Rust
+        }
+
         extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
             Configured::Ok(())
         }
@@ -115,11 +136,24 @@ mod tests {
     }
 
     #[test]
+    fn a_boxed_pass_forwards_its_language() {
+        let pass: Box<dyn LintPass> = Box::new(boxed_lint_pass(Dummy));
+
+        let language = pass.language();
+
+        assert_eq!(language, Language::Rust);
+    }
+
+    #[test]
     fn a_boxed_pass_forwards_through_its_vtable() {
         static CONFIGURED: AtomicU32 = AtomicU32::new(0);
         struct Counting;
 
         impl LintPass for Counting {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 CONFIGURED.fetch_add(1, Ordering::SeqCst);
                 Configured::Ok(())

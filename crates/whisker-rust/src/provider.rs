@@ -770,6 +770,7 @@ mod tests {
     use std::path::PathBuf;
 
     use ra_ap_syntax::SourceFile;
+    use whisker_types::Language;
 
     use super::*;
 
@@ -806,7 +807,7 @@ mod tests {
             .expect("the Rust grammar should load");
         let tree = parser.parse(source, None).expect("should parse");
 
-        DecoratedTree::new(tree, source.to_string(), file_path)
+        DecoratedTree::new(tree, Language::Rust, source.to_string(), file_path)
     }
 
     /// Exercises the exclusion guard, which no fixture workspace can reach

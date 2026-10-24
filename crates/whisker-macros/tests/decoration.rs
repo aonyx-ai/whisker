@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use stabby::str::Str;
 use whisker_macros::Decoration;
-use whisker_types::{DecoratedTree, Decoration};
+use whisker_types::{DecoratedTree, Decoration, Language};
 
 #[stabby::stabby]
 #[derive(Decoration)]
@@ -27,7 +27,12 @@ fn parse(source: &str) -> DecoratedTree {
         .expect("language should be valid");
     let tree = parser.parse(source, None).expect("should parse");
 
-    DecoratedTree::new(tree, source.to_string(), PathBuf::from("test.rs"))
+    DecoratedTree::new(
+        tree,
+        Language::Rust,
+        source.to_string(),
+        PathBuf::from("test.rs"),
+    )
 }
 
 #[test]

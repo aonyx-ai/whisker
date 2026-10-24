@@ -5,7 +5,8 @@ use crate::PassPanic;
 /// Walks a decorated syntax tree and collects diagnostics from lint passes
 ///
 /// Performs a depth-first traversal of all named nodes, calling each lint
-/// pass for every node visited.
+/// pass for every node visited. Only the passes whose language is the
+/// tree's take part; the others never see a node of it.
 ///
 /// # Errors
 ///
@@ -15,14 +16,18 @@ pub fn walk(
     tree: &DecoratedTree,
     passes: &mut [Box<dyn LintPass>],
 ) -> Result<Vec<Diagnostic>, PassPanic> {
+    let mut passes: Vec<&mut Box<dyn LintPass>> = passes
+        .iter_mut()
+        .filter(|pass| pass.language() == tree.language())
+        .collect();
     let mut diagnostics = Vec::new();
-    visit_node(&tree.root_node(), passes, &mut diagnostics)?;
+    visit_node(&tree.root_node(), &mut passes, &mut diagnostics)?;
     Ok(diagnostics)
 }
 
 fn visit_node(
     node: &DecoratedNode<'_>,
-    passes: &mut [Box<dyn LintPass>],
+    passes: &mut [&mut Box<dyn LintPass>],
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<(), PassPanic> {
     if node.is_named() {
@@ -43,10 +48,11 @@ fn visit_node(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use stabby::vec;
-    use whisker_types::{Checked, Configured, DecoratedTree, RuleOptions};
+    use whisker_types::{Checked, Configured, DecoratedTree, Language, RuleOptions};
 
     use super::*;
 
@@ -56,7 +62,58 @@ mod tests {
             .set_language(&tree_sitter_rust::LANGUAGE.into())
             .unwrap();
         let tree = parser.parse(source, None).unwrap();
-        DecoratedTree::new(tree, source.to_string(), PathBuf::from("test.rs"))
+        DecoratedTree::new(
+            tree,
+            Language::Rust,
+            source.to_string(),
+            PathBuf::from("test.rs"),
+        )
+    }
+
+    fn parse_typescript(source: &str) -> DecoratedTree {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        DecoratedTree::new(
+            tree,
+            Language::TypeScript,
+            source.to_string(),
+            PathBuf::from("test.ts"),
+        )
+    }
+
+    /// Counts the nodes a pass of one language sees
+    struct NodeCounter {
+        language: Language,
+        visited: Arc<AtomicUsize>,
+    }
+
+    impl NodeCounter {
+        fn boxed(language: Language) -> (Box<dyn LintPass>, Arc<AtomicUsize>) {
+            let visited = Arc::new(AtomicUsize::new(0));
+            let pass = Self {
+                language,
+                visited: Arc::clone(&visited),
+            };
+            (Box::new(pass), visited)
+        }
+    }
+
+    impl LintPass for NodeCounter {
+        extern "C" fn language(&self) -> Language {
+            self.language
+        }
+
+        extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
+            Configured::Ok(())
+        }
+
+        extern "C" fn check_node(&mut self, _node: &DecoratedNode<'_>) -> Checked {
+            self.visited.fetch_add(1, Ordering::Relaxed);
+            Checked::Ok(vec::Vec::new())
+        }
     }
 
     #[test]
@@ -72,6 +129,10 @@ mod tests {
 
         struct Counter;
         impl LintPass for Counter {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -100,6 +161,10 @@ mod tests {
 
     struct CounterPass(usize);
     impl LintPass for CounterPass {
+        extern "C" fn language(&self) -> Language {
+            Language::Rust
+        }
+
         extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
             Configured::Ok(())
         }
@@ -116,6 +181,10 @@ mod tests {
 
         struct KindCounter;
         impl LintPass for KindCounter {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -141,6 +210,10 @@ mod tests {
 
         struct DepthCounter;
         impl LintPass for DepthCounter {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -170,6 +243,10 @@ mod tests {
 
         struct CounterA;
         impl LintPass for CounterA {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -182,6 +259,10 @@ mod tests {
 
         struct CounterB;
         impl LintPass for CounterB {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -206,11 +287,41 @@ mod tests {
     }
 
     #[test]
+    fn walk_on_a_rust_tree_skips_the_typescript_passes() {
+        let (rust, rust_visited) = NodeCounter::boxed(Language::Rust);
+        let (typescript, typescript_visited) = NodeCounter::boxed(Language::TypeScript);
+        let tree = parse_rust("fn a() {}");
+        let mut passes = vec![rust, typescript];
+
+        walk(&tree, &mut passes).expect("should walk");
+
+        assert!(rust_visited.load(Ordering::Relaxed) > 0);
+        assert_eq!(typescript_visited.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn walk_on_a_typescript_tree_skips_the_rust_passes() {
+        let (rust, rust_visited) = NodeCounter::boxed(Language::Rust);
+        let (typescript, typescript_visited) = NodeCounter::boxed(Language::TypeScript);
+        let tree = parse_typescript("function a(): void {}");
+        let mut passes = vec![rust, typescript];
+
+        walk(&tree, &mut passes).expect("should walk");
+
+        assert_eq!(rust_visited.load(Ordering::Relaxed), 0);
+        assert!(typescript_visited.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
     fn walk_collects_diagnostics_from_multiple_passes() {
         use whisker_types::{RuleId, Severity};
 
         struct WarnOnFn(&'static str);
         impl LintPass for WarnOnFn {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -245,6 +356,10 @@ mod tests {
 
         struct SpanChecker;
         impl LintPass for SpanChecker {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -284,6 +399,10 @@ mod tests {
 
         struct PanicOnFn;
         impl LintPass for PanicOnFn {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -303,6 +422,10 @@ mod tests {
 
         struct CountAfter;
         impl LintPass for CountAfter {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }
@@ -347,6 +470,10 @@ mod tests {
             ) {
                 struct CountAll;
                 impl LintPass for CountAll {
+                    extern "C" fn language(&self) -> Language {
+                        Language::Rust
+                    }
+
                     extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                         Configured::Ok(())
                     }

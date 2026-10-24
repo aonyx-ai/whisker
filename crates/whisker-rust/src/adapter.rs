@@ -1,5 +1,5 @@
 use whisker_types::{
-    BoxedLintPass, Checked, Configured, DecoratedNode, LintPass, Panic, RuleOptions,
+    BoxedLintPass, Checked, Configured, DecoratedNode, Language, LintPass, Panic, RuleOptions,
     boxed_lint_pass,
 };
 
@@ -58,6 +58,10 @@ impl<P: RustLintPass> RustLintPassAdapter<P> {
 }
 
 impl<P: RustLintPass> LintPass for RustLintPassAdapter<P> {
+    extern "C" fn language(&self) -> Language {
+        Language::Rust
+    }
+
     extern "C" fn configure(&mut self, options: &RuleOptions) -> Configured {
         Panic::catch(|| self.inner.configure(options)).into()
     }
@@ -81,7 +85,12 @@ mod tests {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&crate::language()).unwrap();
         let tree = parser.parse(source, None).unwrap();
-        DecoratedTree::new(tree, source.to_string(), PathBuf::from("test.rs"))
+        DecoratedTree::new(
+            tree,
+            Language::Rust,
+            source.to_string(),
+            PathBuf::from("test.rs"),
+        )
     }
 
     #[test]

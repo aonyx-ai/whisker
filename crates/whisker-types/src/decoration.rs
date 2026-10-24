@@ -90,7 +90,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::DecoratedTree;
+    use crate::{DecoratedTree, Language};
 
     #[stabby::stabby]
     struct Single(u32);
@@ -125,7 +125,12 @@ mod tests {
             .expect("language should be valid");
         let tree = parser.parse(source, None).expect("should parse");
 
-        DecoratedTree::new(tree, source.to_string(), PathBuf::from("test.rs"))
+        DecoratedTree::new(
+            tree,
+            Language::Rust,
+            source.to_string(),
+            PathBuf::from("test.rs"),
+        )
     }
 
     #[test]

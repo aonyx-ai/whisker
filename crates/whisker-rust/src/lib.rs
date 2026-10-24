@@ -23,7 +23,7 @@ pub fn language() -> tree_sitter::Language {
 mod tests {
     use std::path::PathBuf;
 
-    use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, RuleId, Severity};
+    use whisker_types::{DecoratedNode, DecoratedTree, Diagnostic, Language, RuleId, Severity};
 
     use super::*;
 
@@ -31,7 +31,12 @@ mod tests {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&language()).unwrap();
         let tree = parser.parse(source, None).unwrap();
-        DecoratedTree::new(tree, source.to_string(), PathBuf::from("test.rs"))
+        DecoratedTree::new(
+            tree,
+            Language::Rust,
+            source.to_string(),
+            PathBuf::from("test.rs"),
+        )
     }
 
     #[test]

@@ -5,15 +5,16 @@ use whisker_types::{DecoratedTree, DecorationMap, Diagnostic, Language, LintPass
 /// Parses source text into a decorated tree for the given language
 ///
 /// The returned tree has no decorations attached. Use [`decorate`] to
-/// add manually constructed decorations for testing.
+/// add manually constructed decorations for testing. TypeScript source
+/// parses with the TypeScript grammar, so it may not hold JSX.
 ///
 /// # Panics
 ///
-/// Panics if the language is unsupported or if tree-sitter fails to
-/// parse.
+/// Panics if tree-sitter fails to parse.
 pub fn parse(source: &str, language: Language) -> DecoratedTree {
     let ts_language = match language {
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
     };
 
     let mut parser = tree_sitter::Parser::new();
@@ -25,7 +26,7 @@ pub fn parse(source: &str, language: Language) -> DecoratedTree {
         .parse(source, None)
         .expect("tree-sitter parse returned None");
 
-    DecoratedTree::new(tree, source.to_string(), PathBuf::from("<test>"))
+    DecoratedTree::new(tree, language, source.to_string(), PathBuf::from("<test>"))
 }
 
 /// Attaches manual decorations to a parsed tree
@@ -282,6 +283,10 @@ mod tests {
     fn execute_collects_diagnostics_from_pass() {
         struct FnFinder;
         impl LintPass for FnFinder {
+            extern "C" fn language(&self) -> Language {
+                Language::Rust
+            }
+
             extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
                 Configured::Ok(())
             }

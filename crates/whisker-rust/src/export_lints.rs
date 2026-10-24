@@ -66,7 +66,8 @@ mod tests {
 
     use stabby::closure::Call0Dyn;
     use whisker_types::{
-        BoxedLintPass, DecoratedNode, DecoratedTree, Diagnostic, LintPass, Panic, RuleId, Severity,
+        BoxedLintPass, DecoratedNode, DecoratedTree, Diagnostic, Language, LintPass, Panic, RuleId,
+        Severity,
     };
 
     use crate::RustLintPass;
@@ -131,7 +132,12 @@ mod tests {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&crate::language()).unwrap();
         let tree = parser.parse("fn main() {}", None).unwrap();
-        let tree = DecoratedTree::new(tree, "fn main() {}".into(), PathBuf::from("test.rs"));
+        let tree = DecoratedTree::new(
+            tree,
+            Language::Rust,
+            "fn main() {}".into(),
+            PathBuf::from("test.rs"),
+        );
         let function = tree.root_node().named_child(0).expect("should parse a fn");
         let mut pass = built(0);
 

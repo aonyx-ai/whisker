@@ -85,6 +85,11 @@ and this project adheres to
   every later minor of it, and only a major asks for a rebuild.
 - A plugin declares the rules it reports, which is what a `[rules]` name is
   checked against.
+- A lint pass names the language it inspects, and whisker hands it only the
+  trees of that language. `Language` crosses the boundary, so it is laid out
+  by stabby and gains a `TypeScript` variant, and a `DecoratedTree` records
+  the language it was parsed as. The protocol is 0.2, and a plugin built for
+  0.1 no longer loads.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.

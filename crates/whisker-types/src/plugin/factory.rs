@@ -77,11 +77,15 @@ mod tests {
     use stabby::vec;
 
     use super::*;
-    use crate::{Checked, Configured, DecoratedNode, LintPass, RuleOptions};
+    use crate::{Checked, Configured, DecoratedNode, Language, LintPass, RuleOptions};
 
     struct Quiet;
 
     impl LintPass for Quiet {
+        extern "C" fn language(&self) -> Language {
+            Language::Rust
+        }
+
         extern "C" fn configure(&mut self, _options: &RuleOptions) -> Configured {
             Configured::Ok(())
         }

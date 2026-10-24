@@ -10,7 +10,9 @@ use anyhow::Context as _;
 use clawless::prelude::*;
 use whisker_core::Pipeline;
 use whisker_rust::RustDecorationProvider;
-use whisker_types::{DecorationProvider, Diagnostic, LintPass, RuleOptions, UncoveredFile};
+use whisker_types::{
+    DecorationProvider, Diagnostic, Language, LintPass, RuleOptions, UncoveredFile,
+};
 
 use self::check_outcome::CheckOutcome;
 use self::error_recovery::{ErrorRecovery, Walk};
@@ -155,8 +157,8 @@ pub async fn check(args: CheckArgs, _context: Context) -> CommandResult {
         path.display()
     );
 
-    let mut pipeline =
-        Pipeline::new(&whisker_rust::language()).context("failed to initialize pipeline")?;
+    let mut pipeline = Pipeline::new(Language::Rust, &whisker_rust::language())
+        .context("failed to initialize pipeline")?;
 
     let provider = RustDecorationProvider::load(&path)
         .context("failed to load the target project for analysis")?;

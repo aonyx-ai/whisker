@@ -43,8 +43,8 @@
 use stabby::IStable;
 
 use crate::{
-    BoxedLintPass, DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Location,
-    Panic, RuleId, RuleOption, RuleOptions, Severity, Span, Suggestion,
+    BoxedLintPass, DecoratedNode, DecorationKey, DecorationLookup, Diagnostic, FilePath, Language,
+    Location, Panic, RuleId, RuleOption, RuleOptions, Severity, Span, Suggestion,
 };
 
 mod abi_version;
@@ -75,9 +75,9 @@ pub use fingerprint::stable_fingerprint;
 /// ```
 /// use whisker_types::plugin::{ABI_VERSION, AbiVersion};
 ///
-/// assert_eq!(ABI_VERSION, AbiVersion { major: 0, minor: 1 });
+/// assert_eq!(ABI_VERSION, AbiVersion { major: 0, minor: 2 });
 /// ```
-pub const ABI_VERSION: AbiVersion = AbiVersion { major: 0, minor: 1 };
+pub const ABI_VERSION: AbiVersion = AbiVersion { major: 0, minor: 2 };
 
 /// A fingerprint of how this crate lays out the plugin boundary
 ///
@@ -97,8 +97,8 @@ pub const ABI_VERSION: AbiVersion = AbiVersion { major: 0, minor: 1 };
 /// The list names every value that crosses, and nothing else. A pass
 /// receives a [`DecoratedNode`], which reaches its file and its
 /// decorations through a [`FilePath`] and a [`DecorationLookup`], and the
-/// [`RuleOptions`] a project set. It returns [`Diagnostic`]s, or the
-/// [`Panic`] that stopped it. A plugin hands its exports over as a
+/// [`RuleOptions`] a project set. It names its [`Language`], and returns
+/// [`Diagnostic`]s or the [`Panic`] that stopped it. A plugin hands its exports over as a
 /// [`Plugin`], and each factory builds a [`BoxedLintPass`].
 ///
 /// A stabby result is not on the list, and neither is a stabby list. Both
@@ -130,6 +130,7 @@ pub const TYPES_FINGERPRINT: u64 = stable_fingerprint(&[
     <DecorationLookup<'static> as IStable>::ID,
     <DecorationKey as IStable>::ID,
     <FilePath as IStable>::ID,
+    <Language as IStable>::ID,
     <RuleOptions as IStable>::ID,
     <RuleOption as IStable>::ID,
     <Panic as IStable>::ID,
@@ -181,6 +182,7 @@ mod tests {
         assert_eq!(
             lint_pass,
             vec![
+                "extern \"C\" fn language(&self) -> Language;".to_owned(),
                 "extern \"C\" fn configure(&mut self, options: &RuleOptions) -> Configured;"
                     .to_owned(),
                 "extern \"C\" fn check_node(&mut self, node: &DecoratedNode<'_>) -> Checked;"
