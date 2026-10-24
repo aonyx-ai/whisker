@@ -2,3 +2,7 @@
 docs/.docusaurus/
 docs/build/
 docs/node_modules/
+# Vendored from tree-sitter-typescript, byte for byte: a test compares them
+# with the grammar crate whisker links, and formatting would break that.
+crates/whisker-typescript/src/tsx-node-types.json
+crates/whisker-typescript/src/typescript-node-types.json

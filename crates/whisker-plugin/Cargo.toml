@@ -12,6 +12,7 @@ publish = false
 stabby.workspace = true
 whisker-rust = { path = "../whisker-rust", default-features = false }
 whisker-types.workspace = true
+whisker-typescript = { path = "../whisker-typescript" }
 
 [dev-dependencies]
 tree-sitter.workspace = true

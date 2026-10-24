@@ -166,10 +166,11 @@ const WHISKER_GIT_URL: &str = "https://github.com/aonyx-ai/whisker.git";
 ///
 /// Each one is patched to the local source, so a package that names any
 /// of them builds against the whisker that loads it.
-const WHISKER_CRATES: [&str; 4] = [
+const WHISKER_CRATES: [&str; 5] = [
     "whisker-types",
     "whisker-plugin",
     "whisker-rust",
+    "whisker-typescript",
     "whisker-testing",
 ];
 

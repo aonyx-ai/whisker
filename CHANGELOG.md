@@ -97,6 +97,10 @@ and this project adheres to
   every language crate's, so a plugin that names one language still matches
   the whisker that supports several. `whisker-source` patches whisker-plugin
   along with the other crates a lint package names.
+- whisker-typescript brings TypeScript rules: `TypeScriptLintPass` has one
+  method per node kind of the TypeScript and TSX grammars together, so one
+  rule runs on `.ts` and `.tsx` files alike. A plugin exports such rules in
+  a `typescript` group of `export_lints!`.
 
 - The Linux binaries are built on Ubuntu 22.04, so they need glibc 2.35 rather
   than 2.39. The 2.39 floor refused Ubuntu 22.04 LTS and Debian 12.

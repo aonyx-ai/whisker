@@ -29,6 +29,7 @@ pub use whisker_types::plugin::{
 #[doc(hidden)]
 pub mod __private {
     pub use whisker_rust;
+    pub use whisker_typescript;
 }
 
 /// A fingerprint of the language support a plugin was built against
@@ -47,19 +48,24 @@ pub mod __private {
 ///
 /// assert_ne!(LANGUAGE_FINGERPRINT, 0);
 /// ```
-pub const LANGUAGE_FINGERPRINT: u64 = stable_fingerprint(&[whisker_rust::LANGUAGE_FINGERPRINT]);
+pub const LANGUAGE_FINGERPRINT: u64 = stable_fingerprint(&[
+    whisker_rust::LANGUAGE_FINGERPRINT,
+    whisker_typescript::LANGUAGE_FINGERPRINT,
+]);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn language_fingerprint_covers_rust() {
-        let rust = whisker_rust::LANGUAGE_FINGERPRINT;
+    fn language_fingerprint_covers_every_language() {
+        let rust_alone = stable_fingerprint(&[whisker_rust::LANGUAGE_FINGERPRINT]);
+        let typescript_alone = stable_fingerprint(&[whisker_typescript::LANGUAGE_FINGERPRINT]);
 
         let joined = LANGUAGE_FINGERPRINT;
 
-        assert_ne!(joined, rust);
+        assert_ne!(joined, rust_alone);
+        assert_ne!(joined, typescript_alone);
         assert_ne!(joined, 0);
     }
 }

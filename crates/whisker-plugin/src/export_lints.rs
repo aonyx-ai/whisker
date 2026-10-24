@@ -5,10 +5,14 @@
 /// lists one expression per lint:
 ///
 /// ```ignore
-/// whisker_plugin::export_lints![rust: [NoTodo, PreferExpect]];
+/// whisker_plugin::export_lints![
+///     rust: [NoTodo, PreferExpect],
+///     typescript: [NoTodo],
+/// ];
 /// ```
 ///
-/// A `rust` group takes types implementing [`RustLintPass`]. The group
+/// A `rust` group takes types implementing [`RustLintPass`], and a
+/// `typescript` group types implementing [`TypeScriptLintPass`]. The group
 /// decides the adapter that bridges a lint to [`LintPass`], and so the
 /// language whisker runs it on. One type may appear in more than one
 /// group: a rule that reads only comments can implement several language
@@ -30,6 +34,7 @@
 /// [`LintPass`]: whisker_types::LintPass
 /// [`Panic::catch`]: crate::Panic::catch
 /// [`RustLintPass`]: whisker_rust::RustLintPass
+/// [`TypeScriptLintPass`]: whisker_typescript::TypeScriptLintPass
 #[macro_export]
 macro_rules! export_lints {
     ($($language:ident: [$($lint:expr),+ $(,)?]),+ $(,)?) => {
@@ -75,6 +80,9 @@ macro_rules! __adapter {
     (rust) => {
         $crate::__private::whisker_rust::RustLintPassAdapter::boxed
     };
+    (typescript) => {
+        $crate::__private::whisker_typescript::TypeScriptLintPassAdapter::boxed
+    };
 }
 
 #[cfg(test)]
@@ -87,6 +95,7 @@ mod tests {
         BoxedLintPass, DecoratedNode, DecoratedTree, Diagnostic, Language, LintPass, Panic, RuleId,
         Severity,
     };
+    use whisker_typescript::TypeScriptLintPass;
 
     use crate::{ABI_VERSION, DeclaresRules, LANGUAGE_FINGERPRINT, Plugin, TYPES_FINGERPRINT};
 
@@ -109,6 +118,37 @@ mod tests {
         }
     }
 
+    struct FlagEveryComment;
+
+    impl FlagEveryComment {
+        fn flag(node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            vec![Diagnostic::new(
+                RuleId::new("test.flag-every-comment"),
+                Severity::Warn,
+                "found a comment".into(),
+                node.span(),
+            )]
+        }
+    }
+
+    impl DeclaresRules for FlagEveryComment {
+        fn rules(&self) -> Vec<RuleId> {
+            vec![RuleId::new("test.flag-every-comment")]
+        }
+    }
+
+    impl RustLintPass for FlagEveryComment {
+        fn check_line_comment(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            Self::flag(node)
+        }
+    }
+
+    impl TypeScriptLintPass for FlagEveryComment {
+        fn check_comment(&mut self, node: &DecoratedNode<'_>) -> Vec<Diagnostic> {
+            Self::flag(node)
+        }
+    }
+
     struct QuietLint;
 
     impl DeclaresRules for QuietLint {
@@ -117,9 +157,19 @@ mod tests {
         }
     }
 
-    impl RustLintPass for QuietLint {}
+    impl TypeScriptLintPass for QuietLint {}
 
-    export_lints![rust: [FlagEveryFunction, QuietLint, QuietLint]];
+    export_lints![
+        rust: [FlagEveryFunction, FlagEveryComment],
+        typescript: [FlagEveryComment, QuietLint],
+    ];
+
+    fn parse(grammar: tree_sitter::Language, language: Language, source: &str) -> DecoratedTree {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&grammar).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        DecoratedTree::new(tree, language, source.into(), PathBuf::from("test"))
+    }
 
     fn loaded() -> Plugin {
         let loaded: Result<_, Panic> = (whisker_plugin_declaration.load)().into();
@@ -146,24 +196,17 @@ mod tests {
 
     #[test]
     fn factories_build_passes_of_their_group_language() {
-        let pass = built(0);
+        let rust = built(1);
+        let typescript = built(2);
 
-        let language = pass.language();
+        let languages = (rust.language(), typescript.language());
 
-        assert_eq!(language, Language::Rust);
+        assert_eq!(languages, (Language::Rust, Language::TypeScript));
     }
 
     #[test]
-    fn factories_build_working_passes() {
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&whisker_rust::language()).unwrap();
-        let tree = parser.parse("fn main() {}", None).unwrap();
-        let tree = DecoratedTree::new(
-            tree,
-            Language::Rust,
-            "fn main() {}".into(),
-            PathBuf::from("test.rs"),
-        );
+    fn factories_build_working_rust_passes() {
+        let tree = parse(whisker_rust::language(), Language::Rust, "fn main() {}");
         let function = tree.root_node().named_child(0).expect("should parse a fn");
         let mut pass = built(0);
 
@@ -178,18 +221,42 @@ mod tests {
     }
 
     #[test]
+    fn factories_build_working_typescript_passes() {
+        let tree = parse(
+            whisker_typescript::language(),
+            Language::TypeScript,
+            "// note\nlet a = 1;",
+        );
+        let comment = tree
+            .root_node()
+            .named_child(0)
+            .expect("should parse a comment");
+        let mut pass = built(2);
+
+        let checked: Result<_, Panic> = LintPass::check_node(&mut pass, &comment).into();
+
+        let diagnostics = checked.expect("the pass should not panic");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(
+            diagnostics[0].rule_id(),
+            RuleId::new("test.flag-every-comment")
+        );
+    }
+
+    #[test]
     fn load_yields_each_declared_rule_once_in_order() {
         let rules = loaded().rules;
 
-        assert_eq!(rules.len(), 2);
+        assert_eq!(rules.len(), 3);
         assert_eq!(rules[0], RuleId::new("test.flag-every-function"));
-        assert_eq!(rules[1], RuleId::new("test.quiet"));
+        assert_eq!(rules[1], RuleId::new("test.flag-every-comment"));
+        assert_eq!(rules[2], RuleId::new("test.quiet"));
     }
 
     #[test]
     fn load_yields_one_factory_per_listed_lint() {
         let factories = loaded().factories;
 
-        assert_eq!(factories.len(), 3);
+        assert_eq!(factories.len(), 4);
     }
 }

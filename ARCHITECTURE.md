@@ -361,25 +361,28 @@ elsewhere does. The workspace test run builds and loads them through the
 CLI, and `just test-examples` and `just test-fixture-lint` run their
 own tests.
 
-| Crate               | Role                                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `whisker-types`     | Shared vocabulary: trees, decorations, diagnostics, coverage, and the plugin declaration |
-| `whisker-core`      | The pipeline and tree walker                                                             |
-| `whisker-codegen`   | Generates a lint pass trait from `node-types.json`                                       |
-| `whisker-rust`      | Rust support: the generated trait, the decorations, and the provider                     |
-| `whisker-plugin`    | What a plugin exports: `export_lints!`, `DeclaresRules`, and the language fingerprint    |
-| `whisker-macros`    | The derive macro for decoration types                                                    |
-| `whisker-reporting` | Diagnostic rendering                                                                     |
-| `whisker-testing`   | Test harness for lint rules                                                              |
-| `whisker`           | The CLI, custom lint loading, and the plugin handshake                                   |
+| Crate                | Role                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `whisker-types`      | Shared vocabulary: trees, decorations, diagnostics, coverage, and the plugin declaration |
+| `whisker-core`       | The pipeline and tree walker                                                             |
+| `whisker-codegen`    | Generates a lint pass trait from `node-types.json`                                       |
+| `whisker-rust`       | Rust support: the generated trait, the decorations, and the provider                     |
+| `whisker-typescript` | TypeScript support: the trait generated from the TypeScript and TSX grammars             |
+| `whisker-plugin`     | What a plugin exports: `export_lints!`, `DeclaresRules`, and the language fingerprint    |
+| `whisker-macros`     | The derive macro for decoration types                                                    |
+| `whisker-reporting`  | Diagnostic rendering                                                                     |
+| `whisker-testing`    | Test harness for lint rules                                                              |
+| `whisker`            | The CLI, custom lint loading, and the plugin handshake                                   |
 
 Dependencies flow one way. `whisker-types`, `whisker-codegen`, and
 `whisker-macros` depend on no other whisker crate. `whisker-core` and
 `whisker-reporting` rest on `whisker-types`. `whisker-rust` rests on
 `whisker-types` and `whisker-macros`, and uses `whisker-codegen` at build
-time. `whisker-plugin` rests on `whisker-types` and the language crates,
-without their providers. `whisker-testing` rests on `whisker-core`. The
-CLI ties the platform, the language, and the loaded lints together.
+time. `whisker-typescript` rests on `whisker-types` and uses
+`whisker-codegen` the same way. `whisker-plugin` rests on `whisker-types`
+and the language crates, without their providers. `whisker-testing` rests
+on `whisker-core`. The CLI ties the platform, the languages, and the
+loaded lints together.
 
 [discovery]: https://aonyx-ai.github.io/whisker/docs/reference/file-discovery
 [ra]: https://rust-analyzer.github.io/

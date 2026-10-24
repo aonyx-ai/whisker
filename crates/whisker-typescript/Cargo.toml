@@ -1,0 +1,22 @@
+[package]
+name = "whisker-typescript"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+stabby.workspace = true
+tree-sitter.workspace = true
+tree-sitter-typescript.workspace = true
+whisker-types.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+whisker-core.workspace = true
+
+[build-dependencies]
+whisker-codegen.workspace = true
+
+[lints]
+workspace = true

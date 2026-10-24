@@ -380,6 +380,7 @@ dependencies = [
  "stabby",
  "whisker-rust",
  "whisker-types",
+ "whisker-typescript",
 ]
 
 [[package]]
@@ -412,6 +413,17 @@ dependencies = [
  "anyhow",
  "stabby",
  "tree-sitter",
+]
+
+[[package]]
+name = "whisker-typescript"
+version = "0.1.0"
+dependencies = [
+ "stabby",
+ "tree-sitter",
+ "tree-sitter-typescript",
+ "whisker-codegen",
+ "whisker-types",
 ]
 
 [[package]]
